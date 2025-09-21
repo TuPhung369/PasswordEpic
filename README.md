@@ -7,6 +7,7 @@ A cross-platform mobile password manager built with absolute security and seamle
 PasswordEpic implements a **multi-layered security model** designed to protect your sensitive data at every level:
 
 ### Security Layers
+
 1. **User Authentication** - Firebase Auth + Google OAuth 2.0
 2. **End-to-End Encryption** - Client-side encryption with AES-GCM 256-bit
 3. **Data Protection** - Encrypted at rest and in transit
@@ -16,6 +17,7 @@ PasswordEpic implements a **multi-layered security model** designed to protect y
 ## 🚀 Key Features
 
 ### Core Functionality
+
 - **Cross-Platform**: Built with React Native for iOS and Android
 - **Zero-Knowledge Architecture**: Server cannot decrypt your data
 - **Biometric Authentication**: Face ID, Touch ID, Fingerprint support
@@ -24,6 +26,7 @@ PasswordEpic implements a **multi-layered security model** designed to protect y
 - **Offline Capability**: Full functionality without internet connection
 
 ### Advanced Security
+
 - **Master Key Derivation**: PBKDF2 with 100,000+ iterations
 - **Hardware Security**: Android Keystore / iOS Keychain integration
 - **Memory Protection**: Anti-debugging and secure memory management
@@ -33,18 +36,21 @@ PasswordEpic implements a **multi-layered security model** designed to protect y
 ## 🏗️ Technical Architecture
 
 ### Frontend
+
 - **Framework**: React Native (Cross-platform)
 - **Authentication**: Firebase Auth with Google OAuth 2.0
 - **Local Storage**: React Native Keychain for sensitive data
 - **Biometrics**: React Native Biometrics
 
 ### Backend & Data
+
 - **Metadata Storage**: Firebase Firestore (encrypted metadata only)
 - **Sensitive Data**: Encrypted local storage only
 - **Encryption**: AES-GCM 256-bit with client-side key derivation
 - **Key Management**: Platform-native secure storage
 
 ### Auto-fill Implementation
+
 - **Android**: Autofill Framework Service
 - **iOS**: Password AutoFill Extension with Associated Domains
 - **Security**: Biometric verification before auto-fill
@@ -52,17 +58,18 @@ PasswordEpic implements a **multi-layered security model** designed to protect y
 
 ## 📱 Platform Support
 
-| Feature | Android | iOS |
-|---------|---------|-----|
-| Password Management | ✅ | ✅ |
-| Biometric Auth | ✅ | ✅ |
-| Auto-fill | ✅ (Autofill Framework) | ✅ (Password AutoFill) |
-| Hardware Security | ✅ (Keystore) | ✅ (Keychain) |
-| Root/Jailbreak Detection | ✅ | ✅ |
+| Feature                  | Android                 | iOS                    |
+| ------------------------ | ----------------------- | ---------------------- |
+| Password Management      | ✅                      | ✅                     |
+| Biometric Auth           | ✅                      | ✅                     |
+| Auto-fill                | ✅ (Autofill Framework) | ✅ (Password AutoFill) |
+| Hardware Security        | ✅ (Keystore)           | ✅ (Keychain)          |
+| Root/Jailbreak Detection | ✅                      | ✅                     |
 
 ## 🛠️ Development Setup
 
 ### Prerequisites
+
 - Node.js (v16 or higher)
 - React Native CLI
 - Android Studio (for Android development)
@@ -72,12 +79,14 @@ PasswordEpic implements a **multi-layered security model** designed to protect y
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/TuPhung369/PasswordEpic.git
    cd PasswordEpic
    ```
 
 2. **Install dependencies**
+
    ```bash
    npm install
    # or
@@ -85,19 +94,22 @@ PasswordEpic implements a **multi-layered security model** designed to protect y
    ```
 
 3. **Firebase Configuration**
+
    - Create a Firebase project
    - Enable Authentication with Google provider
    - Download `google-services.json` (Android) and `GoogleService-Info.plist` (iOS)
    - Place configuration files in appropriate directories
 
 4. **Platform Setup**
-   
+
    **Android:**
+
    ```bash
    npx react-native run-android
    ```
-   
+
    **iOS:**
+
    ```bash
    cd ios && pod install && cd ..
    npx react-native run-ios
@@ -106,17 +118,20 @@ PasswordEpic implements a **multi-layered security model** designed to protect y
 ## 🔒 Security Implementation Details
 
 ### Encryption Flow
+
 1. **Master Password** → PBKDF2 (100k+ iterations) → **Master Key**
 2. **Master Key** + Random Salt → **Encryption Key**
 3. **Sensitive Data** → AES-GCM 256-bit → **Encrypted Data**
 4. **Encryption Key** → Platform Keystore/Keychain
 
 ### Data Storage Strategy
+
 - **Local Device**: Encrypted passwords and sensitive data
 - **Firebase Firestore**: Encrypted metadata, user preferences, sync data
 - **No Cloud Passwords**: Actual passwords never leave the device unencrypted
 
 ### Auto-fill Security
+
 - Biometric authentication required before auto-fill
 - Domain verification prevents credential theft
 - No sensitive data cached in auto-fill service
@@ -129,12 +144,14 @@ See [Planning.md](./Planning.md) for detailed development phases and timeline.
 ## 🧪 Testing
 
 ### Security Testing
+
 - Penetration testing
 - Code obfuscation verification
 - Memory dump analysis
 - Root/jailbreak bypass testing
 
 ### Functional Testing
+
 - Cross-platform compatibility
 - Auto-fill accuracy
 - Biometric authentication
@@ -165,3 +182,4 @@ If you discover a security vulnerability, please send an email to security@passw
 ---
 
 **⚠️ Security Notice**: This application handles sensitive data. Always use the latest version and report any security concerns immediately.
+

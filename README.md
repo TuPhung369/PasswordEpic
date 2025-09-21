@@ -154,7 +154,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔐 Security Disclosure
 
-If you discover a security vulnerability, please send an email to [security@passwordepic.com]. All security vulnerabilities will be promptly addressed.
+If you discover a security vulnerability, please send an email to security@passwordepic.com. All security vulnerabilities will be promptly addressed.
 
 ## 📞 Support
 

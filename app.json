@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "PasswordEpic",
+    "slug": "passwordepic",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./logo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.passwordepic.app",
+      "deploymentTarget": "13.0"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./logo.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.passwordepic.app"
+    },
+    "web": {
+      "favicon": "./logo.png"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "13.0"
+          },
+          "android": {
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "buildToolsVersion": "34.0.0"
+          }
+        }
+      ],
+      "expo-dev-client"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "56e66ffd-c09b-4d57-9d17-2bcf2d83ed8a"
+      }
+    },
+    "owner": "tuphung010787"
+  }
+}

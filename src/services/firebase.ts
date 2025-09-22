@@ -1,23 +1,33 @@
 import auth from "@react-native-firebase/auth";
 import firestore from "@react-native-firebase/firestore";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import { Platform } from "react-native";
 
-// Firebase configuration - Replace with your actual config
+// Firebase configuration - From google-services.json and GoogleService-Info.plist
 export const firebaseConfig = {
-  // TODO: Replace with your Firebase configuration from Firebase Console
-  // You'll get these values when you add your app to Firebase project
-  apiKey: "your-api-key-here",
-  authDomain: "passwordepic-mobile.firebaseapp.com",
-  projectId: "passwordepic-mobile",
-  storageBucket: "passwordepic-mobile.appspot.com",
-  messagingSenderId: "your-sender-id",
-  appId: "your-app-id",
+  apiKey:
+    Platform.OS === "ios"
+      ? "AIzaSyBKqLBzJoH8IGOuARa9p3WfqguXJWSUavM"
+      : "AIzaSyAezBXf7E2IyXIKfrOLWeZe3yboFROgi9E",
+  authDomain: "passwordepic.firebaseapp.com",
+  projectId: "passwordepic",
+  storageBucket: "passwordepic.firebasestorage.app",
+  messagingSenderId: "816139401561",
+  appId:
+    Platform.OS === "ios"
+      ? "1:816139401561:ios:180e47251209203ea8b448"
+      : "1:816139401561:android:7a1f670d56a141c9a8b448",
 };
 
 // Google Sign-In configuration
 export const configureGoogleSignIn = () => {
+  const webClientId =
+    Platform.OS === "ios"
+      ? "816139401561-hs7tal2e7sm3ql9nisogj9bo1btlhsal.apps.googleusercontent.com" // From GoogleService-Info.plist
+      : "816139401561-c4vgrr43d2aglpjbf4pf59qag3bo45of.apps.googleusercontent.com"; // From google-services.json
+
   GoogleSignin.configure({
-    webClientId: "your-web-client-id-from-google-services.json", // From Firebase Console
+    webClientId,
     offlineAccess: true,
   });
 };
@@ -53,3 +63,4 @@ export const signOut = async () => {
     return { success: false, error };
   }
 };
+

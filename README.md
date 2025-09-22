@@ -37,7 +37,9 @@ PasswordEpic implements a **multi-layered security model** designed to protect y
 
 ### Frontend
 
-- **Framework**: React Native (Cross-platform)
+- **Framework**: React Native 0.72.6 (Cross-platform)
+- **Development Build**: Expo Development Build (SDK 49) for enhanced testing
+- **Build System**: EAS Build for cloud-based iOS/Android builds
 - **Authentication**: Firebase Auth with Google OAuth 2.0
 - **Local Storage**: React Native Keychain for sensitive data
 - **Biometrics**: React Native Biometrics
@@ -70,10 +72,11 @@ PasswordEpic implements a **multi-layered security model** designed to protect y
 
 ### Prerequisites
 
-- Node.js (v16 or higher)
+- Node.js (v20 or higher)
 - React Native CLI
+- Expo CLI and EAS CLI
 - Android Studio (for Android development)
-- Xcode (for iOS development)
+- Xcode (for iOS development - optional with EAS Build)
 - Firebase project with Authentication enabled
 
 ### Installation
@@ -102,15 +105,37 @@ PasswordEpic implements a **multi-layered security model** designed to protect y
 
 4. **Platform Setup**
 
-   **Android:**
+   **Development Server:**
 
    ```bash
-   npx react-native run-android
+   npm start
+   # or
+   npx expo start --dev-client
    ```
 
-   **iOS:**
+   **Android Development Build:**
 
    ```bash
+   npm run build:android:dev
+   # or
+   npx eas build --platform android --profile development
+   ```
+
+   **iOS Development Build (Cloud):**
+
+   ```bash
+   npm run build:ios:dev
+   # or
+   npx eas build --platform ios --profile development
+   ```
+
+   **Traditional React Native (Alternative):**
+
+   ```bash
+   # Android
+   npx react-native run-android
+
+   # iOS
    cd ios && pod install && cd ..
    npx react-native run-ios
    ```
@@ -182,4 +207,25 @@ If you discover a security vulnerability, please send an email to security@passw
 ---
 
 **⚠️ Security Notice**: This application handles sensitive data. Always use the latest version and report any security concerns immediately.
+
+## 📊 Development Approach Comparison
+
+| Feature              | Expo Go       | React Native CLI | Expo Development Build |
+| -------------------- | ------------- | ---------------- | ---------------------- |
+| Hardware Security    | ❌ Limited    | ✅ Full          | ✅ Full                |
+| Auto-fill Extensions | ❌ No support | ✅ Full          | ✅ Full                |
+| Native Code Access   | ❌ No         | ✅ Full          | ✅ Full                |
+| Security Auditing    | ❌ No         | ✅ Full          | ✅ Full                |
+| Deployment           | ⚡ Easy       | 🔧 Complicated   | ⚡🔧 Flexible          |
+| Performance          | ⚡ Fast       | ⚡ Fast          | ⚡ Fast                |
+| Community Support    | ✅ Good       | ✅ Good          | ✅ Excellent           |
+| Customization        | ✅ Basic      | ✅ Intermediate  | ✅ Advanced            |
+| iOS Testing (No Mac) | ✅ Yes        | ❌ No            | ✅ Yes (EAS Build)     |
+
+**🎯 Why Expo Development Build?**
+
+- **Best of Both Worlds**: Native module access + Expo developer experience
+- **Cloud iOS Builds**: Test on iPhone without owning a Mac
+- **Enhanced Debugging**: Expo dev tools with full native capabilities
+- **Future-Proof**: Easy migration path for advanced features
 

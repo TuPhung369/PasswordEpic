@@ -118,3 +118,7 @@ buck-out/
 \.buckd/
 *.keystore
 !debug.keystore
+# Expo
+.expo
+dist/
+web-build/

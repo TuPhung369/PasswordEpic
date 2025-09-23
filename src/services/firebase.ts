@@ -1,6 +1,13 @@
-import auth from "@react-native-firebase/auth";
-import firestore from "@react-native-firebase/firestore";
-import { GoogleSignin } from "@react-native-google-signin/google-signin";
+// Note: Using Firebase Web SDK for Expo Go compatibility
+// For production builds, switch to @react-native-firebase
+import { initializeApp, getApps } from "firebase/app";
+import {
+  getAuth,
+  initializeAuth,
+  getReactNativePersistence,
+} from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 
 // Firebase configuration - From google-services.json and GoogleService-Info.plist
@@ -19,17 +26,28 @@ export const firebaseConfig = {
       : "1:816139401561:android:7a1f670d56a141c9a8b448",
 };
 
-// Google Sign-In configuration
-export const configureGoogleSignIn = () => {
-  const webClientId =
-    Platform.OS === "ios"
-      ? "816139401561-hs7tal2e7sm3ql9nisogj9bo1btlhsal.apps.googleusercontent.com" // From GoogleService-Info.plist
-      : "816139401561-c4vgrr43d2aglpjbf4pf59qag3bo45of.apps.googleusercontent.com"; // From google-services.json
+// Initialize Firebase
+let app;
+let auth;
+let firestore;
 
-  GoogleSignin.configure({
-    webClientId,
-    offlineAccess: true,
+if (getApps().length === 0) {
+  app = initializeApp(firebaseConfig);
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage),
   });
+  firestore = getFirestore(app);
+} else {
+  app = getApps()[0];
+  auth = getAuth(app);
+  firestore = getFirestore(app);
+}
+
+// Google Sign-In configuration (placeholder for now)
+export const configureGoogleSignIn = () => {
+  // Note: Google Sign-In requires native modules
+  // For Expo Go testing, we'll skip this for now
+  console.log("Google Sign-In configuration skipped in Expo Go");
 };
 
 // Firebase services
@@ -50,13 +68,13 @@ export const initializeFirebase = () => {
 
 // Auth helper functions
 export const getCurrentUser = () => {
-  return firebaseAuth().currentUser;
+  return firebaseAuth.currentUser;
 };
 
 export const signOut = async () => {
   try {
-    await GoogleSignin.signOut();
-    await firebaseAuth().signOut();
+    // Skip Google Sign-In signout in Expo Go
+    await firebaseAuth.signOut();
     return { success: true };
   } catch (error) {
     console.error("Sign out error:", error);

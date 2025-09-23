@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.passwordepic.app",
-      "deploymentTarget": "13.0"
+      "deploymentTarget": "15.1"
     },
     "android": {
       "adaptiveIcon": {
@@ -34,7 +34,7 @@
         "expo-build-properties",
         {
           "ios": {
-            "deploymentTarget": "13.0"
+            "deploymentTarget": "15.1"
           },
           "android": {
             "compileSdkVersion": 34,

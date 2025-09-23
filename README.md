@@ -37,8 +37,8 @@ PasswordEpic implements a **multi-layered security model** designed to protect y
 
 ### Frontend
 
-- **Framework**: React Native 0.72.6 (Cross-platform)
-- **Development Build**: Expo Development Build (SDK 49) for enhanced testing
+- **Framework**: React Native 0.81.4 (Cross-platform)
+- **Development Build**: Expo Development Build (SDK 54) for enhanced testing
 - **Build System**: EAS Build for cloud-based iOS/Android builds
 - **Authentication**: Firebase Auth with Google OAuth 2.0
 - **Local Storage**: React Native Keychain for sensitive data

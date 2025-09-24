@@ -4,6 +4,7 @@ import { Provider } from "react-redux";
 import { NavigationContainer } from "@react-navigation/native";
 import { store } from "./src/store";
 import { AppNavigator } from "./src/navigation/AppNavigator";
+import { ThemeProvider } from "./src/contexts/ThemeContext";
 // import { initializeFirebase } from "./src/services/firebase";
 
 console.log("App.tsx: Starting to define App component");
@@ -21,9 +22,11 @@ const App: React.FC = () => {
   return (
     <Provider store={store}>
       <SafeAreaProvider>
-        <NavigationContainer linking={undefined}>
-          <AppNavigator />
-        </NavigationContainer>
+        <ThemeProvider>
+          <NavigationContainer linking={undefined}>
+            <AppNavigator />
+          </NavigationContainer>
+        </ThemeProvider>
       </SafeAreaProvider>
     </Provider>
   );

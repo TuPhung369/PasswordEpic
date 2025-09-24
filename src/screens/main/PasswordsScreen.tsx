@@ -11,11 +11,13 @@ import { useAppSelector } from "../../hooks/redux";
 import { RootState } from "../../store";
 import { MaterialIcons } from "@expo/vector-icons";
 import { PasswordEntry } from "../../types";
+import { useTheme } from "../../contexts/ThemeContext";
 
 export const PasswordsScreen: React.FC = () => {
   const { passwords, searchQuery } = useAppSelector(
     (state: RootState) => state.passwords
   );
+  const { theme } = useTheme();
 
   const filteredPasswords = passwords.filter(
     (password: PasswordEntry) =>
@@ -24,40 +26,71 @@ export const PasswordsScreen: React.FC = () => {
   );
 
   const renderPasswordItem = ({ item }: { item: PasswordEntry }) => (
-    <TouchableOpacity style={styles.passwordItem}>
-      <View style={styles.passwordIcon}>
-        <MaterialIcons name="lock" size={20} color="#007AFF" />
+    <TouchableOpacity
+      style={[
+        styles.passwordItem,
+        { backgroundColor: theme.card, borderColor: theme.border },
+      ]}
+    >
+      <View style={[styles.passwordIcon, { backgroundColor: theme.surface }]}>
+        <MaterialIcons name="lock" size={20} color={theme.primary} />
       </View>
       <View style={styles.passwordInfo}>
-        <Text style={styles.passwordTitle}>{item.title}</Text>
-        <Text style={styles.passwordWebsite}>{item.website}</Text>
+        <Text style={[styles.passwordTitle, { color: theme.text }]}>
+          {item.title}
+        </Text>
+        <Text style={[styles.passwordWebsite, { color: theme.textSecondary }]}>
+          {item.website}
+        </Text>
       </View>
       <View style={styles.actionButtons}>
         <TouchableOpacity style={styles.actionButton}>
-          <MaterialIcons name="content-copy" size={18} color="#8E8E93" />
+          <MaterialIcons
+            name="content-copy"
+            size={18}
+            color={theme.textSecondary}
+          />
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionButton}>
-          <MaterialIcons name="visibility" size={18} color="#8E8E93" />
+          <MaterialIcons
+            name="visibility"
+            size={18}
+            color={theme.textSecondary}
+          />
         </TouchableOpacity>
-        <MaterialIcons name="chevron-right" size={20} color="#8E8E93" />
+        <MaterialIcons
+          name="chevron-right"
+          size={20}
+          color={theme.textSecondary}
+        />
       </View>
     </TouchableOpacity>
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
+      <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <View style={styles.headerLeft}>
-          <Text style={styles.title}>🔐 Vault</Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.title, { color: theme.text }]}>🔐 Vault</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
             {filteredPasswords.length} passwords
           </Text>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.searchButton}>
-            <MaterialIcons name="search" size={22} color="#8E8E93" />
+          <TouchableOpacity
+            style={[styles.searchButton, { backgroundColor: theme.surface }]}
+          >
+            <MaterialIcons
+              name="search"
+              size={22}
+              color={theme.textSecondary}
+            />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.addButton}>
+          <TouchableOpacity
+            style={[styles.addButton, { backgroundColor: theme.primary }]}
+          >
             <MaterialIcons name="add" size={22} color="#ffffff" />
           </TouchableOpacity>
         </View>
@@ -65,16 +98,25 @@ export const PasswordsScreen: React.FC = () => {
 
       {filteredPasswords.length === 0 ? (
         <View style={styles.emptyState}>
-          <View style={styles.emptyIcon}>
-            <MaterialIcons name="lock" size={48} color="#007AFF" />
+          <View style={[styles.emptyIcon, { backgroundColor: theme.surface }]}>
+            <MaterialIcons name="lock" size={48} color={theme.primary} />
           </View>
-          <Text style={styles.emptyTitle}>Your Vault is Empty</Text>
-          <Text style={styles.emptySubtitle}>
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>
+            Your Vault is Empty
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
             Add your first password to get started with secure storage
           </Text>
-          <TouchableOpacity style={styles.emptyButton}>
-            <MaterialIcons name="add" size={20} color="#007AFF" />
-            <Text style={styles.emptyButtonText}>Add Password</Text>
+          <TouchableOpacity
+            style={[
+              styles.emptyButton,
+              { backgroundColor: theme.card, borderColor: theme.primary },
+            ]}
+          >
+            <MaterialIcons name="add" size={20} color={theme.primary} />
+            <Text style={[styles.emptyButtonText, { color: theme.primary }]}>
+              Add Password
+            </Text>
           </TouchableOpacity>
         </View>
       ) : (

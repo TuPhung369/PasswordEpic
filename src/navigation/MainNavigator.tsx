@@ -4,6 +4,7 @@ import { PasswordsScreen } from "../screens/main/PasswordsScreen";
 import { GeneratorScreen } from "../screens/main/GeneratorScreen";
 import { SettingsScreen } from "../screens/main/SettingsScreen";
 import { MaterialIcons } from "@expo/vector-icons";
+import { useTheme } from "../contexts/ThemeContext";
 
 export type MainTabParamList = {
   Passwords: undefined;
@@ -14,6 +15,8 @@ export type MainTabParamList = {
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 export const MainNavigator: React.FC = () => {
+  const { theme } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -31,16 +34,16 @@ export const MainNavigator: React.FC = () => {
           return (
             <MaterialIcons
               name={iconName}
-              size={focused ? size + 2 : size}
+              size={focused ? 26 : 24}
               color={color}
             />
           );
         },
-        tabBarActiveTintColor: "#007AFF",
-        tabBarInactiveTintColor: "#8E8E93",
+        tabBarActiveTintColor: theme.primary,
+        tabBarInactiveTintColor: theme.textSecondary,
         tabBarStyle: {
-          backgroundColor: "#1C1C1E",
-          borderTopColor: "#38383A",
+          backgroundColor: theme.card,
+          borderTopColor: theme.border,
           borderTopWidth: 0.5,
           paddingBottom: 8,
           paddingTop: 8,

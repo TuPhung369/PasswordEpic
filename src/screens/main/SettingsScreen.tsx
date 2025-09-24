@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -12,11 +12,16 @@ import { useAppSelector, useAppDispatch } from "../../hooks/redux";
 import { RootState } from "../../store";
 import { logout } from "../../store/slices/authSlice";
 import { MaterialIcons } from "@expo/vector-icons";
+import { ThemeSelector } from "../../components/ThemeSelector";
+import { ThemeModal } from "../../components/ThemeModal";
+import { useTheme } from "../../contexts/ThemeContext";
 
 export const SettingsScreen: React.FC = () => {
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state: RootState) => state.auth);
   const { security } = useAppSelector((state: RootState) => state.settings);
+  const { theme } = useTheme();
+  const [themeModalVisible, setThemeModalVisible] = useState(false);
 
   const handleLogout = () => {
     dispatch(logout());
@@ -29,44 +34,77 @@ export const SettingsScreen: React.FC = () => {
     onPress?: () => void;
     rightElement?: React.ReactNode;
   }> = ({ icon, title, subtitle, onPress, rightElement }) => (
-    <TouchableOpacity style={styles.settingItem} onPress={onPress}>
-      <View style={styles.settingIcon}>
-        <MaterialIcons name={icon} size={24} color="#007AFF" />
+    <TouchableOpacity
+      style={[
+        styles.settingItem,
+        { backgroundColor: theme.card, borderColor: theme.border },
+      ]}
+      onPress={onPress}
+    >
+      <View style={[styles.settingIcon, { backgroundColor: theme.surface }]}>
+        <MaterialIcons name={icon as any} size={24} color={theme.primary} />
       </View>
       <View style={styles.settingContent}>
-        <Text style={styles.settingTitle}>{title}</Text>
-        {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
+        <Text style={[styles.settingTitle, { color: theme.text }]}>
+          {title}
+        </Text>
+        {subtitle && (
+          <Text
+            style={[styles.settingSubtitle, { color: theme.textSecondary }]}
+          >
+            {subtitle}
+          </Text>
+        )}
       </View>
       {rightElement || (
-        <MaterialIcons name="chevron-right" size={24} color="#cccccc" />
+        <MaterialIcons
+          name="chevron-right"
+          size={24}
+          color={theme.textSecondary}
+        />
       )}
     </TouchableOpacity>
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>⚙️ Settings</Text>
-        <Text style={styles.subtitle}>Manage your security preferences</Text>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
+      <View style={[styles.header, { borderBottomColor: theme.border }]}>
+        <Text style={[styles.title, { color: theme.text }]}>⚙️ Settings</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+          Manage your security preferences
+        </Text>
       </View>
 
       <ScrollView style={styles.content}>
         {/* User Profile */}
         <View style={styles.section}>
-          <View style={styles.userProfile}>
-            <View style={styles.avatar}>
-              <MaterialIcons name="person" size={32} color="#007AFF" />
+          <View
+            style={[
+              styles.userProfile,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}
+          >
+            <View style={[styles.avatar, { backgroundColor: theme.surface }]}>
+              <MaterialIcons name="person" size={32} color={theme.primary} />
             </View>
             <View style={styles.userInfo}>
-              <Text style={styles.userName}>{user?.displayName || "User"}</Text>
-              <Text style={styles.userEmail}>{user?.email}</Text>
+              <Text style={[styles.userName, { color: theme.text }]}>
+                {user?.displayName || "User"}
+              </Text>
+              <Text style={[styles.userEmail, { color: theme.textSecondary }]}>
+                {user?.email}
+              </Text>
             </View>
           </View>
         </View>
 
         {/* Security Settings */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Security</Text>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            Security
+          </Text>
 
           <SettingItem
             icon="fingerprint"
@@ -76,7 +114,12 @@ export const SettingsScreen: React.FC = () => {
               <Switch
                 value={security.biometricEnabled}
                 onValueChange={() => {}}
-                trackColor={{ false: "#333333", true: "#007AFF" }}
+                trackColor={{ false: theme.surface, true: theme.primary }}
+                thumbColor={
+                  security.biometricEnabled
+                    ? theme.background
+                    : theme.textSecondary
+                }
               />
             }
           />
@@ -96,7 +139,12 @@ export const SettingsScreen: React.FC = () => {
               <Switch
                 value={security.screenProtectionEnabled}
                 onValueChange={() => {}}
-                trackColor={{ false: "#333333", true: "#007AFF" }}
+                trackColor={{ false: theme.surface, true: theme.primary }}
+                thumbColor={
+                  security.screenProtectionEnabled
+                    ? theme.background
+                    : theme.textSecondary
+                }
               />
             }
           />
@@ -104,14 +152,11 @@ export const SettingsScreen: React.FC = () => {
 
         {/* General Settings */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>General</Text>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            General
+          </Text>
 
-          <SettingItem
-            icon="palette"
-            title="Theme"
-            subtitle="System default"
-            onPress={() => {}}
-          />
+          <ThemeSelector onPress={() => setThemeModalVisible(true)} />
 
           <SettingItem
             icon="translate"
@@ -130,7 +175,9 @@ export const SettingsScreen: React.FC = () => {
 
         {/* Support */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Support</Text>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            Support
+          </Text>
 
           <SettingItem icon="help" title="Help & Support" onPress={() => {}} />
 
@@ -149,11 +196,24 @@ export const SettingsScreen: React.FC = () => {
         </View>
 
         {/* Logout */}
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <MaterialIcons name="exit-to-app" size={24} color="#FF3B30" />
-          <Text style={styles.logoutText}>Sign Out</Text>
+        <TouchableOpacity
+          style={[
+            styles.logoutButton,
+            { backgroundColor: theme.card, borderColor: theme.error },
+          ]}
+          onPress={handleLogout}
+        >
+          <MaterialIcons name="exit-to-app" size={24} color={theme.error} />
+          <Text style={[styles.logoutText, { color: theme.error }]}>
+            Sign Out
+          </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <ThemeModal
+        visible={themeModalVisible}
+        onClose={() => setThemeModalVisible(false)}
+      />
     </SafeAreaView>
   );
 };

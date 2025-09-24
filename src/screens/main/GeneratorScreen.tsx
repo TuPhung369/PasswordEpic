@@ -5,42 +5,127 @@ import {
   StyleSheet,
   TouchableOpacity,
   Switch,
-  TextInput,
   TouchableWithoutFeedback,
   Keyboard,
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useAppSelector } from "../../hooks/redux";
+import Slider from "@react-native-community/slider";
+import { useAppSelector, useAppDispatch } from "../../hooks/redux";
 import { RootState } from "../../store";
+import { updateGeneratorSettings } from "../../store/slices/settingsSlice";
 import { MaterialIcons } from "@expo/vector-icons";
+import { useTheme } from "../../contexts/ThemeContext";
 
 export const GeneratorScreen: React.FC = () => {
+  const dispatch = useAppDispatch();
   const { generator } = useAppSelector((state: RootState) => state.settings);
+  const { theme } = useTheme();
   const [generatedPassword, setGeneratedPassword] = useState("");
-  const [length, setLength] = useState(generator.defaultLength.toString());
+  const [length, setLength] = useState(generator.defaultLength);
 
   const generatePassword = () => {
-    // TODO: Implement actual password generation
-    const chars =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+    let chars = "";
+
+    if (generator.includeUppercase) chars += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    if (generator.includeLowercase) chars += "abcdefghijklmnopqrstuvwxyz";
+    if (generator.includeNumbers) chars += "0123456789";
+    if (generator.includeSymbols) chars += "!@#$%^&*()_+-=[]{}|;:,.<>?";
+
+    // chars should never be empty now due to validation
     let result = "";
-    for (let i = 0; i < parseInt(length); i++) {
+    for (let i = 0; i < length; i++) {
       result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     setGeneratedPassword(result);
   };
-
   const copyToClipboard = () => {
     // TODO: Implement clipboard functionality
     console.log("Copied to clipboard:", generatedPassword);
   };
 
+  const updateLength = (newLength: number) => {
+    setLength(newLength);
+    dispatch(updateGeneratorSettings({ defaultLength: newLength }));
+  };
+
+  const canToggleOff = (currentOption: keyof typeof generator) => {
+    const options = [
+      "includeUppercase",
+      "includeLowercase",
+      "includeNumbers",
+      "includeSymbols",
+    ];
+    const enabledCount = options.filter(
+      (option) => generator[option as keyof typeof generator]
+    ).length;
+
+    // Nếu chỉ còn 1 option ON và đang cố tắt option đó, thì không cho phép
+    if (enabledCount === 1 && generator[currentOption]) {
+      return false;
+    }
+    return true;
+  };
+
+  const toggleUppercase = () => {
+    if (!canToggleOff("includeUppercase")) {
+      // TODO: Show toast/alert "At least one option must be enabled"
+      return;
+    }
+    dispatch(
+      updateGeneratorSettings({ includeUppercase: !generator.includeUppercase })
+    );
+  };
+
+  const toggleLowercase = () => {
+    if (!canToggleOff("includeLowercase")) {
+      return;
+    }
+    dispatch(
+      updateGeneratorSettings({ includeLowercase: !generator.includeLowercase })
+    );
+  };
+
+  const toggleNumbers = () => {
+    if (!canToggleOff("includeNumbers")) {
+      return;
+    }
+    dispatch(
+      updateGeneratorSettings({ includeNumbers: !generator.includeNumbers })
+    );
+  };
+
+  const toggleSymbols = () => {
+    if (!canToggleOff("includeSymbols")) {
+      return;
+    }
+    dispatch(
+      updateGeneratorSettings({ includeSymbols: !generator.includeSymbols })
+    );
+  };
+
+  const getEnabledOptionsCount = () => {
+    return [
+      generator.includeUppercase,
+      generator.includeLowercase,
+      generator.includeNumbers,
+      generator.includeSymbols,
+    ].filter(Boolean).length;
+  };
+
+  const isLastEnabledOption = (option: keyof typeof generator) => {
+    return getEnabledOptionsCount() === 1 && generator[option];
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>🔐 Generate</Text>
-        <Text style={styles.subtitle}>Create secure passwords</Text>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
+      <View style={[styles.header, { borderBottomColor: theme.border }]}>
+        <Text style={[styles.title, { color: theme.text }]}>🔐 Generate</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+          Create secure passwords
+        </Text>
       </View>
 
       <ScrollView
@@ -50,25 +135,42 @@ export const GeneratorScreen: React.FC = () => {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.content}>
-            <View style={styles.passwordContainer}>
-              <View style={styles.passwordHeader}>
-                <MaterialIcons name="vpn-key" size={20} color="#007AFF" />
-                <Text style={styles.passwordLabel}>Generated Password</Text>
+            <View
+              style={[
+                styles.passwordContainer,
+                { backgroundColor: theme.card, borderColor: theme.border },
+              ]}
+            >
+              <View
+                style={[
+                  styles.passwordHeader,
+                  { backgroundColor: theme.surface },
+                ]}
+              >
+                <MaterialIcons name="vpn-key" size={20} color={theme.primary} />
+                <Text
+                  style={[styles.passwordLabel, { color: theme.textSecondary }]}
+                >
+                  Generated Password
+                </Text>
               </View>
               <View style={styles.passwordDisplay}>
-                <Text style={styles.passwordText}>
+                <Text style={[styles.passwordText, { color: theme.text }]}>
                   {generatedPassword ||
                     "Tap Generate to create a secure password"}
                 </Text>
                 {generatedPassword && (
                   <TouchableOpacity
-                    style={styles.copyButton}
+                    style={[
+                      styles.copyButton,
+                      { backgroundColor: theme.surface },
+                    ]}
                     onPress={copyToClipboard}
                   >
                     <MaterialIcons
                       name="content-copy"
                       size={18}
-                      color="#007AFF"
+                      color={theme.primary}
                     />
                   </TouchableOpacity>
                 )}
@@ -77,7 +179,10 @@ export const GeneratorScreen: React.FC = () => {
 
             <View style={styles.buttonContainer}>
               <TouchableOpacity
-                style={styles.generateButton}
+                style={[
+                  styles.generateButton,
+                  { backgroundColor: theme.primary },
+                ]}
                 onPress={generatePassword}
               >
                 <MaterialIcons name="refresh" size={20} color="#ffffff" />
@@ -86,64 +191,183 @@ export const GeneratorScreen: React.FC = () => {
                 </Text>
               </TouchableOpacity>
               {generatedPassword && (
-                <TouchableOpacity style={styles.saveButton}>
-                  <MaterialIcons name="save" size={18} color="#007AFF" />
-                  <Text style={styles.saveButtonText}>Save to Vault</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.saveButton,
+                    { backgroundColor: theme.card, borderColor: theme.primary },
+                  ]}
+                >
+                  <MaterialIcons name="save" size={18} color={theme.primary} />
+                  <Text
+                    style={[styles.saveButtonText, { color: theme.primary }]}
+                  >
+                    Save to Vault
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
 
             <View style={styles.settings}>
-              <Text style={styles.settingsTitle}>Settings</Text>
+              <Text style={[styles.settingsTitle, { color: theme.text }]}>
+                Settings
+              </Text>
 
-              <View style={styles.setting}>
-                <Text style={styles.settingLabel}>Length</Text>
-                <TextInput
-                  style={styles.lengthInput}
+              <View
+                style={[
+                  styles.setting,
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                ]}
+              >
+                <View style={styles.sliderHeader}>
+                  <Text style={[styles.settingLabel, { color: theme.text }]}>
+                    Length
+                  </Text>
+                  <Text style={[styles.lengthValue, { color: theme.primary }]}>
+                    {length}
+                  </Text>
+                </View>
+                <Slider
+                  style={styles.slider}
+                  minimumValue={8}
+                  maximumValue={32}
                   value={length}
-                  onChangeText={setLength}
-                  keyboardType="numeric"
-                  maxLength={3}
-                  returnKeyType="done"
-                  onSubmitEditing={Keyboard.dismiss}
-                  onEndEditing={Keyboard.dismiss}
-                  blurOnSubmit={true}
+                  onValueChange={(value) => updateLength(Math.round(value))}
+                  step={1}
+                  minimumTrackTintColor={theme.primary}
+                  maximumTrackTintColor={theme.border}
+                  thumbTintColor={theme.primary}
                 />
               </View>
 
-              <View style={styles.setting}>
-                <Text style={styles.settingLabel}>Include Uppercase</Text>
+              <View
+                style={[
+                  styles.switchSetting,
+                  {
+                    backgroundColor: theme.card,
+                    borderColor: theme.border,
+                    opacity: isLastEnabledOption("includeUppercase") ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.settingLabel, { color: theme.text }]}>
+                  Include Uppercase
+                  {isLastEnabledOption("includeUppercase") && (
+                    <Text
+                      style={[styles.requiredText, { color: theme.primary }]}
+                    >
+                      {" "}
+                      *
+                    </Text>
+                  )}
+                </Text>
                 <Switch
                   value={generator.includeUppercase}
-                  onValueChange={() => {}}
-                  trackColor={{ false: "#333333", true: "#007AFF" }}
+                  onValueChange={toggleUppercase}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                  thumbColor={
+                    generator.includeUppercase
+                      ? theme.background
+                      : theme.textSecondary
+                  }
                 />
               </View>
 
-              <View style={styles.setting}>
-                <Text style={styles.settingLabel}>Include Lowercase</Text>
+              <View
+                style={[
+                  styles.switchSetting,
+                  {
+                    backgroundColor: theme.card,
+                    borderColor: theme.border,
+                    opacity: isLastEnabledOption("includeLowercase") ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.settingLabel, { color: theme.text }]}>
+                  Include Lowercase
+                  {isLastEnabledOption("includeLowercase") && (
+                    <Text
+                      style={[styles.requiredText, { color: theme.primary }]}
+                    >
+                      {" "}
+                      *
+                    </Text>
+                  )}
+                </Text>
                 <Switch
                   value={generator.includeLowercase}
-                  onValueChange={() => {}}
-                  trackColor={{ false: "#333333", true: "#007AFF" }}
+                  onValueChange={toggleLowercase}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                  thumbColor={
+                    generator.includeLowercase
+                      ? theme.background
+                      : theme.textSecondary
+                  }
                 />
               </View>
 
-              <View style={styles.setting}>
-                <Text style={styles.settingLabel}>Include Numbers</Text>
+              <View
+                style={[
+                  styles.switchSetting,
+                  {
+                    backgroundColor: theme.card,
+                    borderColor: theme.border,
+                    opacity: isLastEnabledOption("includeNumbers") ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.settingLabel, { color: theme.text }]}>
+                  Include Numbers
+                  {isLastEnabledOption("includeNumbers") && (
+                    <Text
+                      style={[styles.requiredText, { color: theme.primary }]}
+                    >
+                      {" "}
+                      *
+                    </Text>
+                  )}
+                </Text>
                 <Switch
                   value={generator.includeNumbers}
-                  onValueChange={() => {}}
-                  trackColor={{ false: "#333333", true: "#007AFF" }}
+                  onValueChange={toggleNumbers}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                  thumbColor={
+                    generator.includeNumbers
+                      ? theme.background
+                      : theme.textSecondary
+                  }
                 />
               </View>
 
-              <View style={styles.setting}>
-                <Text style={styles.settingLabel}>Include Symbols</Text>
+              <View
+                style={[
+                  styles.switchSetting,
+                  {
+                    backgroundColor: theme.card,
+                    borderColor: theme.border,
+                    opacity: isLastEnabledOption("includeSymbols") ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.settingLabel, { color: theme.text }]}>
+                  Include Symbols
+                  {isLastEnabledOption("includeSymbols") && (
+                    <Text
+                      style={[styles.requiredText, { color: theme.primary }]}
+                    >
+                      {" "}
+                      *
+                    </Text>
+                  )}
+                </Text>
                 <Switch
                   value={generator.includeSymbols}
-                  onValueChange={() => {}}
-                  trackColor={{ false: "#333333", true: "#007AFF" }}
+                  onValueChange={toggleSymbols}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                  thumbColor={
+                    generator.includeSymbols
+                      ? theme.background
+                      : theme.textSecondary
+                  }
                 />
               </View>
             </View>
@@ -274,6 +498,15 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   setting: {
+    backgroundColor: "#1C1C1E",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 0.5,
+    borderColor: "#38383A",
+  },
+  switchSetting: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -285,20 +518,30 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     borderColor: "#38383A",
   },
+  sliderHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
   settingLabel: {
     fontSize: 16,
     color: "#ffffff",
     fontWeight: "500",
   },
-  lengthInput: {
-    backgroundColor: "#2C2C2E",
-    color: "#ffffff",
-    padding: 12,
-    borderRadius: 8,
-    minWidth: 70,
-    textAlign: "center",
+  lengthValue: {
     fontSize: 16,
     fontWeight: "600",
+    minWidth: 30,
+    textAlign: "center",
+  },
+  slider: {
+    width: "100%",
+    height: 40,
+  },
+  requiredText: {
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });
 

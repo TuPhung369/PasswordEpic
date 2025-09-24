@@ -7,9 +7,11 @@ import {
   loginSuccess,
   loginFailure,
 } from "../../store/slices/authSlice";
+import { useTheme } from "../../contexts/ThemeContext";
 
 export const LoginScreen: React.FC = () => {
   const dispatch = useAppDispatch();
+  const { theme } = useTheme();
 
   const handleGoogleSignIn = async () => {
     try {
@@ -34,21 +36,23 @@ export const LoginScreen: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
       <View style={styles.content}>
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: theme.text }]}>Welcome Back</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
           Sign in to access your secure password vault
         </Text>
 
         <TouchableOpacity
-          style={styles.googleButton}
+          style={[styles.googleButton, { backgroundColor: theme.primary }]}
           onPress={handleGoogleSignIn}
         >
           <Text style={styles.googleButtonText}>Continue with Google</Text>
         </TouchableOpacity>
 
-        <Text style={styles.securityNote}>
+        <Text style={[styles.securityNote, { color: theme.textSecondary }]}>
           🔒 Your data is encrypted end-to-end and never stored on our servers
         </Text>
       </View>
@@ -100,3 +104,4 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 });
+

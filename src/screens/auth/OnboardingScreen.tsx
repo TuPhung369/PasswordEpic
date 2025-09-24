@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "../../navigation/AuthNavigator";
+import { useTheme } from "../../contexts/ThemeContext";
 
 type OnboardingScreenNavigationProp = NativeStackNavigationProp<
   AuthStackParamList,
@@ -12,31 +13,45 @@ type OnboardingScreenNavigationProp = NativeStackNavigationProp<
 
 export const OnboardingScreen: React.FC = () => {
   const navigation = useNavigation<OnboardingScreenNavigationProp>();
+  const { theme } = useTheme();
 
   const handleGetStarted = () => {
     navigation.navigate("Login");
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
       <View style={styles.content}>
-        <Text style={styles.title}>PasswordEpic</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: theme.text }]}>PasswordEpic</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
           Ultra-Secure Mobile Password Manager
         </Text>
-        <Text style={styles.description}>
+        <Text style={[styles.description, { color: theme.textSecondary }]}>
           Protect your digital life with military-grade encryption and seamless
           auto-fill functionality.
         </Text>
 
         <View style={styles.features}>
-          <Text style={styles.feature}>🔐 Zero-Knowledge Architecture</Text>
-          <Text style={styles.feature}>🛡️ Biometric Authentication</Text>
-          <Text style={styles.feature}>⚡ Secure Auto-fill</Text>
-          <Text style={styles.feature}>🔒 End-to-End Encryption</Text>
+          <Text style={[styles.feature, { color: theme.text }]}>
+            🔐 Zero-Knowledge Architecture
+          </Text>
+          <Text style={[styles.feature, { color: theme.text }]}>
+            🛡️ Biometric Authentication
+          </Text>
+          <Text style={[styles.feature, { color: theme.text }]}>
+            ⚡ Secure Auto-fill
+          </Text>
+          <Text style={[styles.feature, { color: theme.text }]}>
+            🔒 End-to-End Encryption
+          </Text>
         </View>
 
-        <TouchableOpacity style={styles.button} onPress={handleGetStarted}>
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: theme.primary }]}
+          onPress={handleGetStarted}
+        >
           <Text style={styles.buttonText}>Get Started</Text>
         </TouchableOpacity>
       </View>
@@ -47,7 +62,6 @@ export const OnboardingScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a1a",
   },
   content: {
     flex: 1,
@@ -58,18 +72,16 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: "bold",
-    color: "#007AFF",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 18,
-    color: "#ffffff",
     textAlign: "center",
     marginBottom: 24,
+    fontWeight: "600",
   },
   description: {
     fontSize: 16,
-    color: "#cccccc",
     textAlign: "center",
     lineHeight: 24,
     marginBottom: 48,
@@ -80,12 +92,11 @@ const styles = StyleSheet.create({
   },
   feature: {
     fontSize: 16,
-    color: "#ffffff",
     marginBottom: 12,
     textAlign: "center",
+    fontWeight: "500",
   },
   button: {
-    backgroundColor: "#007AFF",
     paddingHorizontal: 48,
     paddingVertical: 16,
     borderRadius: 12,
@@ -98,3 +109,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
+

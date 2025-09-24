@@ -1,14 +1,11 @@
 #import "AppDelegate.h"
 #import <React/RCTBundleURLProvider.h>
-#import <Firebase.h>
+// #import <Firebase.h>
 
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
-  // Initialize Firebase
-  [FIRApp configure];
-  
   self.moduleName = @"PasswordEpic";
   // You can add your custom initial props in the dictionary below.
   // They will be passed down to the ViewController used by React Native.
@@ -22,7 +19,7 @@
 #if DEBUG
   return [[RCTBundleURLProvider sharedSettings] jsBundleURLForBundleRoot:@"index"];
 #else
-  return [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"jsbundle"];
+  return [[NSBundle mainBundle] URLForResource:@"PasswordEpic" withExtension:@"jsbundle"];
 #endif
 }
 

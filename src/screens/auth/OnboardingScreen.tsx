@@ -1,25 +1,20 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  SafeAreaView,
-} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {AuthStackParamList} from '../../navigation/AuthNavigator';
+import React from "react";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { AuthStackParamList } from "../../navigation/AuthNavigator";
 
 type OnboardingScreenNavigationProp = NativeStackNavigationProp<
   AuthStackParamList,
-  'Onboarding'
+  "Onboarding"
 >;
 
 export const OnboardingScreen: React.FC = () => {
   const navigation = useNavigation<OnboardingScreenNavigationProp>();
 
   const handleGetStarted = () => {
-    navigation.navigate('Login');
+    navigation.navigate("Login");
   };
 
   return (
@@ -52,54 +47,54 @@ export const OnboardingScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: "#1a1a1a",
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 32,
   },
   title: {
     fontSize: 32,
-    fontWeight: 'bold',
-    color: '#007AFF',
+    fontWeight: "bold",
+    color: "#007AFF",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 18,
-    color: '#ffffff',
-    textAlign: 'center',
+    color: "#ffffff",
+    textAlign: "center",
     marginBottom: 24,
   },
   description: {
     fontSize: 16,
-    color: '#cccccc',
-    textAlign: 'center',
+    color: "#cccccc",
+    textAlign: "center",
     lineHeight: 24,
     marginBottom: 48,
   },
   features: {
-    alignSelf: 'stretch',
+    alignSelf: "stretch",
     marginBottom: 48,
   },
   feature: {
     fontSize: 16,
-    color: '#ffffff',
+    color: "#ffffff",
     marginBottom: 12,
-    textAlign: 'center',
+    textAlign: "center",
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: "#007AFF",
     paddingHorizontal: 48,
     paddingVertical: 16,
     borderRadius: 12,
     minWidth: 200,
   },
   buttonText: {
-    color: '#ffffff',
+    color: "#ffffff",
     fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

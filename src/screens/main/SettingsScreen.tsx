@@ -1,21 +1,22 @@
-import React from 'react';
+import React from "react";
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   Switch,
   ScrollView,
-} from 'react-native';
-import {useAppSelector, useAppDispatch} from '../../hooks/redux';
-import {logout} from '../../store/slices/authSlice';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useAppSelector, useAppDispatch } from "../../hooks/redux";
+import { RootState } from "../../store";
+import { logout } from "../../store/slices/authSlice";
+import { MaterialIcons } from "@expo/vector-icons";
 
 export const SettingsScreen: React.FC = () => {
   const dispatch = useAppDispatch();
-  const {user} = useAppSelector(state => state.auth);
-  const {security} = useAppSelector(state => state.settings);
+  const { user } = useAppSelector((state: RootState) => state.auth);
+  const { security } = useAppSelector((state: RootState) => state.settings);
 
   const handleLogout = () => {
     dispatch(logout());
@@ -27,23 +28,26 @@ export const SettingsScreen: React.FC = () => {
     subtitle?: string;
     onPress?: () => void;
     rightElement?: React.ReactNode;
-  }> = ({icon, title, subtitle, onPress, rightElement}) => (
+  }> = ({ icon, title, subtitle, onPress, rightElement }) => (
     <TouchableOpacity style={styles.settingItem} onPress={onPress}>
       <View style={styles.settingIcon}>
-        <Icon name={icon} size={24} color="#007AFF" />
+        <MaterialIcons name={icon} size={24} color="#007AFF" />
       </View>
       <View style={styles.settingContent}>
         <Text style={styles.settingTitle}>{title}</Text>
         {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
       </View>
-      {rightElement || <Icon name="chevron-right" size={24} color="#cccccc" />}
+      {rightElement || (
+        <MaterialIcons name="chevron-right" size={24} color="#cccccc" />
+      )}
     </TouchableOpacity>
   );
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Settings</Text>
+        <Text style={styles.title}>⚙️ Settings</Text>
+        <Text style={styles.subtitle}>Manage your security preferences</Text>
       </View>
 
       <ScrollView style={styles.content}>
@@ -51,10 +55,10 @@ export const SettingsScreen: React.FC = () => {
         <View style={styles.section}>
           <View style={styles.userProfile}>
             <View style={styles.avatar}>
-              <Icon name="person" size={32} color="#007AFF" />
+              <MaterialIcons name="person" size={32} color="#007AFF" />
             </View>
             <View style={styles.userInfo}>
-              <Text style={styles.userName}>{user?.displayName || 'User'}</Text>
+              <Text style={styles.userName}>{user?.displayName || "User"}</Text>
               <Text style={styles.userEmail}>{user?.email}</Text>
             </View>
           </View>
@@ -63,7 +67,7 @@ export const SettingsScreen: React.FC = () => {
         {/* Security Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Security</Text>
-          
+
           <SettingItem
             icon="fingerprint"
             title="Biometric Authentication"
@@ -72,7 +76,7 @@ export const SettingsScreen: React.FC = () => {
               <Switch
                 value={security.biometricEnabled}
                 onValueChange={() => {}}
-                trackColor={{false: '#333333', true: '#007AFF'}}
+                trackColor={{ false: "#333333", true: "#007AFF" }}
               />
             }
           />
@@ -92,7 +96,7 @@ export const SettingsScreen: React.FC = () => {
               <Switch
                 value={security.screenProtectionEnabled}
                 onValueChange={() => {}}
-                trackColor={{false: '#333333', true: '#007AFF'}}
+                trackColor={{ false: "#333333", true: "#007AFF" }}
               />
             }
           />
@@ -101,7 +105,7 @@ export const SettingsScreen: React.FC = () => {
         {/* General Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>General</Text>
-          
+
           <SettingItem
             icon="palette"
             title="Theme"
@@ -110,7 +114,7 @@ export const SettingsScreen: React.FC = () => {
           />
 
           <SettingItem
-            icon="language"
+            icon="translate"
             title="Language"
             subtitle="English"
             onPress={() => {}}
@@ -127,15 +131,11 @@ export const SettingsScreen: React.FC = () => {
         {/* Support */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Support</Text>
-          
-          <SettingItem
-            icon="help"
-            title="Help & Support"
-            onPress={() => {}}
-          />
+
+          <SettingItem icon="help" title="Help & Support" onPress={() => {}} />
 
           <SettingItem
-            icon="privacy-tip"
+            icon="visibility-off"
             title="Privacy Policy"
             onPress={() => {}}
           />
@@ -150,7 +150,7 @@ export const SettingsScreen: React.FC = () => {
 
         {/* Logout */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Icon name="logout" size={24} color="#FF3B30" />
+          <MaterialIcons name="exit-to-app" size={24} color="#FF3B30" />
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -161,45 +161,56 @@ export const SettingsScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: "#000000",
   },
   header: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 20,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#38383A",
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#ffffff",
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#8E8E93",
+    fontWeight: "500",
   },
   content: {
     flex: 1,
+    paddingTop: 20,
   },
   section: {
     marginBottom: 32,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#ffffff",
     marginBottom: 16,
     paddingHorizontal: 20,
   },
   userProfile: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2a2a2a',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1C1C1E",
     padding: 20,
     marginHorizontal: 20,
-    borderRadius: 12,
+    borderRadius: 16,
+    borderWidth: 0.5,
+    borderColor: "#38383A",
   },
   avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#333333',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#2C2C2E",
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 16,
   },
   userInfo: {
@@ -207,59 +218,65 @@ const styles = StyleSheet.create({
   },
   userName: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
+    fontWeight: "600",
+    color: "#ffffff",
     marginBottom: 4,
   },
   userEmail: {
     fontSize: 14,
-    color: '#cccccc',
+    color: "#8E8E93",
   },
   settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2a2a2a',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1C1C1E",
     padding: 16,
     marginHorizontal: 20,
-    marginBottom: 1,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: 0.5,
+    borderColor: "#38383A",
   },
   settingIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#333333',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#2C2C2E",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
   },
   settingContent: {
     flex: 1,
   },
   settingTitle: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#ffffff',
+    fontWeight: "600",
+    color: "#ffffff",
     marginBottom: 2,
   },
   settingSubtitle: {
     fontSize: 14,
-    color: '#cccccc',
+    color: "#8E8E93",
   },
   logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2a2a2a',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1C1C1E",
     padding: 16,
     marginHorizontal: 20,
     marginTop: 20,
     marginBottom: 40,
-    borderRadius: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#FF3B30",
   },
   logoutText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#FF3B30',
+    fontWeight: "600",
+    color: "#FF3B30",
     marginLeft: 8,
   },
 });
+

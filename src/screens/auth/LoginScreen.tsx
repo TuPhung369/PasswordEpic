@@ -1,14 +1,12 @@
-import React from 'react';
+import React from "react";
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useAppDispatch } from "../../hooks/redux";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  SafeAreaView,
-  Alert,
-} from 'react-native';
-import {useAppDispatch} from '../../hooks/redux';
-import {loginStart, loginSuccess, loginFailure} from '../../store/slices/authSlice';
+  loginStart,
+  loginSuccess,
+  loginFailure,
+} from "../../store/slices/authSlice";
 
 export const LoginScreen: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -16,22 +14,22 @@ export const LoginScreen: React.FC = () => {
   const handleGoogleSignIn = async () => {
     try {
       dispatch(loginStart());
-      
+
       // TODO: Implement actual Google Sign-In
       // For now, simulate successful login
       setTimeout(() => {
         dispatch(
           loginSuccess({
-            uid: 'demo-user-id',
-            email: 'demo@example.com',
-            displayName: 'Demo User',
+            uid: "demo-user-id",
+            email: "demo@example.com",
+            displayName: "Demo User",
             photoURL: null,
-          }),
+          })
         );
       }, 1000);
     } catch (error) {
-      dispatch(loginFailure('Failed to sign in with Google'));
-      Alert.alert('Error', 'Failed to sign in with Google');
+      dispatch(loginFailure("Failed to sign in with Google"));
+      Alert.alert("Error", "Failed to sign in with Google");
     }
   };
 
@@ -43,7 +41,10 @@ export const LoginScreen: React.FC = () => {
           Sign in to access your secure password vault
         </Text>
 
-        <TouchableOpacity style={styles.googleButton} onPress={handleGoogleSignIn}>
+        <TouchableOpacity
+          style={styles.googleButton}
+          onPress={handleGoogleSignIn}
+        >
           <Text style={styles.googleButtonText}>Continue with Google</Text>
         </TouchableOpacity>
 
@@ -58,28 +59,28 @@ export const LoginScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: "#1a1a1a",
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 32,
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#ffffff',
+    fontWeight: "bold",
+    color: "#ffffff",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#cccccc',
-    textAlign: 'center',
+    color: "#cccccc",
+    textAlign: "center",
     marginBottom: 48,
   },
   googleButton: {
-    backgroundColor: '#4285F4',
+    backgroundColor: "#4285F4",
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
@@ -87,15 +88,15 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   googleButtonText: {
-    color: '#ffffff',
+    color: "#ffffff",
     fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: "600",
+    textAlign: "center",
   },
   securityNote: {
     fontSize: 14,
-    color: '#888888',
-    textAlign: 'center',
+    color: "#888888",
+    textAlign: "center",
     lineHeight: 20,
   },
 });

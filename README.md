@@ -1,4 +1,9 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# PasswordEpic
+
+[![CI/CD Pipeline](https://github.com/TuPhung369/PasswordEpic/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/TuPhung369/PasswordEpic/actions/workflows/ci-cd.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+An ultra-secure mobile password manager built with React Native, featuring end-to-end encryption, biometric authentication, and native auto-fill capabilities.
 
 # Getting Started
 
@@ -86,12 +91,48 @@ You've successfully run and modified your React Native App. :partying_face:
 
 If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
 
-# Learn More
+## 🔐 Security Features
 
-To learn more about React Native, take a look at the following resources:
+- **End-to-End Encryption**: AES-GCM 256-bit encryption with PBKDF2 key derivation
+- **Zero-Knowledge Architecture**: All encryption happens on-device
+- **Biometric Authentication**: Face ID, Touch ID, and Fingerprint support
+- **Native Auto-fill**: Secure password auto-fill for Android and iOS
+- **Multi-layer Security**: Root/jailbreak detection, anti-tampering measures
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+## 🚀 Development
+
+### Prerequisites
+
+- Node.js 20+
+- Android Studio with SDK 34
+- Java 17
+
+### Available Scripts
+
+```bash
+npm run android          # Run on Android
+npm run ios             # Run on iOS
+npm start               # Start Metro bundler
+npm test                # Run tests
+npm run lint            # Run ESLint
+npm run type-check      # TypeScript type checking
+npm run security-audit  # Security vulnerability scan
+npm run format          # Format code with Prettier
+```
+
+## 📱 Platform Support
+
+- ✅ Android (SDK 26+)
+- 🔄 iOS (iOS 13+) - In development
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request

@@ -1,0 +1,29 @@
+{
+  // Tắt Java Language Server cho node_modules để tránh warning
+  "java.project.sourcePaths": [],
+  "java.project.outputPath": "",
+  "java.compile.nullAnalysis.mode": "automatic",
+  "java.configuration.checkProjectSettingsExclusions": false,
+  // Loại trừ các thư mục không cần thiết khỏi Java indexing
+  "files.exclude": {
+    "**/node_modules/**/android": true,
+    "**/node_modules/**/.gradle": true,
+    "**/node_modules/**/build": true
+  },
+  // Cấu hình cho React Native
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "typescript.suggest.autoImports": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  // Loại trừ các thư mục khỏi file watcher
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/android/build/**": true,
+    "**/ios/build/**": true,
+    "**/.gradle/**": true
+  },
+  "cSpell.words": [
+    "googleusercontent"
+  ]
+}

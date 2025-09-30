@@ -44,8 +44,8 @@ export const initializeGoogleSignIn = async (): Promise<boolean> => {
       typeof GoogleSignin.configure,
     );
     console.log(
-      'GoogleSignin.isSignedIn available:',
-      typeof GoogleSignin.isSignedIn,
+      'GoogleSignin.hasPreviousSignIn available:',
+      typeof GoogleSignin.hasPreviousSignIn,
     );
 
     // Configure Google Sign-In with web client ID for Firebase authentication
@@ -79,25 +79,6 @@ export const isGoogleSignInReady = (): boolean => {
   return isGoogleSignInInitialized;
 };
 
-// Wait for app to be active
-const waitForActiveState = (): Promise<void> => {
-  return new Promise(resolve => {
-    if (AppState.currentState === 'active') {
-      resolve();
-      return;
-    }
-
-    const handleAppStateChange = (nextAppState: string) => {
-      if (nextAppState === 'active') {
-        AppState.removeEventListener('change', handleAppStateChange);
-        resolve();
-      }
-    };
-
-    AppState.addEventListener('change', handleAppStateChange);
-  });
-};
-
 // Wait for Android activity to be ready
 const waitForAndroidActivity = (): Promise<void> => {
   return new Promise(resolve => {
@@ -110,13 +91,16 @@ const waitForAndroidActivity = (): Promise<void> => {
 
     const handleAppStateChange = (nextAppState: string) => {
       if (nextAppState === 'active') {
-        AppState.removeEventListener('change', handleAppStateChange);
+        subscription.remove();
         // Add additional delay for Android activity to be fully ready
         setTimeout(resolve, 1000);
       }
     };
 
-    AppState.addEventListener('change', handleAppStateChange);
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
   });
 };
 
@@ -138,7 +122,7 @@ const checkPlayServices = async (retries = 5): Promise<boolean> => {
         // Wait progressively longer before retry
         const delay = (i + 1) * 1000; // 1s, 2s, 3s, 4s
         console.log(`Waiting ${delay}ms before retry...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise<void>(resolve => setTimeout(resolve, delay));
       } else {
         // If all retries failed, check if it's an activity issue
         if (error.message && error.message.includes('activity is null')) {
@@ -188,7 +172,7 @@ export const signInWithGoogleNative = async (): Promise<GoogleAuthResult> => {
 
     try {
       console.log('Calling GoogleSignin.signIn()...');
-      userInfo = await GoogleSignin.signIn({});
+      userInfo = await GoogleSignin.signIn();
       console.log('GoogleSignin.signIn() completed successfully');
     } catch (signInError: any) {
       console.log('GoogleSignin.signIn() failed:', signInError.message);
@@ -200,9 +184,9 @@ export const signInWithGoogleNative = async (): Promise<GoogleAuthResult> => {
         console.log(
           '⚠️ Activity issue during sign-in, waiting and retrying...',
         );
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise<void>(resolve => setTimeout(resolve, 2000));
         console.log('Retrying GoogleSignin.signIn()...');
-        userInfo = await GoogleSignin.signIn({});
+        userInfo = await GoogleSignin.signIn();
         console.log('Retry GoogleSignin.signIn() completed successfully');
       } else {
         throw signInError;
@@ -219,46 +203,64 @@ export const signInWithGoogleNative = async (): Promise<GoogleAuthResult> => {
       keys: userInfo ? Object.keys(userInfo) : [],
     });
 
-    // Handle different userInfo structures
-    let actualUserInfo = userInfo;
-    if (userInfo && userInfo.type === 'success' && userInfo.data) {
-      console.log('Using userInfo.data structure');
-      actualUserInfo = userInfo.data;
-    } else {
-      console.log('Using direct userInfo structure');
-    }
-
-    // Log the actual userInfo structure
-    console.log('Actual userInfo structure:', {
-      hasUser: !!(actualUserInfo && actualUserInfo.user),
-      hasIdToken: !!(actualUserInfo && actualUserInfo.idToken),
-      hasAccessToken: !!(actualUserInfo && actualUserInfo.accessToken),
-      hasServerAuthCode: !!(actualUserInfo && actualUserInfo.serverAuthCode),
-      userKeys:
-        actualUserInfo && actualUserInfo.user
-          ? Object.keys(actualUserInfo.user)
-          : [],
-    });
-
     // Validate userInfo structure
-    if (!actualUserInfo || !actualUserInfo.user) {
-      console.error('❌ Invalid userInfo structure:', userInfo);
+    if (!userInfo) {
+      console.error('❌ No user information received from Google');
       return {
         success: false,
-        error: 'Invalid user information received from Google',
+        error: 'No user information received from Google',
       };
     }
 
+    // Handle different response structures
+    let user: any;
+    const userInfoAny = userInfo as any;
+
+    // Check if response has 'data.user' property (v16+ structure)
+    if (userInfoAny.data && userInfoAny.data.user) {
+      console.log('Using userInfo.data.user structure');
+      user = userInfoAny.data.user;
+    }
+    // Check if response has 'user' property
+    else if (userInfoAny.user) {
+      console.log('Using userInfo.user structure');
+      user = userInfoAny.user;
+    }
+    // Check if response has 'data' property (fallback)
+    else if (userInfoAny.data) {
+      console.log('Using userInfo.data structure (fallback)');
+      user = userInfoAny.data;
+    }
+    // Otherwise, assume userInfo is the user object directly
+    else {
+      console.log('Using direct userInfo structure');
+      user = userInfoAny;
+    }
+
+    console.log('Extracted user object:', {
+      hasId: !!user?.id,
+      hasEmail: !!user?.email,
+      hasName: !!user?.name,
+      hasPhoto: !!user?.photo,
+      userKeys: user ? Object.keys(user) : [],
+      userType: typeof user,
+    });
+
+    // Debug: Log the full structure if user is missing required fields
+    if (!user || !user.id || !user.email || !user.name) {
+      console.log(
+        '🔍 Full userInfo for debugging:',
+        JSON.stringify(userInfo, null, 2),
+      );
+    }
+
     // Validate required user fields
-    if (
-      !actualUserInfo.user.id ||
-      !actualUserInfo.user.email ||
-      !actualUserInfo.user.name
-    ) {
+    if (!user || !user.id || !user.email || !user.name) {
       console.error('❌ Missing required user fields:', {
-        id: actualUserInfo.user.id,
-        email: actualUserInfo.user.email,
-        name: actualUserInfo.user.name,
+        hasUser: !!user,
+        id: user?.id,
+        email: user?.email,
+        name: user?.name,
       });
       return {
         success: false,
@@ -267,18 +269,35 @@ export const signInWithGoogleNative = async (): Promise<GoogleAuthResult> => {
     }
 
     console.log('🎉 Google Sign-In successful:', {
-      email: actualUserInfo.user.email,
-      name: actualUserInfo.user.name,
+      email: user.email,
+      name: user.name,
     });
 
+    // Get tokens from the response data
+    let idToken: string | undefined;
+    let accessToken: string | undefined;
+
+    if (userInfoAny.data) {
+      idToken = userInfoAny.data.idToken;
+      accessToken = userInfoAny.data.accessToken;
+    } else {
+      // Fallback: try to get tokens separately
+      try {
+        const tokens = await GoogleSignin.getTokens();
+        idToken = tokens.idToken;
+        accessToken = tokens.accessToken;
+      } catch (error) {
+        console.warn('Could not get tokens separately:', error);
+      }
+    }
+
     console.log('🎉 Google Sign-In tokens:', {
-      hasIdToken: !!actualUserInfo.idToken,
-      hasServerAuthCode: !!actualUserInfo.serverAuthCode,
-      hasAccessToken: !!actualUserInfo.accessToken,
+      hasIdToken: !!idToken,
+      hasAccessToken: !!accessToken,
     });
 
     // Validate that we have the required ID token for Firebase
-    if (!actualUserInfo.idToken) {
+    if (!idToken) {
       console.error('❌ No ID token received from Google Sign-In');
       return {
         success: false,
@@ -289,13 +308,13 @@ export const signInWithGoogleNative = async (): Promise<GoogleAuthResult> => {
     return {
       success: true,
       user: {
-        id: actualUserInfo.user.id,
-        email: actualUserInfo.user.email,
-        name: actualUserInfo.user.name,
-        picture: actualUserInfo.user.photo || undefined,
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        picture: user.photo || undefined,
       },
-      idToken: actualUserInfo.idToken,
-      accessToken: actualUserInfo.accessToken || undefined, // Firebase typically only needs idToken
+      idToken: idToken,
+      accessToken: accessToken || undefined,
     };
   } catch (error: any) {
     console.error('❌ Google Sign-In error:', error);

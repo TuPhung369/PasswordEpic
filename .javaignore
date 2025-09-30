@@ -1,0 +1,5 @@
+# Java Language Server - ignore node_modules Android projects
+node_modules/**/android/
+node_modules/**/.settings/
+node_modules/**/build/
+node_modules/**/.gradle/

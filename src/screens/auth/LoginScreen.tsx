@@ -119,7 +119,7 @@ export const LoginScreen: React.FC = () => {
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#ffffff" />
-              <Text style={[styles.googleButtonText, { marginLeft: 8 }]}>
+              <Text style={[styles.googleButtonText, styles.loadingText]}>
                 Signing in...
               </Text>
             </View>
@@ -205,6 +205,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  loadingText: {
+    marginLeft: 8,
   },
   warningText: {
     fontSize: 14,

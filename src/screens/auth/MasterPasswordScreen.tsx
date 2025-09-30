@@ -15,6 +15,34 @@ import { useAppDispatch } from '../../hooks/redux';
 import { setMasterPasswordConfigured } from '../../store/slices/authSlice';
 import { storeMasterPassword } from '../../services/secureStorageService';
 
+interface RequirementItemProps {
+  met: boolean;
+  text: string;
+  theme: any;
+}
+
+const RequirementItem: React.FC<RequirementItemProps> = ({
+  met,
+  text,
+  theme,
+}) => (
+  <View style={styles.requirementItem}>
+    <MaterialIcons
+      name={met ? 'check-circle' : 'radio-button-unchecked'}
+      size={16}
+      color={met ? '#00C851' : theme.textSecondary}
+    />
+    <Text
+      style={[
+        styles.requirementText,
+        met ? styles.requirementTextMet : { color: theme.textSecondary },
+      ]}
+    >
+      {text}
+    </Text>
+  </View>
+);
+
 interface PasswordStrength {
   score: number;
   label: string;
@@ -44,7 +72,7 @@ export const MasterPasswordScreen: React.FC = () => {
       uppercase: /[A-Z]/.test(pwd),
       lowercase: /[a-z]/.test(pwd),
       numbers: /\d/.test(pwd),
-      symbols: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
+      symbols: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(pwd),
     };
 
     const score = Object.values(requirements).filter(Boolean).length;
@@ -122,29 +150,6 @@ export const MasterPasswordScreen: React.FC = () => {
       setIsLoading(false);
     }
   };
-
-  const RequirementItem: React.FC<{
-    met: boolean;
-    text: string;
-  }> = ({ met, text }) => (
-    <View style={styles.requirementItem}>
-      <MaterialIcons
-        name={met ? 'check-circle' : 'radio-button-unchecked'}
-        size={16}
-        color={met ? '#00C851' : theme.textSecondary}
-      />
-      <Text
-        style={[
-          styles.requirementText,
-          {
-            color: met ? '#00C851' : theme.textSecondary,
-          },
-        ]}
-      >
-        {text}
-      </Text>
-    </View>
-  );
 
   return (
     <SafeAreaView
@@ -254,9 +259,9 @@ export const MasterPasswordScreen: React.FC = () => {
               <Text
                 style={[
                   styles.matchText,
-                  {
-                    color: doPasswordsMatch ? '#00C851' : theme.error,
-                  },
+                  doPasswordsMatch
+                    ? styles.matchTextSuccess
+                    : { color: theme.error },
                 ]}
               >
                 {doPasswordsMatch
@@ -275,22 +280,27 @@ export const MasterPasswordScreen: React.FC = () => {
           <RequirementItem
             met={passwordStrength.requirements.length}
             text="At least 12 characters"
+            theme={theme}
           />
           <RequirementItem
             met={passwordStrength.requirements.uppercase}
             text="At least one uppercase letter"
+            theme={theme}
           />
           <RequirementItem
             met={passwordStrength.requirements.lowercase}
             text="At least one lowercase letter"
+            theme={theme}
           />
           <RequirementItem
             met={passwordStrength.requirements.numbers}
             text="At least one number"
+            theme={theme}
           />
           <RequirementItem
             met={passwordStrength.requirements.symbols}
             text="At least one special character"
+            theme={theme}
           />
         </View>
 
@@ -312,7 +322,7 @@ export const MasterPasswordScreen: React.FC = () => {
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#ffffff" />
-              <Text style={[styles.buttonText, { marginLeft: 8 }]}>
+              <Text style={[styles.buttonText, styles.loadingButtonText]}>
                 Setting Password...
               </Text>
             </View>
@@ -419,6 +429,15 @@ const styles = StyleSheet.create({
   },
   requirementText: {
     fontSize: 14,
+    marginLeft: 8,
+  },
+  requirementTextMet: {
+    color: '#00C851',
+  },
+  matchTextSuccess: {
+    color: '#00C851',
+  },
+  loadingButtonText: {
     marginLeft: 8,
   },
   setPasswordButton: {

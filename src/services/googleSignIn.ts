@@ -40,8 +40,8 @@ const getGoogleSignin = () => {
 
 export const configureGoogleSignIn = () => {
   try {
-    const GoogleSignin = getGoogleSignin();
-    if (!GoogleSignin) {
+    const googleSigninInstance = getGoogleSignin();
+    if (!googleSigninInstance) {
       throw new Error('Google Sign-In module not available');
     }
 
@@ -63,7 +63,7 @@ export const configureGoogleSignIn = () => {
     console.log('   🍎 iOS Client ID:', GOOGLE_CLIENT_IDS.IOS);
     console.log('   📦 Android Package:', 'com.passwordepic.mobile');
 
-    GoogleSignin.configure({
+    googleSigninInstance.configure({
       webClientId: GOOGLE_WEB_CLIENT_ID,
       iosClientId: Platform.OS === 'ios' ? GOOGLE_IOS_CLIENT_ID : undefined,
       offlineAccess: true,
@@ -80,8 +80,8 @@ export const configureGoogleSignIn = () => {
 
 export const googleSignIn = async () => {
   try {
-    const GoogleSignin = getGoogleSignin();
-    if (!GoogleSignin) {
+    const googleSigninInstance = getGoogleSignin();
+    if (!googleSigninInstance) {
       return {
         success: false,
         error: 'Google Sign-In module not available',
@@ -89,13 +89,13 @@ export const googleSignIn = async () => {
     }
 
     // Check if device supports Google Play Services
-    await GoogleSignin.hasPlayServices();
+    await googleSigninInstance.hasPlayServices();
 
     // Sign in with Google
-    const userInfo = await GoogleSignin.signIn();
+    const userInfo = await googleSigninInstance.signIn();
 
     // Get tokens for Firebase authentication
-    const tokens = await GoogleSignin.getTokens();
+    const tokens = await googleSigninInstance.getTokens();
 
     return {
       success: true,
@@ -125,12 +125,12 @@ export const googleSignIn = async () => {
 
 export const googleSignOut = async () => {
   try {
-    const GoogleSignin = getGoogleSignin();
-    if (!GoogleSignin) {
+    const googleSigninInstance = getGoogleSignin();
+    if (!googleSigninInstance) {
       return { success: false, error: 'Google Sign-In module not available' };
     }
 
-    await GoogleSignin.signOut();
+    await googleSigninInstance.signOut();
     return { success: true };
   } catch (error: any) {
     console.error('Google Sign-Out error:', error);
@@ -140,11 +140,11 @@ export const googleSignOut = async () => {
 
 export const isSignedIn = async () => {
   try {
-    const GoogleSignin = getGoogleSignin();
-    if (!GoogleSignin) {
+    const googleSigninInstance = getGoogleSignin();
+    if (!googleSigninInstance) {
       return false;
     }
-    return await GoogleSignin.isSignedIn();
+    return await googleSigninInstance.isSignedIn();
   } catch (error) {
     return false;
   }
@@ -152,12 +152,12 @@ export const isSignedIn = async () => {
 
 export const getCurrentUser = async () => {
   try {
-    const GoogleSignin = getGoogleSignin();
-    if (!GoogleSignin) {
+    const googleSigninInstance = getGoogleSignin();
+    if (!googleSigninInstance) {
       return { success: false, error: 'Google Sign-In module not available' };
     }
 
-    const userInfo = await GoogleSignin.signInSilently();
+    const userInfo = await googleSigninInstance.signInSilently();
     return { success: true, userInfo };
   } catch (error) {
     return { success: false, error };

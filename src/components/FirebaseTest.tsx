@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { initializeFirebase, signInWithGoogle } from '../services/firebase';
+import { initializeFirebase } from '../services/firebase';
 import { signInWithGoogle as authSignInWithGoogle } from '../services/authService';
 
 const FirebaseTest: React.FC = () => {
@@ -50,7 +50,9 @@ const FirebaseTest: React.FC = () => {
         <Text
           style={[
             styles.statusText,
-            { color: firebaseStatus.includes('OK') ? 'green' : 'red' },
+            firebaseStatus.includes('OK')
+              ? styles.statusSuccess
+              : styles.statusError,
           ]}
         >
           {firebaseStatus}
@@ -96,6 +98,12 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  statusSuccess: {
+    color: 'green',
+  },
+  statusError: {
+    color: 'red',
   },
   button: {
     backgroundColor: '#4285f4',

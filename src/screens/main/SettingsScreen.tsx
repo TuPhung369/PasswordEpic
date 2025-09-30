@@ -17,6 +17,43 @@ import { ThemeModal } from '../../components/ThemeModal';
 import { useTheme } from '../../contexts/ThemeContext';
 import { signOut } from '../../services/authService';
 
+// Tách SettingItem ra ngoài để tránh re-render
+const SettingItem: React.FC<{
+  icon: string;
+  title: string;
+  subtitle?: string;
+  onPress?: () => void;
+  rightElement?: React.ReactNode;
+  theme: any;
+}> = ({ icon, title, subtitle, onPress, rightElement, theme }) => (
+  <TouchableOpacity
+    style={[
+      styles.settingItem,
+      { backgroundColor: theme.card, borderColor: theme.border },
+    ]}
+    onPress={onPress}
+  >
+    <View style={[styles.settingIcon, { backgroundColor: theme.surface }]}>
+      <MaterialIcons name={icon} size={24} color={theme.primary} />
+    </View>
+    <View style={styles.settingContent}>
+      <Text style={[styles.settingTitle, { color: theme.text }]}>{title}</Text>
+      {subtitle && (
+        <Text style={[styles.settingSubtitle, { color: theme.textSecondary }]}>
+          {subtitle}
+        </Text>
+      )}
+    </View>
+    {rightElement || (
+      <MaterialIcons
+        name="chevron-right"
+        size={24}
+        color={theme.textSecondary}
+      />
+    )}
+  </TouchableOpacity>
+);
+
 export const SettingsScreen: React.FC = () => {
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state: RootState) => state.auth);
@@ -35,45 +72,6 @@ export const SettingsScreen: React.FC = () => {
       dispatch(logout());
     }
   };
-
-  const SettingItem: React.FC<{
-    icon: string;
-    title: string;
-    subtitle?: string;
-    onPress?: () => void;
-    rightElement?: React.ReactNode;
-  }> = ({ icon, title, subtitle, onPress, rightElement }) => (
-    <TouchableOpacity
-      style={[
-        styles.settingItem,
-        { backgroundColor: theme.card, borderColor: theme.border },
-      ]}
-      onPress={onPress}
-    >
-      <View style={[styles.settingIcon, { backgroundColor: theme.surface }]}>
-        <MaterialIcons name={icon} size={24} color={theme.primary} />
-      </View>
-      <View style={styles.settingContent}>
-        <Text style={[styles.settingTitle, { color: theme.text }]}>
-          {title}
-        </Text>
-        {subtitle && (
-          <Text
-            style={[styles.settingSubtitle, { color: theme.textSecondary }]}
-          >
-            {subtitle}
-          </Text>
-        )}
-      </View>
-      {rightElement || (
-        <MaterialIcons
-          name="chevron-right"
-          size={24}
-          color={theme.textSecondary}
-        />
-      )}
-    </TouchableOpacity>
-  );
 
   return (
     <SafeAreaView
@@ -119,6 +117,7 @@ export const SettingsScreen: React.FC = () => {
             icon="fingerprint"
             title="Biometric Authentication"
             subtitle="Use fingerprint or face recognition"
+            theme={theme}
             rightElement={
               <Switch
                 value={security.biometricEnabled}
@@ -137,6 +136,7 @@ export const SettingsScreen: React.FC = () => {
             icon="timer"
             title="Auto-Lock"
             subtitle={`Lock after ${security.autoLockTimeout} minutes`}
+            theme={theme}
             onPress={() => {}}
           />
 
@@ -144,6 +144,7 @@ export const SettingsScreen: React.FC = () => {
             icon="security"
             title="Screen Protection"
             subtitle="Prevent screenshots and screen recording"
+            theme={theme}
             rightElement={
               <Switch
                 value={security.screenProtectionEnabled}
@@ -171,6 +172,7 @@ export const SettingsScreen: React.FC = () => {
             icon="translate"
             title="Language"
             subtitle="English"
+            theme={theme}
             onPress={() => {}}
           />
 
@@ -178,6 +180,7 @@ export const SettingsScreen: React.FC = () => {
             icon="backup"
             title="Backup & Sync"
             subtitle="Manage your encrypted backups"
+            theme={theme}
             onPress={() => {}}
           />
         </View>
@@ -188,11 +191,17 @@ export const SettingsScreen: React.FC = () => {
             Support
           </Text>
 
-          <SettingItem icon="help" title="Help & Support" onPress={() => {}} />
+          <SettingItem
+            icon="help"
+            title="Help & Support"
+            theme={theme}
+            onPress={() => {}}
+          />
 
           <SettingItem
             icon="visibility-off"
             title="Privacy Policy"
+            theme={theme}
             onPress={() => {}}
           />
 
@@ -200,6 +209,7 @@ export const SettingsScreen: React.FC = () => {
             icon="info"
             title="About"
             subtitle="Version 1.0.0"
+            theme={theme}
             onPress={() => {}}
           />
         </View>

@@ -249,8 +249,10 @@ export const GeneratorScreen: React.FC = () => {
                   {
                     backgroundColor: theme.card,
                     borderColor: theme.border,
-                    opacity: isLastEnabledOption('includeUppercase') ? 0.6 : 1,
                   },
+                  isLastEnabledOption('includeUppercase')
+                    ? styles.disabledSetting
+                    : null,
                 ]}
               >
                 <Text style={[styles.settingLabel, { color: theme.text }]}>
@@ -282,8 +284,10 @@ export const GeneratorScreen: React.FC = () => {
                   {
                     backgroundColor: theme.card,
                     borderColor: theme.border,
-                    opacity: isLastEnabledOption('includeLowercase') ? 0.6 : 1,
                   },
+                  isLastEnabledOption('includeLowercase')
+                    ? styles.disabledSetting
+                    : null,
                 ]}
               >
                 <Text style={[styles.settingLabel, { color: theme.text }]}>
@@ -315,8 +319,10 @@ export const GeneratorScreen: React.FC = () => {
                   {
                     backgroundColor: theme.card,
                     borderColor: theme.border,
-                    opacity: isLastEnabledOption('includeNumbers') ? 0.6 : 1,
                   },
+                  isLastEnabledOption('includeNumbers')
+                    ? styles.disabledSetting
+                    : null,
                 ]}
               >
                 <Text style={[styles.settingLabel, { color: theme.text }]}>
@@ -348,8 +354,10 @@ export const GeneratorScreen: React.FC = () => {
                   {
                     backgroundColor: theme.card,
                     borderColor: theme.border,
-                    opacity: isLastEnabledOption('includeSymbols') ? 0.6 : 1,
                   },
+                  isLastEnabledOption('includeSymbols')
+                    ? styles.disabledSetting
+                    : null,
                 ]}
               >
                 <Text style={[styles.settingLabel, { color: theme.text }]}>
@@ -385,7 +393,6 @@ export const GeneratorScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
   },
   header: {
     paddingHorizontal: 20,
@@ -546,5 +553,8 @@ const styles = StyleSheet.create({
   requiredText: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  disabledSetting: {
+    opacity: 0.6,
   },
 });

@@ -1,4 +1,5 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { PasswordsScreen } from '../screens/main/PasswordsScreen';
 import { GeneratorScreen } from '../screens/main/GeneratorScreen';
@@ -14,46 +15,50 @@ export type MainTabParamList = {
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
+// Tách component tabBarIcon ra ngoài để tránh re-render
+const TabBarIcon: React.FC<{
+  routeName: string;
+  focused: boolean;
+  color: string;
+}> = ({ routeName, focused, color }) => {
+  let iconName: string;
+
+  if (routeName === 'Passwords') {
+    iconName = 'lock';
+  } else if (routeName === 'Generator') {
+    iconName = 'refresh';
+  } else {
+    iconName = 'settings';
+  }
+
+  return (
+    <MaterialIcons name={iconName} size={focused ? 26 : 24} color={color} />
+  );
+};
+
+// Tạo function render icon ra ngoài component
+const renderTabBarIcon =
+  (routeName: string) =>
+  ({ focused, color }: { focused: boolean; color: string }) =>
+    <TabBarIcon routeName={routeName} focused={focused} color={color} />;
+
 export const MainNavigator: React.FC = () => {
   const { theme } = useTheme();
 
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName: string;
-
-          if (route.name === 'Passwords') {
-            iconName = 'lock';
-          } else if (route.name === 'Generator') {
-            iconName = 'refresh';
-          } else {
-            iconName = 'settings';
-          }
-
-          return (
-            <MaterialIcons
-              name={iconName}
-              size={focused ? 26 : 24}
-              color={color}
-            />
-          );
-        },
+        tabBarIcon: renderTabBarIcon(route.name),
         tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.textSecondary,
-        tabBarStyle: {
-          backgroundColor: theme.card,
-          borderTopColor: theme.border,
-          borderTopWidth: 0.5,
-          paddingBottom: 8,
-          paddingTop: 8,
-          height: 88,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-          marginTop: 4,
-        },
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            backgroundColor: theme.card,
+            borderTopColor: theme.border,
+          },
+        ],
+        tabBarLabelStyle: styles.tabLabel,
         headerShown: false,
       })}
     >
@@ -81,3 +86,17 @@ export const MainNavigator: React.FC = () => {
     </Tab.Navigator>
   );
 };
+
+const styles = StyleSheet.create({
+  tabBar: {
+    borderTopWidth: 0.5,
+    paddingBottom: 8,
+    paddingTop: 8,
+    height: 88,
+  },
+  tabLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+});

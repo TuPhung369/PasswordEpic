@@ -1,19 +1,19 @@
-import React, { useEffect } from "react";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { AuthNavigator } from "./AuthNavigator";
-import { MainNavigator } from "./MainNavigator";
-import { useAppSelector, useAppDispatch } from "../hooks/redux";
-import { onAuthStateChanged } from "../services/authService";
+import React, { useEffect } from 'react';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { AuthNavigator } from './AuthNavigator';
+import { MainNavigator } from './MainNavigator';
+import { useAppSelector, useAppDispatch } from '../hooks/redux';
+import { onAuthStateChanged } from '../services/authService';
 import {
   loginSuccess,
   logout,
   setMasterPasswordConfigured,
   setBiometricEnabled,
-} from "../store/slices/authSlice";
+} from '../store/slices/authSlice';
 import {
   isMasterPasswordSet,
   isBiometricEnabled,
-} from "../services/secureStorageService";
+} from '../services/secureStorageService';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -25,21 +25,21 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export const AppNavigator: React.FC = () => {
   const dispatch = useAppDispatch();
   const { isAuthenticated, masterPasswordConfigured } = useAppSelector(
-    (state) => state.auth
+    state => state.auth,
   );
 
   useEffect(() => {
     // Listen for authentication state changes
-    const unsubscribe = onAuthStateChanged(async (user) => {
+    const unsubscribe = onAuthStateChanged(async user => {
       if (user) {
         // User is signed in
         dispatch(
           loginSuccess({
             uid: user.uid,
-            email: user.email,
+            email: user.email || null,
             displayName: user.displayName,
             photoURL: user.photoURL,
-          })
+          }),
         );
 
         // Check master password and biometric status
@@ -50,7 +50,7 @@ export const AppNavigator: React.FC = () => {
           dispatch(setMasterPasswordConfigured(masterPasswordSet));
           dispatch(setBiometricEnabled(biometricEnabled));
         } catch (error) {
-          console.error("Failed to check security settings:", error);
+          console.error('Failed to check security settings:', error);
         }
       } else {
         // User is signed out
@@ -72,4 +72,3 @@ export const AppNavigator: React.FC = () => {
     </Stack.Navigator>
   );
 };
-

@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "816139401561",
+    "project_id": "passwordepic",
+    "storage_bucket": "passwordepic.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:816139401561:android:3fa8015f67b531f9a8b448",
+        "android_client_info": {
+          "package_name": "com.passwordepic.mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "816139401561-at47rh069kjqrv3b2t1b8cl7b97lcuqv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.passwordepic.mobile",
+            "certificate_hash": "ee7b8c2102d996cf5497cd4c2b85099f7fa3372f"
+          }
+        },
+        {
+          "client_id": "816139401561-minpjbh47bm5v274th8cj9i4qnr7tidj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAezBXf7E2IyXIKfrOLWeZe3yboFROgi9E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "816139401561-minpjbh47bm5v274th8cj9i4qnr7tidj.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "816139401561-hs7tal2e7sm3ql9nisogj9bo1btlhsal.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.passwordepic.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

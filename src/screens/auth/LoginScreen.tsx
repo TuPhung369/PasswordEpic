@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,42 +6,50 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useAppDispatch, useAppSelector } from "../../hooks/redux";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useAppDispatch } from '../../hooks/redux';
 import {
   loginStart,
   loginSuccess,
   loginFailure,
-} from "../../store/slices/authSlice";
-import { useTheme } from "../../contexts/ThemeContext";
-import { signInWithGoogle } from "../../services/authService";
-import { isGoogleSignInModuleAvailable } from "../../services/googleSignIn";
-import { getAvailableAuthMethods } from "../../services/hybridGoogleAuth";
-import { AuthStackParamList } from "../../navigation/AuthNavigator";
+} from '../../store/slices/authSlice';
+import { useTheme } from '../../contexts/ThemeContext';
+import { signInWithGoogle } from '../../services/authService';
+import { isGoogleSignInModuleAvailable } from '../../services/googleSignIn';
+import { isGoogleSignInReady } from '../../services/googleAuthNative';
+import { isMasterPasswordSet } from '../../services/secureStorageService';
+import { AuthStackParamList } from '../../navigation/AuthNavigator';
 
 type LoginScreenNavigationProp = NativeStackNavigationProp<
   AuthStackParamList,
-  "Login"
+  'Login'
 >;
 
 export const LoginScreen: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigation = useNavigation<LoginScreenNavigationProp>();
   const { theme } = useTheme();
-  const { masterPasswordConfigured } = useAppSelector((state) => state.auth);
   const [isLoading, setIsLoading] = useState(false);
-  const authMethods = getAvailableAuthMethods();
-  const googleSignInAvailable = authMethods.native || authMethods.expo;
+  const googleSignInAvailable = isGoogleSignInModuleAvailable();
 
   const handleGoogleSignIn = async () => {
     if (!googleSignInAvailable) {
       Alert.alert(
-        "Google Sign-In Unavailable",
-        "Google Sign-In is not available in this build. Please use a development build that includes the Google Sign-In module.",
-        [{ text: "OK" }]
+        'Google Sign-In Unavailable',
+        'Google Sign-In is not available in this build. Please use a development build that includes the Google Sign-In module.',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+
+    if (!isGoogleSignInReady()) {
+      Alert.alert(
+        'Google Sign-In Not Ready',
+        'Google Sign-In is still initializing. Please wait a moment and try again.',
+        [{ text: 'OK' }],
       );
       return;
     }
@@ -50,28 +58,36 @@ export const LoginScreen: React.FC = () => {
       setIsLoading(true);
       dispatch(loginStart());
 
+      console.log('Starting Google Sign-In from LoginScreen...');
       const result = await signInWithGoogle();
 
       if (result.success && result.user) {
         dispatch(loginSuccess(result.user));
 
-        // Check if master password is configured
-        if (!masterPasswordConfigured) {
-          // Navigate to master password setup
-          navigation.navigate("MasterPassword");
+        // Check if master password is configured by querying secure storage directly
+        try {
+          const masterPasswordSet = await isMasterPasswordSet();
+          if (!masterPasswordSet) {
+            // Navigate to master password setup
+            navigation.navigate('MasterPassword');
+          }
+          // If master password is configured, AppNavigator will handle navigation to Main
+        } catch (error) {
+          console.error('Failed to check master password status:', error);
+          // If we can't check, assume it's not set and let user set it
+          navigation.navigate('MasterPassword');
         }
-        // If master password is configured, AppNavigator will handle navigation to Main
       } else {
-        dispatch(loginFailure(result.error || "Failed to sign in with Google"));
+        dispatch(loginFailure(result.error || 'Failed to sign in with Google'));
         Alert.alert(
-          "Authentication Error",
-          result.error || "Failed to sign in with Google"
+          'Authentication Error',
+          result.error || 'Failed to sign in with Google',
         );
       }
     } catch (error: any) {
-      const errorMessage = error.message || "An unexpected error occurred";
+      const errorMessage = error.message || 'An unexpected error occurred';
       dispatch(loginFailure(errorMessage));
-      Alert.alert("Error", errorMessage);
+      Alert.alert('Error', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -110,26 +126,24 @@ export const LoginScreen: React.FC = () => {
           ) : (
             <Text style={styles.googleButtonText}>
               {googleSignInAvailable
-                ? "Continue with Google"
-                : "Google Sign-In Unavailable"}
+                ? 'Continue with Google'
+                : 'Google Sign-In Unavailable'}
             </Text>
           )}
         </TouchableOpacity>
 
         {!googleSignInAvailable && (
           <Text
-            style={[styles.warningText, { color: theme.error || "#ff6b6b" }]}
+            style={[styles.warningText, { color: theme.error || '#ff6b6b' }]}
           >
-            ⚠️ Google Sign-In không khả dụng.{"\n"}
+            ⚠️ Google Sign-In không khả dụng.{'\n'}
             Vui lòng sử dụng Development Build hoặc kiểm tra cấu hình.
           </Text>
         )}
 
         {googleSignInAvailable && (
           <Text style={[styles.methodText, { color: theme.textSecondary }]}>
-            {authMethods.native
-              ? "🔧 Sử dụng Native Google Sign-In"
-              : "🌐 Sử dụng Expo AuthSession"}
+            🔧 Sử dụng Native Google Sign-In
           </Text>
         )}
 
@@ -144,28 +158,28 @@ export const LoginScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a1a",
+    backgroundColor: '#1a1a1a',
   },
   content: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 32,
   },
   title: {
     fontSize: 28,
-    fontWeight: "bold",
-    color: "#ffffff",
+    fontWeight: 'bold',
+    color: '#ffffff',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: "#cccccc",
-    textAlign: "center",
+    color: '#cccccc',
+    textAlign: 'center',
     marginBottom: 48,
   },
   googleButton: {
-    backgroundColor: "#4285F4",
+    backgroundColor: '#4285F4',
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
@@ -173,37 +187,36 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   googleButtonText: {
-    color: "#ffffff",
+    color: '#ffffff',
     fontSize: 16,
-    fontWeight: "600",
-    textAlign: "center",
+    fontWeight: '600',
+    textAlign: 'center',
   },
   securityNote: {
     fontSize: 14,
-    color: "#888888",
-    textAlign: "center",
+    color: '#888888',
+    textAlign: 'center',
     lineHeight: 20,
   },
   disabledButton: {
     opacity: 0.7,
   },
   loadingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   warningText: {
     fontSize: 14,
-    textAlign: "center",
+    textAlign: 'center',
     marginBottom: 16,
     lineHeight: 20,
     paddingHorizontal: 16,
   },
   methodText: {
     fontSize: 12,
-    textAlign: "center",
+    textAlign: 'center',
     marginBottom: 16,
-    fontStyle: "italic",
+    fontStyle: 'italic',
   },
 });
-

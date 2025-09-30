@@ -1,8 +1,8 @@
-import { createSlice, PayloadAction } from "@reduxjs/toolkit";
+import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 interface User {
   uid: string;
-  email: string;
+  email: string | null;
   displayName: string | null;
   photoURL: string | null;
 }
@@ -26,10 +26,10 @@ const initialState: AuthState = {
 };
 
 const authSlice = createSlice({
-  name: "auth",
+  name: 'auth',
   initialState,
   reducers: {
-    loginStart: (state) => {
+    loginStart: state => {
       state.isLoading = true;
       state.error = null;
     },
@@ -45,7 +45,7 @@ const authSlice = createSlice({
       state.isLoading = false;
       state.error = action.payload;
     },
-    logout: (state) => {
+    logout: state => {
       state.isAuthenticated = false;
       state.user = null;
       state.isLoading = false;
@@ -53,7 +53,7 @@ const authSlice = createSlice({
       state.masterPasswordConfigured = false;
       state.biometricEnabled = false;
     },
-    clearError: (state) => {
+    clearError: state => {
       state.error = null;
     },
     setMasterPasswordConfigured: (state, action: PayloadAction<boolean>) => {

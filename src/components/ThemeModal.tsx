@@ -1,4 +1,4 @@
-import React from "react";
+import React from 'react';
 import {
   View,
   Text,
@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   Modal,
   ScrollView,
-} from "react-native";
-import { MaterialIcons } from "@expo/vector-icons";
-import { useTheme } from "../contexts/ThemeContext";
+} from 'react-native';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface ThemeOption {
-  key: "light" | "dark" | "system";
+  key: 'light' | 'dark' | 'system';
   label: string;
   description: string;
   icon: string;
@@ -19,22 +19,22 @@ interface ThemeOption {
 
 const themeOptions: ThemeOption[] = [
   {
-    key: "light",
-    label: "Light",
-    description: "Always use light theme",
-    icon: "wb-sunny",
+    key: 'light',
+    label: 'Light',
+    description: 'Always use light theme',
+    icon: 'wb-sunny',
   },
   {
-    key: "dark",
-    label: "Dark",
-    description: "Always use dark theme",
-    icon: "brightness-2",
+    key: 'dark',
+    label: 'Dark',
+    description: 'Always use dark theme',
+    icon: 'brightness-2',
   },
   {
-    key: "system",
-    label: "System Default",
-    description: "Follow system appearance",
-    icon: "settings-brightness",
+    key: 'system',
+    label: 'System Default',
+    description: 'Follow system appearance',
+    icon: 'settings-brightness',
   },
 ];
 
@@ -46,7 +46,7 @@ interface ThemeModalProps {
 export const ThemeModal: React.FC<ThemeModalProps> = ({ visible, onClose }) => {
   const { theme, themeMode, setThemeMode } = useTheme();
 
-  const handleThemeSelect = (selectedTheme: "light" | "dark" | "system") => {
+  const handleThemeSelect = (selectedTheme: 'light' | 'dark' | 'system') => {
     setThemeMode(selectedTheme);
     onClose();
   };
@@ -78,7 +78,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({ visible, onClose }) => {
           </Text>
 
           <View style={styles.optionsList}>
-            {themeOptions.map((option) => (
+            {themeOptions.map(option => (
               <TouchableOpacity
                 key={option.key}
                 style={[
@@ -108,10 +108,10 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({ visible, onClose }) => {
                       ]}
                     >
                       <MaterialIcons
-                        name={option.icon as any}
+                        name={option.icon}
                         size={24}
                         color={
-                          themeMode === option.key ? "#FFFFFF" : theme.primary
+                          themeMode === option.key ? '#FFFFFF' : theme.primary
                         }
                       />
                     </View>
@@ -151,28 +151,28 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 0.5,
   },
   headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 16,
   },
   closeButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   title: {
     fontSize: 20,
-    fontWeight: "600",
+    fontWeight: '600',
   },
   content: {
     flex: 1,
@@ -190,25 +190,25 @@ const styles = StyleSheet.create({
   option: {
     borderRadius: 16,
     borderWidth: 1,
-    overflow: "hidden",
+    overflow: 'hidden',
   },
   optionContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     padding: 20,
   },
   optionLeft: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
   },
   iconContainer: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 16,
   },
   optionText: {
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
   },
   optionLabel: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: '600',
     marginBottom: 4,
   },
   optionDescription: {

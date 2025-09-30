@@ -6,6 +6,25 @@ const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
  *
  * @type {import('@react-native/metro-config').MetroConfig}
  */
-const config = {};
+const config = {
+  resolver: {
+    // Add support for Firebase and other modules
+    assetExts: [
+      'bin',
+      'txt',
+      'jpg',
+      'png',
+      'json',
+      'gif',
+      'webp',
+      'svg',
+      'ttf',
+      'otf',
+      'woff',
+      'woff2',
+    ],
+    sourceExts: ['js', 'jsx', 'ts', 'tsx', 'json'],
+  },
+};
 
 module.exports = mergeConfig(getDefaultConfig(__dirname), config);

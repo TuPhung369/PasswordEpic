@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,13 @@ import {
   Alert,
   ActivityIndicator,
   TextInput,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { MaterialIcons } from "@expo/vector-icons";
-import { useTheme } from "../../contexts/ThemeContext";
-import { useAppDispatch } from "../../hooks/redux";
-import { setMasterPasswordConfigured } from "../../store/slices/authSlice";
-import { setMasterPassword } from "../../services/secureStorageService";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useTheme } from '../../contexts/ThemeContext';
+import { useAppDispatch } from '../../hooks/redux';
+import { setMasterPasswordConfigured } from '../../store/slices/authSlice';
+import { storeMasterPassword } from '../../services/secureStorageService';
 
 interface PasswordStrength {
   score: number;
@@ -31,8 +31,8 @@ interface PasswordStrength {
 export const MasterPasswordScreen: React.FC = () => {
   const { theme } = useTheme();
   const dispatch = useAppDispatch();
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -49,21 +49,21 @@ export const MasterPasswordScreen: React.FC = () => {
 
     const score = Object.values(requirements).filter(Boolean).length;
 
-    let label = "Very Weak";
+    let label = 'Very Weak';
     let color = theme.error;
 
     if (score >= 5) {
-      label = "Very Strong";
-      color = "#00C851";
+      label = 'Very Strong';
+      color = '#00C851';
     } else if (score >= 4) {
-      label = "Strong";
-      color = "#2BBBAD";
+      label = 'Strong';
+      color = '#2BBBAD';
     } else if (score >= 3) {
-      label = "Medium";
-      color = "#FF8800";
+      label = 'Medium';
+      color = '#FF8800';
     } else if (score >= 2) {
-      label = "Weak";
-      color = "#FF4444";
+      label = 'Weak';
+      color = '#FF4444';
     }
 
     return { score, label, color, requirements };
@@ -77,16 +77,16 @@ export const MasterPasswordScreen: React.FC = () => {
   const handleSetMasterPassword = async () => {
     if (!isPasswordValid) {
       Alert.alert(
-        "Weak Password",
-        "Please create a stronger password with at least 4 of the 5 requirements."
+        'Weak Password',
+        'Please create a stronger password with at least 4 of the 5 requirements.',
       );
       return;
     }
 
     if (!doPasswordsMatch) {
       Alert.alert(
-        "Password Mismatch",
-        "Passwords do not match. Please try again."
+        'Password Mismatch',
+        'Passwords do not match. Please try again.',
       );
       return;
     }
@@ -95,25 +95,29 @@ export const MasterPasswordScreen: React.FC = () => {
       setIsLoading(true);
 
       // Store master password securely
-      await setMasterPassword(password);
+      const result = await storeMasterPassword(password);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to store master password');
+      }
 
       // Mark as configured in Redux store
       dispatch(setMasterPasswordConfigured(true));
 
       Alert.alert(
-        "Success",
-        "Master password has been set successfully. Your passwords will now be encrypted with this key.",
+        'Success',
+        'Master password has been set successfully. Your passwords will now be encrypted with this key.',
         [
           {
-            text: "Continue",
+            text: 'Continue',
             onPress: () => {
               // Navigation will be handled by AppNavigator based on auth state
             },
           },
-        ]
+        ],
       );
     } catch (error: any) {
-      Alert.alert("Error", error.message || "Failed to set master password");
+      Alert.alert('Error', error.message || 'Failed to set master password');
     } finally {
       setIsLoading(false);
     }
@@ -125,15 +129,15 @@ export const MasterPasswordScreen: React.FC = () => {
   }> = ({ met, text }) => (
     <View style={styles.requirementItem}>
       <MaterialIcons
-        name={met ? "check-circle" : "radio-button-unchecked"}
+        name={met ? 'check-circle' : 'radio-button-unchecked'}
         size={16}
-        color={met ? "#00C851" : theme.textSecondary}
+        color={met ? '#00C851' : theme.textSecondary}
       />
       <Text
         style={[
           styles.requirementText,
           {
-            color: met ? "#00C851" : theme.textSecondary,
+            color: met ? '#00C851' : theme.textSecondary,
           },
         ]}
       >
@@ -178,7 +182,7 @@ export const MasterPasswordScreen: React.FC = () => {
               style={styles.eyeButton}
             >
               <MaterialIcons
-                name={showPassword ? "visibility-off" : "visibility"}
+                name={showPassword ? 'visibility-off' : 'visibility'}
                 size={24}
                 color={theme.textSecondary}
               />
@@ -232,7 +236,7 @@ export const MasterPasswordScreen: React.FC = () => {
               style={styles.eyeButton}
             >
               <MaterialIcons
-                name={showConfirmPassword ? "visibility-off" : "visibility"}
+                name={showConfirmPassword ? 'visibility-off' : 'visibility'}
                 size={24}
                 color={theme.textSecondary}
               />
@@ -243,21 +247,21 @@ export const MasterPasswordScreen: React.FC = () => {
           {confirmPassword.length > 0 && (
             <View style={styles.matchContainer}>
               <MaterialIcons
-                name={doPasswordsMatch ? "check-circle" : "cancel"}
+                name={doPasswordsMatch ? 'check-circle' : 'cancel'}
                 size={16}
-                color={doPasswordsMatch ? "#00C851" : theme.error}
+                color={doPasswordsMatch ? '#00C851' : theme.error}
               />
               <Text
                 style={[
                   styles.matchText,
                   {
-                    color: doPasswordsMatch ? "#00C851" : theme.error,
+                    color: doPasswordsMatch ? '#00C851' : theme.error,
                   },
                 ]}
               >
                 {doPasswordsMatch
-                  ? "Passwords match"
-                  : "Passwords do not match"}
+                  ? 'Passwords match'
+                  : 'Passwords do not match'}
               </Text>
             </View>
           )}
@@ -344,7 +348,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: "bold",
+    fontWeight: 'bold',
     marginBottom: 8,
   },
   subtitle: {
@@ -356,12 +360,12 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: '600',
     marginBottom: 8,
   },
   inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 16,
@@ -379,21 +383,21 @@ const styles = StyleSheet.create({
   },
   strengthBar: {
     height: 4,
-    backgroundColor: "#333333",
+    backgroundColor: '#333333',
     borderRadius: 2,
     marginBottom: 8,
   },
   strengthFill: {
-    height: "100%",
+    height: '100%',
     borderRadius: 2,
   },
   strengthLabel: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: '600',
   },
   matchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 8,
   },
   matchText: {
@@ -405,12 +409,12 @@ const styles = StyleSheet.create({
   },
   requirementsTitle: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: '600',
     marginBottom: 12,
   },
   requirementItem: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 8,
   },
   requirementText: {
@@ -423,25 +427,25 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   buttonText: {
-    color: "#ffffff",
+    color: '#ffffff',
     fontSize: 16,
-    fontWeight: "600",
-    textAlign: "center",
+    fontWeight: '600',
+    textAlign: 'center',
   },
   disabledButton: {
     opacity: 0.7,
   },
   loadingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   securityNote: {
-    flexDirection: "row",
-    alignItems: "flex-start",
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     padding: 16,
     borderRadius: 12,
-    backgroundColor: "rgba(255, 193, 7, 0.1)",
+    backgroundColor: 'rgba(255, 193, 7, 0.1)',
   },
   securityText: {
     flex: 1,
@@ -450,4 +454,3 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
 });
-

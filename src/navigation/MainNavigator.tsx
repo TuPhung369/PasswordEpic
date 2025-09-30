@@ -1,10 +1,10 @@
-import React from "react";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { PasswordsScreen } from "../screens/main/PasswordsScreen";
-import { GeneratorScreen } from "../screens/main/GeneratorScreen";
-import { SettingsScreen } from "../screens/main/SettingsScreen";
-import { MaterialIcons } from "@expo/vector-icons";
-import { useTheme } from "../contexts/ThemeContext";
+import React from 'react';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { PasswordsScreen } from '../screens/main/PasswordsScreen';
+import { GeneratorScreen } from '../screens/main/GeneratorScreen';
+import { SettingsScreen } from '../screens/main/SettingsScreen';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useTheme } from '../contexts/ThemeContext';
 
 export type MainTabParamList = {
   Passwords: undefined;
@@ -21,14 +21,14 @@ export const MainNavigator: React.FC = () => {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
-          let iconName: keyof typeof MaterialIcons.glyphMap;
+          let iconName: string;
 
-          if (route.name === "Passwords") {
-            iconName = "lock";
-          } else if (route.name === "Generator") {
-            iconName = "refresh";
+          if (route.name === 'Passwords') {
+            iconName = 'lock';
+          } else if (route.name === 'Generator') {
+            iconName = 'refresh';
           } else {
-            iconName = "settings";
+            iconName = 'settings';
           }
 
           return (
@@ -51,7 +51,7 @@ export const MainNavigator: React.FC = () => {
         },
         tabBarLabelStyle: {
           fontSize: 12,
-          fontWeight: "600",
+          fontWeight: '600',
           marginTop: 4,
         },
         headerShown: false,
@@ -61,24 +61,23 @@ export const MainNavigator: React.FC = () => {
         name="Passwords"
         component={PasswordsScreen}
         options={{
-          tabBarLabel: "Vault",
+          tabBarLabel: 'Vault',
         }}
       />
       <Tab.Screen
         name="Generator"
         component={GeneratorScreen}
         options={{
-          tabBarLabel: "Generate",
+          tabBarLabel: 'Generate',
         }}
       />
       <Tab.Screen
         name="Settings"
         component={SettingsScreen}
         options={{
-          tabBarLabel: "Settings",
+          tabBarLabel: 'Settings',
         }}
       />
     </Tab.Navigator>
   );
 };
-

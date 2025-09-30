@@ -1,7 +1,7 @@
-import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
-import { MaterialIcons } from "@expo/vector-icons";
-import { useTheme } from "../contexts/ThemeContext";
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface ThemeSelectorProps {
   onPress: () => void;
@@ -12,27 +12,27 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({ onPress }) => {
 
   const getThemeDisplayName = () => {
     switch (themeMode) {
-      case "light":
-        return "Light";
-      case "dark":
-        return "Dark";
-      case "system":
-        return `System (${isDarkMode ? "Dark" : "Light"})`;
+      case 'light':
+        return 'Light';
+      case 'dark':
+        return 'Dark';
+      case 'system':
+        return `System (${isDarkMode ? 'Dark' : 'Light'})`;
       default:
-        return "System";
+        return 'System';
     }
   };
 
   const getThemeIcon = () => {
     switch (themeMode) {
-      case "light":
-        return "wb-sunny";
-      case "dark":
-        return "brightness-2";
-      case "system":
-        return "settings-brightness";
+      case 'light':
+        return 'wb-sunny';
+      case 'dark':
+        return 'brightness-2';
+      case 'system':
+        return 'settings-brightness';
       default:
-        return "settings-brightness";
+        return 'settings-brightness';
     }
   };
 
@@ -74,9 +74,9 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({ onPress }) => {
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 16,
     marginHorizontal: 20,
     marginBottom: 8,
@@ -84,39 +84,38 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
   },
   iconContainer: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
   },
   iconBackground: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 16,
   },
   textContent: {
     flex: 1,
   },
   leftContent: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
   },
   rightContent: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   label: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: '600',
     marginBottom: 2,
   },
   value: {
     fontSize: 14,
-    fontWeight: "400",
+    fontWeight: '400',
   },
 });
-

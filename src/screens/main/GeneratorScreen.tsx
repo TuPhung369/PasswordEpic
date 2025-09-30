@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,32 +8,32 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   ScrollView,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import Slider from "@react-native-community/slider";
-import { useAppSelector, useAppDispatch } from "../../hooks/redux";
-import { RootState } from "../../store";
-import { updateGeneratorSettings } from "../../store/slices/settingsSlice";
-import { MaterialIcons } from "@expo/vector-icons";
-import { useTheme } from "../../contexts/ThemeContext";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import Slider from '@react-native-community/slider';
+import { useAppSelector, useAppDispatch } from '../../hooks/redux';
+import { RootState } from '../../store';
+import { updateGeneratorSettings } from '../../store/slices/settingsSlice';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export const GeneratorScreen: React.FC = () => {
   const dispatch = useAppDispatch();
   const { generator } = useAppSelector((state: RootState) => state.settings);
   const { theme } = useTheme();
-  const [generatedPassword, setGeneratedPassword] = useState("");
+  const [generatedPassword, setGeneratedPassword] = useState('');
   const [length, setLength] = useState(generator.defaultLength);
 
   const generatePassword = () => {
-    let chars = "";
+    let chars = '';
 
-    if (generator.includeUppercase) chars += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    if (generator.includeLowercase) chars += "abcdefghijklmnopqrstuvwxyz";
-    if (generator.includeNumbers) chars += "0123456789";
-    if (generator.includeSymbols) chars += "!@#$%^&*()_+-=[]{}|;:,.<>?";
+    if (generator.includeUppercase) chars += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    if (generator.includeLowercase) chars += 'abcdefghijklmnopqrstuvwxyz';
+    if (generator.includeNumbers) chars += '0123456789';
+    if (generator.includeSymbols) chars += '!@#$%^&*()_+-=[]{}|;:,.<>?';
 
     // chars should never be empty now due to validation
-    let result = "";
+    let result = '';
     for (let i = 0; i < length; i++) {
       result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
@@ -41,7 +41,7 @@ export const GeneratorScreen: React.FC = () => {
   };
   const copyToClipboard = () => {
     // TODO: Implement clipboard functionality
-    console.log("Copied to clipboard:", generatedPassword);
+    console.log('Copied to clipboard:', generatedPassword);
   };
 
   const updateLength = (newLength: number) => {
@@ -51,13 +51,13 @@ export const GeneratorScreen: React.FC = () => {
 
   const canToggleOff = (currentOption: keyof typeof generator) => {
     const options = [
-      "includeUppercase",
-      "includeLowercase",
-      "includeNumbers",
-      "includeSymbols",
+      'includeUppercase',
+      'includeLowercase',
+      'includeNumbers',
+      'includeSymbols',
     ];
     const enabledCount = options.filter(
-      (option) => generator[option as keyof typeof generator]
+      option => generator[option as keyof typeof generator],
     ).length;
 
     // Nếu chỉ còn 1 option ON và đang cố tắt option đó, thì không cho phép
@@ -68,39 +68,43 @@ export const GeneratorScreen: React.FC = () => {
   };
 
   const toggleUppercase = () => {
-    if (!canToggleOff("includeUppercase")) {
+    if (!canToggleOff('includeUppercase')) {
       // TODO: Show toast/alert "At least one option must be enabled"
       return;
     }
     dispatch(
-      updateGeneratorSettings({ includeUppercase: !generator.includeUppercase })
+      updateGeneratorSettings({
+        includeUppercase: !generator.includeUppercase,
+      }),
     );
   };
 
   const toggleLowercase = () => {
-    if (!canToggleOff("includeLowercase")) {
+    if (!canToggleOff('includeLowercase')) {
       return;
     }
     dispatch(
-      updateGeneratorSettings({ includeLowercase: !generator.includeLowercase })
+      updateGeneratorSettings({
+        includeLowercase: !generator.includeLowercase,
+      }),
     );
   };
 
   const toggleNumbers = () => {
-    if (!canToggleOff("includeNumbers")) {
+    if (!canToggleOff('includeNumbers')) {
       return;
     }
     dispatch(
-      updateGeneratorSettings({ includeNumbers: !generator.includeNumbers })
+      updateGeneratorSettings({ includeNumbers: !generator.includeNumbers }),
     );
   };
 
   const toggleSymbols = () => {
-    if (!canToggleOff("includeSymbols")) {
+    if (!canToggleOff('includeSymbols')) {
       return;
     }
     dispatch(
-      updateGeneratorSettings({ includeSymbols: !generator.includeSymbols })
+      updateGeneratorSettings({ includeSymbols: !generator.includeSymbols }),
     );
   };
 
@@ -157,7 +161,7 @@ export const GeneratorScreen: React.FC = () => {
               <View style={styles.passwordDisplay}>
                 <Text style={[styles.passwordText, { color: theme.text }]}>
                   {generatedPassword ||
-                    "Tap Generate to create a secure password"}
+                    'Tap Generate to create a secure password'}
                 </Text>
                 {generatedPassword && (
                   <TouchableOpacity
@@ -231,7 +235,7 @@ export const GeneratorScreen: React.FC = () => {
                   minimumValue={8}
                   maximumValue={32}
                   value={length}
-                  onValueChange={(value) => updateLength(Math.round(value))}
+                  onValueChange={value => updateLength(Math.round(value))}
                   step={1}
                   minimumTrackTintColor={theme.primary}
                   maximumTrackTintColor={theme.border}
@@ -245,17 +249,17 @@ export const GeneratorScreen: React.FC = () => {
                   {
                     backgroundColor: theme.card,
                     borderColor: theme.border,
-                    opacity: isLastEnabledOption("includeUppercase") ? 0.6 : 1,
+                    opacity: isLastEnabledOption('includeUppercase') ? 0.6 : 1,
                   },
                 ]}
               >
                 <Text style={[styles.settingLabel, { color: theme.text }]}>
                   Include Uppercase
-                  {isLastEnabledOption("includeUppercase") && (
+                  {isLastEnabledOption('includeUppercase') && (
                     <Text
                       style={[styles.requiredText, { color: theme.primary }]}
                     >
-                      {" "}
+                      {' '}
                       *
                     </Text>
                   )}
@@ -278,17 +282,17 @@ export const GeneratorScreen: React.FC = () => {
                   {
                     backgroundColor: theme.card,
                     borderColor: theme.border,
-                    opacity: isLastEnabledOption("includeLowercase") ? 0.6 : 1,
+                    opacity: isLastEnabledOption('includeLowercase') ? 0.6 : 1,
                   },
                 ]}
               >
                 <Text style={[styles.settingLabel, { color: theme.text }]}>
                   Include Lowercase
-                  {isLastEnabledOption("includeLowercase") && (
+                  {isLastEnabledOption('includeLowercase') && (
                     <Text
                       style={[styles.requiredText, { color: theme.primary }]}
                     >
-                      {" "}
+                      {' '}
                       *
                     </Text>
                   )}
@@ -311,17 +315,17 @@ export const GeneratorScreen: React.FC = () => {
                   {
                     backgroundColor: theme.card,
                     borderColor: theme.border,
-                    opacity: isLastEnabledOption("includeNumbers") ? 0.6 : 1,
+                    opacity: isLastEnabledOption('includeNumbers') ? 0.6 : 1,
                   },
                 ]}
               >
                 <Text style={[styles.settingLabel, { color: theme.text }]}>
                   Include Numbers
-                  {isLastEnabledOption("includeNumbers") && (
+                  {isLastEnabledOption('includeNumbers') && (
                     <Text
                       style={[styles.requiredText, { color: theme.primary }]}
                     >
-                      {" "}
+                      {' '}
                       *
                     </Text>
                   )}
@@ -344,17 +348,17 @@ export const GeneratorScreen: React.FC = () => {
                   {
                     backgroundColor: theme.card,
                     borderColor: theme.border,
-                    opacity: isLastEnabledOption("includeSymbols") ? 0.6 : 1,
+                    opacity: isLastEnabledOption('includeSymbols') ? 0.6 : 1,
                   },
                 ]}
               >
                 <Text style={[styles.settingLabel, { color: theme.text }]}>
                   Include Symbols
-                  {isLastEnabledOption("includeSymbols") && (
+                  {isLastEnabledOption('includeSymbols') && (
                     <Text
                       style={[styles.requiredText, { color: theme.primary }]}
                     >
-                      {" "}
+                      {' '}
                       *
                     </Text>
                   )}
@@ -381,13 +385,13 @@ export const GeneratorScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000000",
+    backgroundColor: '#000000',
   },
   header: {
     paddingHorizontal: 20,
     paddingVertical: 20,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#38383A",
+    borderBottomColor: '#38383A',
   },
   scrollView: {
     flex: 1,
@@ -397,14 +401,14 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: "bold",
-    color: "#ffffff",
+    fontWeight: 'bold',
+    color: '#ffffff',
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 14,
-    color: "#8E8E93",
-    fontWeight: "500",
+    color: '#8E8E93',
+    fontWeight: '500',
   },
   content: {
     paddingHorizontal: 20,
@@ -412,46 +416,46 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   passwordContainer: {
-    backgroundColor: "#1C1C1E",
+    backgroundColor: '#1C1C1E',
     borderRadius: 16,
     marginBottom: 24,
     borderWidth: 0.5,
-    borderColor: "#38383A",
-    overflow: "hidden",
+    borderColor: '#38383A',
+    overflow: 'hidden',
   },
   passwordHeader: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: "#2C2C2E",
+    backgroundColor: '#2C2C2E',
     gap: 8,
   },
   passwordLabel: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#8E8E93",
+    fontWeight: '600',
+    color: '#8E8E93',
   },
   passwordDisplay: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 16,
     minHeight: 60,
   },
   passwordText: {
     flex: 1,
     fontSize: 16,
-    color: "#ffffff",
-    fontFamily: "monospace",
+    color: '#ffffff',
+    fontFamily: 'monospace',
     lineHeight: 22,
   },
   copyButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#2C2C2E",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: '#2C2C2E',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginLeft: 12,
   },
   buttonContainer: {
@@ -459,89 +463,88 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   generateButton: {
-    backgroundColor: "#007AFF",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: '#007AFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 16,
     borderRadius: 16,
     gap: 8,
   },
   generateButtonText: {
-    color: "#ffffff",
+    color: '#ffffff',
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: '600',
   },
   saveButton: {
-    backgroundColor: "#1C1C1E",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: '#1C1C1E',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#007AFF",
+    borderColor: '#007AFF',
     gap: 8,
   },
   saveButtonText: {
-    color: "#007AFF",
+    color: '#007AFF',
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: '600',
   },
   settings: {
     flex: 1,
   },
   settingsTitle: {
     fontSize: 20,
-    fontWeight: "600",
-    color: "#ffffff",
+    fontWeight: '600',
+    color: '#ffffff',
     marginBottom: 16,
   },
   setting: {
-    backgroundColor: "#1C1C1E",
+    backgroundColor: '#1C1C1E',
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderRadius: 12,
     marginBottom: 8,
     borderWidth: 0.5,
-    borderColor: "#38383A",
+    borderColor: '#38383A',
   },
   switchSetting: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#1C1C1E",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1C1C1E',
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderRadius: 12,
     marginBottom: 8,
     borderWidth: 0.5,
-    borderColor: "#38383A",
+    borderColor: '#38383A',
   },
   sliderHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
   },
   settingLabel: {
     fontSize: 16,
-    color: "#ffffff",
-    fontWeight: "500",
+    color: '#ffffff',
+    fontWeight: '500',
   },
   lengthValue: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: '600',
     minWidth: 30,
-    textAlign: "center",
+    textAlign: 'center',
   },
   slider: {
-    width: "100%",
+    width: '100%',
     height: 40,
   },
   requiredText: {
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
 });
-

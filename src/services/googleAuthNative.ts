@@ -37,16 +37,7 @@ let isGoogleSignInInitialized = false;
 export const initializeGoogleSignIn = async (): Promise<boolean> => {
   try {
     // Debug: Check if GoogleSignin is available
-    console.log('GoogleSignin object available:', typeof GoogleSignin);
-    console.log('GoogleSignin methods:', Object.keys(GoogleSignin));
-    console.log(
-      'GoogleSignin.configure available:',
-      typeof GoogleSignin.configure,
-    );
-    console.log(
-      'GoogleSignin.hasPreviousSignIn available:',
-      typeof GoogleSignin.hasPreviousSignIn,
-    );
+    // GoogleSignin API available
 
     // Configure Google Sign-In with web client ID for Firebase authentication
     const config = {
@@ -56,11 +47,7 @@ export const initializeGoogleSignIn = async (): Promise<boolean> => {
       forceCodeForRefreshToken: true, // Force getting refresh token
     };
 
-    console.log('Configuring Google Sign-In with:', {
-      webClientId: config.webClientId,
-      offlineAccess: config.offlineAccess,
-      forceCodeForRefreshToken: config.forceCodeForRefreshToken,
-    });
+    // Configuring Google Sign-In
 
     await GoogleSignin.configure(config);
 

@@ -370,10 +370,7 @@ export class BiometricService {
         return status;
       }
     } catch (error) {
-      console.error(
-        '🔐 isBiometricSetup: Error checking biometric setup:',
-        error,
-      );
+      console.error('Error checking biometric setup:', error);
       return false;
     }
   }

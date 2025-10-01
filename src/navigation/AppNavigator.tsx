@@ -274,18 +274,7 @@ export const AppNavigator: React.FC = () => {
       sessionActive !== undefined &&
       !sessionTimeoutVisible;
 
-    console.log('🔐 shouldShowBiometric calculated:', result, {
-      isAuthenticated,
-      masterPasswordConfigured,
-      biometricEnabled,
-      biometricAvailable,
-      sessionExpired: session.expired,
-      biometricCancelled,
-      hasAuthenticatedInSession,
-      sessionActive,
-      showBiometricPrompt,
-      sessionTimeoutVisible,
-    });
+    // Biometric prompt decision calculated
 
     return result;
   }, [
@@ -298,36 +287,19 @@ export const AppNavigator: React.FC = () => {
     hasAuthenticatedInSession,
     sessionActive,
     sessionTimeoutVisible,
-    showBiometricPrompt, // Added to fix ESLint warning
   ]);
 
   // Handle biometric prompt display
   useEffect(() => {
-    console.log(
-      '🔐 useEffect triggered - showBiometricPrompt:',
-      showBiometricPrompt,
-      'shouldShowBiometric:',
-      shouldShowBiometric,
-    );
+    // Biometric prompt effect triggered
 
     if (shouldShowBiometric && !showBiometricPrompt) {
       // All conditions met and not already showing - show it!
-      console.log('🔐 Conditions met - showing biometric prompt');
-      console.log('🔐 Biometric prompt conditions:', {
-        isAuthenticated,
-        masterPasswordConfigured,
-        biometricEnabled,
-        biometricAvailable,
-        sessionExpired: session.expired,
-        biometricCancelled,
-        hasAuthenticatedInSession,
-        sessionActive,
-      });
-      console.log('🔐 Setting showBiometricPrompt to TRUE');
+      // Showing biometric prompt
       setShowBiometricPrompt(true);
     } else if (!shouldShowBiometric && showBiometricPrompt) {
       // Conditions no longer met but prompt is showing - hide it
-      console.log('🔐 Conditions no longer met - hiding biometric prompt');
+      // Hiding biometric prompt - conditions no longer met
       setShowBiometricPrompt(false);
     } else if (showBiometricPrompt) {
       console.log('Not showing biometric prompt - already showing');

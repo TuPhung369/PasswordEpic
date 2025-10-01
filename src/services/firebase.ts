@@ -3,7 +3,6 @@ import { initializeApp, getApps } from 'firebase/app';
 import {
   getAuth,
   initializeAuth,
-  getReactNativePersistence,
   signInWithCredential,
   GoogleAuthProvider,
   signOut as firebaseSignOut,
@@ -11,7 +10,6 @@ import {
   User,
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 // Polyfills for Firebase
@@ -38,20 +36,12 @@ let firestore;
 
 try {
   if (getApps().length === 0) {
-    console.log('Initializing Firebase app...');
     app = initializeApp(firebaseConfig);
-
-    console.log('Initializing Firebase Auth...');
-    auth = initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage),
-    });
-
-    console.log('Initializing Firestore...');
+    auth = initializeAuth(app);
     firestore = getFirestore(app);
-
-    console.log('Firebase services initialized successfully');
+    console.log('Firebase initialized successfully');
   } else {
-    console.log('Using existing Firebase app...');
+    // Using existing Firebase app
     app = getApps()[0];
     auth = getAuth(app);
     firestore = getFirestore(app);
@@ -185,9 +175,6 @@ export const initializeFirebase = () => {
     }
 
     console.log('Firebase services validation successful');
-    console.log('Firebase Auth available:', !!firebaseAuth);
-    console.log('Firebase Firestore available:', !!firebaseFirestore);
-    console.log('Firebase initialized successfully');
     return true;
   } catch (error) {
     console.error('Firebase initialization failed:', error);

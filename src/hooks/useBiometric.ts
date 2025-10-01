@@ -73,28 +73,18 @@ export const useBiometric = (): UseBiometricReturn => {
       // Check if biometric is set up
       if (capability.available) {
         const setupStatus = await biometricService.isBiometricSetup();
-        console.log(
-          '📱 useBiometric checkCapability: setupStatus =',
-          setupStatus,
-        );
+        // Biometric capability checked
 
         setIsSetup(setupStatus);
 
         // Only update Redux if different (avoid circular updates)
         const currentEnabled = securityRef.current.biometricEnabled;
         if (currentEnabled !== setupStatus) {
-          console.log(
-            '📱 useBiometric checkCapability: Syncing Redux state from',
-            currentEnabled,
-            'to',
-            setupStatus,
-          );
+          // Syncing Redux state
           dispatch(setBiometricEnabled(setupStatus));
         }
       } else {
-        console.log(
-          '📱 useBiometric checkCapability: Biometric not available, disabling',
-        );
+        // Biometric not available, disabling
         setIsSetup(false);
         dispatch(setBiometricEnabled(false));
       }
@@ -161,26 +151,13 @@ export const useBiometric = (): UseBiometricReturn => {
         setError(null);
 
         const biometricService = BiometricService.getInstance();
-        console.log(
-          '📱 useBiometric.authenticate: BiometricService instance obtained',
-        );
-
         const authMessage = message || `Authenticate with ${biometryType}`;
-        console.log(
-          '📱 useBiometric.authenticate: Final auth message =',
-          authMessage,
-        );
 
-        console.log(
-          '📱 useBiometric.authenticate: Calling biometricService.authenticateWithBiometrics...',
-        );
+        // Calling biometric authentication service
         const result: BiometricAuthResult =
           await biometricService.authenticateWithBiometrics(authMessage);
 
-        console.log(
-          '📱 useBiometric.authenticate: Authentication result =',
-          result,
-        );
+        // Authentication completed
 
         if (result.success) {
           console.log('📱 useBiometric.authenticate: SUCCESS!');

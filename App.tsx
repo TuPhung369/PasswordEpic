@@ -17,10 +17,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const initializeServices = async () => {
       try {
-        console.log('Initializing Firebase...');
         const firebaseInitialized = initializeFirebase();
-
-        console.log('Initializing Auth...');
         let authInitialized = false;
         if (firebaseInitialized) {
           try {
@@ -34,11 +31,10 @@ const App: React.FC = () => {
         // Delay Google Sign-In initialization to ensure activity is ready
         setTimeout(async () => {
           try {
-            console.log('Initializing Google Sign-In...');
             const googleSignInInitialized = await initializeGoogleSignIn();
 
             if (googleSignInInitialized) {
-              console.log('Google Sign-In initialized successfully');
+              console.log('✅ Google Sign-In initialized successfully');
             } else {
               console.warn('Google Sign-In initialization failed');
             }

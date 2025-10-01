@@ -68,12 +68,7 @@ export class SessionService {
           this.config.warningTime = Math.min(2, this.config.timeout * 0.3); // 30% of timeout, max 2 minutes
         }
 
-        console.log(
-          '🔐 SessionService: Adjusted config for timeout:',
-          this.config.timeout,
-          'warningTime:',
-          this.config.warningTime,
-        );
+        // Config adjusted for timeout and warning time
         await this.saveConfig();
       }
 
@@ -89,11 +84,7 @@ export class SessionService {
       // Start session timer
       this.startTimer();
 
-      console.log(
-        'Session started with timeout:',
-        this.config.timeout,
-        'minutes',
-      );
+      console.log(`Session started with ${this.config.timeout} minute timeout`);
     } catch (error) {
       console.error('Failed to start session:', error);
       throw error;
@@ -209,7 +200,7 @@ export class SessionService {
       this.config = { ...this.config, ...config };
       await this.saveConfig();
 
-      console.log('🔐 SessionService: Config updated:', this.config);
+      // Session config updated
 
       // Restart timer with new config
       if (this.isActive) {
@@ -305,12 +296,7 @@ export class SessionService {
 
     const warningMs = (this.config.timeout - warningTimeInSeconds) * 60 * 1000;
 
-    console.log('🔐 SessionService startTimer:', {
-      timeoutMinutes: this.config.timeout,
-      warningTimeSeconds: warningTimeInSeconds * 60,
-      warningMs,
-      timeoutMs,
-    });
+    // Session timer started
 
     // Set warning timer
     if (warningTimeInSeconds > 0 && warningMs > 0) {

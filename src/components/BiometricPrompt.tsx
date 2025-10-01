@@ -106,18 +106,13 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
         isAuthenticatingRef.current = false;
       };
     } else if (visible && !isAvailable) {
-      console.log(
-        '🔐 BiometricPrompt: Waiting for biometric availability check...',
-      );
+      // Waiting for biometric availability check
     }
   }, [visible, isAvailable]);
 
   // Reset when visibility changes
   React.useEffect(() => {
-    console.log('🔐 BiometricPrompt: Visibility changed', {
-      visible,
-      resetting: !visible,
-    });
+    // Biometric prompt visibility changed
     if (!visible) {
       hasTriggeredRef.current = false;
       isAuthenticatingRef.current = false;

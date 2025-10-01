@@ -172,6 +172,7 @@ export const useSession = (): UseSessionReturn => {
 
   /**
    * Update session timeout based on security settings
+   * FIXED: Only depend on security.autoLockTimeout to avoid loop
    */
   useEffect(() => {
     if (security.autoLockTimeout !== config.timeout) {
@@ -180,9 +181,15 @@ export const useSession = (): UseSessionReturn => {
         timeout: security.autoLockTimeout,
       };
       setConfig(newConfig);
-      updateConfig(newConfig);
+
+      // Call updateConfig without adding it to deps
+      const sessionService = SessionService.getInstance();
+      sessionService.updateConfig(newConfig).catch(error => {
+        console.error('Failed to update session config:', error);
+      });
     }
-  }, [security.autoLockTimeout, config, updateConfig]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [security.autoLockTimeout]); // Only depend on the value that should trigger update
 
   /**
    * Dismiss session warning
@@ -232,17 +239,41 @@ export const useSession = (): UseSessionReturn => {
 
   /**
    * Update session info periodically
+   * Use refs to avoid recreating this function on every render
    */
+  const dispatchRef = useRef(dispatch);
+  const configRef = useRef(config);
+  const sessionRef = useRef(session);
+
+  // Keep refs in sync
+  useEffect(() => {
+    dispatchRef.current = dispatch;
+    configRef.current = config;
+    sessionRef.current = session;
+  }, [dispatch, config, session]);
+
   const updateSessionInfo = useCallback(() => {
     if (isAuthenticated) {
       const sessionService = SessionService.getInstance();
       const info = sessionService.getSessionInfo();
-      setSessionInfo(info);
+
+      // Only update if info actually changed to avoid unnecessary re-renders
+      setSessionInfo(prevInfo => {
+        if (
+          prevInfo.isActive === info.isActive &&
+          prevInfo.timeRemaining === info.timeRemaining &&
+          prevInfo.lastActivity === info.lastActivity &&
+          prevInfo.expiresAt === info.expiresAt
+        ) {
+          return prevInfo; // No change, return same object
+        }
+        return info;
+      });
 
       // Handle session expiry
       if (info.timeRemaining <= 0 && info.isActive) {
-        dispatch(logout());
-        dispatch(
+        dispatchRef.current(logout());
+        dispatchRef.current(
           setSessionExpired({
             expired: true,
             warning: false,
@@ -252,12 +283,12 @@ export const useSession = (): UseSessionReturn => {
       }
       // Handle session warning
       else if (
-        info.timeRemaining <= config.warningTime * 60 * 1000 &&
+        info.timeRemaining <= configRef.current.warningTime * 60 * 1000 &&
         info.isActive &&
-        !session.warning
+        !sessionRef.current.warning
       ) {
         const minutesRemaining = Math.ceil(info.timeRemaining / (60 * 1000));
-        dispatch(
+        dispatchRef.current(
           setSessionExpired({
             warning: true,
             expired: false,
@@ -266,11 +297,23 @@ export const useSession = (): UseSessionReturn => {
         );
       }
     }
-  }, [isAuthenticated, dispatch, config.warningTime, session.warning]);
+  }, [isAuthenticated]); // Only depend on isAuthenticated
 
   /**
    * Handle app state changes
+   * Use refs to avoid recreating this function
    */
+  const isAuthenticatedRef = useRef(isAuthenticated);
+  const updateActivityRef = useRef(updateActivity);
+  const forceLogoutRef = useRef(forceLogout);
+
+  // Keep refs in sync
+  useEffect(() => {
+    isAuthenticatedRef.current = isAuthenticated;
+    updateActivityRef.current = updateActivity;
+    forceLogoutRef.current = forceLogout;
+  }, [isAuthenticated, updateActivity, forceLogout]);
+
   const handleAppStateChange = useCallback(
     async (nextAppState: AppStateStatus) => {
       const previousAppState = appStateRef.current;
@@ -278,12 +321,12 @@ export const useSession = (): UseSessionReturn => {
 
       if (previousAppState === 'background' && nextAppState === 'active') {
         // App coming to foreground
-        if (isAuthenticated) {
+        if (isAuthenticatedRef.current) {
           const sessionService = SessionService.getInstance();
           const isValid = await sessionService.checkSessionOnResume();
           if (!isValid) {
-            dispatch(logout());
-            dispatch(
+            dispatchRef.current(logout());
+            dispatchRef.current(
               setSessionExpired({
                 expired: true,
                 warning: false,
@@ -292,30 +335,26 @@ export const useSession = (): UseSessionReturn => {
             );
           } else {
             // Session is valid, update activity
-            await updateActivity();
+            await updateActivityRef.current();
           }
         }
       } else if (nextAppState === 'background' || nextAppState === 'inactive') {
         // App going to background
-        if (config.lockOnBackground && isAuthenticated) {
+        if (configRef.current.lockOnBackground && isAuthenticatedRef.current) {
           // Immediate lock on background if configured
           setTimeout(async () => {
-            await forceLogout();
+            await forceLogoutRef.current();
           }, 1000); // 1 second delay to allow for quick app switches
         }
       }
     },
-    [
-      isAuthenticated,
-      config.lockOnBackground,
-      dispatch,
-      updateActivity,
-      forceLogout,
-    ],
+    [], // No dependencies - use refs instead
   );
 
   /**
    * Setup periodic updates and app state listener
+   * FIXED: Remove updateSessionInfo and handleAppStateChange from deps
+   * They are now stable thanks to refs
    */
   useEffect(() => {
     if (isAuthenticated) {
@@ -353,18 +392,28 @@ export const useSession = (): UseSessionReturn => {
         timeRemaining: 0,
       });
     }
-  }, [isAuthenticated, updateSessionInfo, handleAppStateChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]); // Only depend on isAuthenticated
 
   /**
    * Start session automatically when user authenticates
+   * FIXED: Use refs to avoid infinite loop
    */
+  const startSessionRef = useRef(startSession);
+  const endSessionRef = useRef(endSession);
+
+  useEffect(() => {
+    startSessionRef.current = startSession;
+    endSessionRef.current = endSession;
+  }, [startSession, endSession]);
+
   useEffect(() => {
     if (isAuthenticated && !sessionInfo.isActive) {
-      startSession();
+      startSessionRef.current();
     } else if (!isAuthenticated && sessionInfo.isActive) {
-      endSession();
+      endSessionRef.current();
     }
-  }, [isAuthenticated, sessionInfo.isActive, startSession, endSession]);
+  }, [isAuthenticated, sessionInfo.isActive]);
 
   /**
    * Cleanup on unmount

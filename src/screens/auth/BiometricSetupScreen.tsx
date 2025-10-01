@@ -313,7 +313,6 @@ export const BiometricSetupScreen: React.FC = () => {
         onError={handleBiometricError}
         title={`Setup ${biometryType}`}
         subtitle={`Authenticate with your ${biometryType.toLowerCase()} to enable this feature`}
-        authenticateText="Setup"
       />
     </SafeAreaView>
   );

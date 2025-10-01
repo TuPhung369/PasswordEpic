@@ -20,43 +20,107 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
 }) => {
   const { authenticate, isAvailable } = useBiometric();
   const hasTriggeredRef = React.useRef(false);
+  const isAuthenticatingRef = React.useRef(false);
+
+  // Store callbacks in refs to avoid dependency issues
+  const authenticateRef = React.useRef(authenticate);
+  const onSuccessRef = React.useRef(onSuccess);
+  const onErrorRef = React.useRef(onError);
+  const onCloseRef = React.useRef(onClose);
+
+  // Update refs when callbacks change
+  React.useEffect(() => {
+    authenticateRef.current = authenticate;
+    onSuccessRef.current = onSuccess;
+    onErrorRef.current = onError;
+    onCloseRef.current = onClose;
+  }, [authenticate, onSuccess, onError, onClose]);
+
+  console.log('🔐 BiometricPrompt: Component rendered', {
+    visible,
+    isAvailable,
+    hasTriggered: hasTriggeredRef.current,
+    isAuthenticating: isAuthenticatingRef.current,
+  });
 
   // Auto-trigger native biometric authentication when visible
   React.useEffect(() => {
-    if (visible && isAvailable && !hasTriggeredRef.current) {
-      console.log('🔐 BiometricPrompt: Auto-triggering native biometric authentication...');
+    console.log('🔐 BiometricPrompt: useEffect triggered', {
+      visible,
+      isAvailable,
+      hasTriggered: hasTriggeredRef.current,
+      isAuthenticating: isAuthenticatingRef.current,
+    });
+
+    if (
+      visible &&
+      isAvailable &&
+      !hasTriggeredRef.current &&
+      !isAuthenticatingRef.current
+    ) {
+      console.log(
+        '🔐 BiometricPrompt: Auto-triggering native biometric authentication...',
+      );
       hasTriggeredRef.current = true;
+      isAuthenticatingRef.current = true;
 
       // Small delay to ensure proper initialization
       const timeout = setTimeout(async () => {
         try {
           console.log('🔐 BiometricPrompt: Calling authenticate...');
-          const success = await authenticate();
-          
+          const success = await authenticateRef.current();
+
           if (success) {
             console.log('🔐 BiometricPrompt: Authentication SUCCESS');
-            onSuccess();
+            onSuccessRef.current();
           } else {
             console.log('🔐 BiometricPrompt: Authentication FAILED');
-            onError('Authentication failed');
+            onErrorRef.current('Authentication failed');
           }
         } catch (error: any) {
           console.error('🔐 BiometricPrompt: Authentication ERROR:', error);
-          onError(error.message || 'Authentication failed');
+
+          // Check if user cancelled (user-initiated cancellation)
+          const isCancellation =
+            error.message?.includes('cancel') ||
+            error.message?.includes('Cancel') ||
+            error.code === 'USER_CANCEL' ||
+            error.code === 'AUTHENTICATION_CANCELED';
+
+          if (isCancellation) {
+            console.log('🔐 BiometricPrompt: User CANCELLED authentication');
+            // Only call onClose for user cancellation (which triggers logout)
+            onCloseRef.current();
+          } else {
+            // For other errors, just report the error
+            onErrorRef.current(error.message || 'Authentication failed');
+          }
         } finally {
-          // Always close after authentication attempt
-          onClose();
+          // Reset authenticating flag
+          isAuthenticatingRef.current = false;
         }
       }, 100);
 
-      return () => clearTimeout(timeout);
+      return () => {
+        clearTimeout(timeout);
+        isAuthenticatingRef.current = false;
+      };
+    } else if (visible && !isAvailable) {
+      console.log(
+        '🔐 BiometricPrompt: Waiting for biometric availability check...',
+      );
     }
-  }, [visible, isAvailable, authenticate, onSuccess, onError, onClose]);
+  }, [visible, isAvailable]);
 
   // Reset when visibility changes
   React.useEffect(() => {
+    console.log('🔐 BiometricPrompt: Visibility changed', {
+      visible,
+      resetting: !visible,
+    });
     if (!visible) {
       hasTriggeredRef.current = false;
+      isAuthenticatingRef.current = false;
     }
   }, [visible]);
 

@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, Text, ActivityIndicator, StyleSheet, AppState } from 'react-native';
+import {
+  View,
+  Text,
+  ActivityIndicator,
+  StyleSheet,
+  AppState,
+} from 'react-native';
 import { AuthNavigator } from './AuthNavigator';
 import { MainNavigator } from './MainNavigator';
 import { useAppSelector, useAppDispatch } from '../hooks/redux';
@@ -26,6 +32,7 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const AppNavigator: React.FC = () => {
+  console.log('🔄 AppNavigator: Component rendering...');
   const dispatch = useAppDispatch();
   const { theme } = useTheme();
   const {
@@ -34,6 +41,12 @@ export const AppNavigator: React.FC = () => {
     biometricEnabled,
     session,
   } = useAppSelector(state => state.auth);
+  console.log('🔄 AppNavigator: Redux state:', {
+    isAuthenticated,
+    masterPasswordConfigured,
+    biometricEnabled,
+    session,
+  });
 
   // Biometric and session hooks - ALWAYS call these
   const { isAvailable: biometricAvailable } = useBiometric();
@@ -53,8 +66,36 @@ export const AppNavigator: React.FC = () => {
   const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
   const [sessionTimeoutVisible, setSessionTimeoutVisible] = useState(false);
   const [biometricCancelled, setBiometricCancelled] = useState(false);
-  const [hasAuthenticatedInSession, setHasAuthenticatedInSession] = useState(false);
+  const [hasAuthenticatedInSession, setHasAuthenticatedInSession] =
+    useState(false);
+  const [initialAuthComplete, setInitialAuthComplete] = useState(false);
   const appStateRef = React.useRef(AppState.currentState);
+
+  // Use refs to track latest values without causing re-renders
+  const stateRefs = React.useRef({
+    isAuthenticated,
+    masterPasswordConfigured,
+    biometricEnabled,
+    biometricAvailable,
+    initialAuthComplete,
+  });
+
+  // Update refs when values change
+  React.useEffect(() => {
+    stateRefs.current = {
+      isAuthenticated,
+      masterPasswordConfigured,
+      biometricEnabled,
+      biometricAvailable,
+      initialAuthComplete,
+    };
+  }, [
+    isAuthenticated,
+    masterPasswordConfigured,
+    biometricEnabled,
+    biometricAvailable,
+    initialAuthComplete,
+  ]);
 
   // Initialize app (no dependencies, runs once)
   useEffect(() => {
@@ -79,9 +120,10 @@ export const AppNavigator: React.FC = () => {
         // We detect this by checking if the user was previously not authenticated
         if (!isAuthenticated) {
           console.log(
-            'Fresh login detected - resetting biometric cancelled flag',
+            'Fresh login detected - resetting biometric cancelled flag and requiring biometric',
           );
           setBiometricCancelled(false);
+          setHasAuthenticatedInSession(false); // Require biometric authentication after fresh login
         } else {
           console.log('Auth state restored - keeping biometric cancelled flag');
         }
@@ -106,15 +148,27 @@ export const AppNavigator: React.FC = () => {
 
           // Start session after successful authentication
           if (masterPasswordSet) {
+            console.log('🔐 Starting session after login...');
             await startSession();
+            console.log('🔐 Session started, sessionActive should be set now');
+          } else {
+            console.log('🔐 Master password not set - skipping session start');
           }
+
+          // Mark initial auth as complete
+          console.log('🔐 Marking initial auth as complete');
+          setInitialAuthComplete(true);
         } catch (error) {
           console.error('Failed to check security settings:', error);
+          setInitialAuthComplete(true);
         }
       } else {
         // User is signed out
         await endSession();
         dispatch(logout());
+        setInitialAuthComplete(false);
+        setBiometricCancelled(false);
+        setHasAuthenticatedInSession(false);
       }
 
       setAppReady(true);
@@ -136,28 +190,80 @@ export const AppNavigator: React.FC = () => {
     const handleAppStateChange = (nextAppState: any) => {
       const currentAppState = appStateRef.current;
       console.log(`🔄 App state changed: ${currentAppState} → ${nextAppState}`);
-      
-      if (currentAppState.match(/inactive|background/) && nextAppState === 'active') {
+
+      if (
+        currentAppState.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
         // App is coming from background to foreground
-        console.log('📱 App resumed from background - require biometric authentication');
-        if (isAuthenticated && masterPasswordConfigured && biometricEnabled && biometricAvailable) {
-          console.log('🔐 Reset authentication flag - biometric required');
-          // Use setTimeout to avoid setState during render
-          setTimeout(() => {
-            setHasAuthenticatedInSession(false);
-          }, 0);
+        console.log(
+          '📱 App resumed from background - require biometric authentication',
+        );
+
+        // Use refs to get latest values without re-registering listener
+        const {
+          isAuthenticated: isAuthFromRef,
+          masterPasswordConfigured: masterPwFromRef,
+          biometricEnabled: bioEnabledFromRef,
+          biometricAvailable: bioAvailableFromRef,
+          initialAuthComplete: initAuthFromRef,
+        } = stateRefs.current;
+
+        // Only handle app resume if initial auth is complete
+        if (!initAuthFromRef) {
+          console.log(
+            '🔐 App resumed but initial auth not complete - skipping biometric',
+          );
+          appStateRef.current = nextAppState;
+          return;
+        }
+
+        if (
+          isAuthFromRef &&
+          masterPwFromRef &&
+          bioEnabledFromRef &&
+          bioAvailableFromRef
+        ) {
+          console.log(
+            '🔐 App resumed - reset authentication flag to require biometric',
+          );
+          // Reset flags to trigger biometric prompt
+          setHasAuthenticatedInSession(false);
+          setBiometricCancelled(false);
+        } else {
+          // Log why we're not requiring biometric
+          if (!isAuthFromRef) {
+            console.log(
+              '🔐 App resumed but not authenticated - skipping biometric',
+            );
+          } else if (!masterPwFromRef) {
+            console.log(
+              '🔐 App resumed but master password not configured yet - skipping biometric',
+            );
+          } else if (!bioEnabledFromRef) {
+            console.log(
+              '🔐 App resumed but biometric not enabled - skipping biometric',
+            );
+          } else if (!bioAvailableFromRef) {
+            console.log(
+              '🔐 App resumed but biometric not available - skipping biometric',
+            );
+          }
         }
       }
       appStateRef.current = nextAppState;
     };
 
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
     return () => subscription?.remove();
-  }, [isAuthenticated, masterPasswordConfigured, biometricEnabled, biometricAvailable]); // Add dependencies for auth state listener
+  }, []); // Empty deps - listener only registered once
 
   // Track when conditions change to trigger biometric authentication
   const shouldShowBiometric = React.useMemo(() => {
-    return (
+    const result =
       isAuthenticated &&
       masterPasswordConfigured &&
       biometricEnabled &&
@@ -166,9 +272,22 @@ export const AppNavigator: React.FC = () => {
       !biometricCancelled &&
       !hasAuthenticatedInSession &&
       sessionActive !== undefined &&
-      !showBiometricPrompt &&
-      !sessionTimeoutVisible
-    );
+      !sessionTimeoutVisible;
+
+    console.log('🔐 shouldShowBiometric calculated:', result, {
+      isAuthenticated,
+      masterPasswordConfigured,
+      biometricEnabled,
+      biometricAvailable,
+      sessionExpired: session.expired,
+      biometricCancelled,
+      hasAuthenticatedInSession,
+      sessionActive,
+      showBiometricPrompt,
+      sessionTimeoutVisible,
+    });
+
+    return result;
   }, [
     isAuthenticated,
     masterPasswordConfigured,
@@ -178,21 +297,48 @@ export const AppNavigator: React.FC = () => {
     biometricCancelled,
     hasAuthenticatedInSession,
     sessionActive,
-    showBiometricPrompt,
     sessionTimeoutVisible,
+    showBiometricPrompt, // Added to fix ESLint warning
   ]);
 
   // Handle biometric prompt display
   useEffect(() => {
-    if (shouldShowBiometric) {
+    console.log(
+      '🔐 useEffect triggered - showBiometricPrompt:',
+      showBiometricPrompt,
+      'shouldShowBiometric:',
+      shouldShowBiometric,
+    );
+
+    if (shouldShowBiometric && !showBiometricPrompt) {
+      // All conditions met and not already showing - show it!
       console.log('🔐 Conditions met - showing biometric prompt');
+      console.log('🔐 Biometric prompt conditions:', {
+        isAuthenticated,
+        masterPasswordConfigured,
+        biometricEnabled,
+        biometricAvailable,
+        sessionExpired: session.expired,
+        biometricCancelled,
+        hasAuthenticatedInSession,
+        sessionActive,
+      });
+      console.log('🔐 Setting showBiometricPrompt to TRUE');
       setShowBiometricPrompt(true);
+    } else if (!shouldShowBiometric && showBiometricPrompt) {
+      // Conditions no longer met but prompt is showing - hide it
+      console.log('🔐 Conditions no longer met - hiding biometric prompt');
+      setShowBiometricPrompt(false);
+    } else if (showBiometricPrompt) {
+      console.log('Not showing biometric prompt - already showing');
     } else {
       // Log why we're not showing the prompt
       if (!isAuthenticated) {
         console.log('Not showing biometric prompt - not authenticated');
       } else if (!masterPasswordConfigured) {
-        console.log('Not showing biometric prompt - master password not configured');
+        console.log(
+          'Not showing biometric prompt - master password not configured',
+        );
       } else if (!biometricEnabled) {
         console.log('Not showing biometric prompt - biometric not enabled');
       } else if (!biometricAvailable) {
@@ -202,22 +348,51 @@ export const AppNavigator: React.FC = () => {
       } else if (biometricCancelled) {
         console.log('Not showing biometric prompt - user cancelled');
       } else if (hasAuthenticatedInSession) {
-        console.log('Not showing biometric prompt - already authenticated in this session');
+        console.log(
+          'Not showing biometric prompt - already authenticated in this session',
+        );
+      } else if (sessionActive === undefined) {
+        console.log('Not showing biometric prompt - session not initialized');
+      } else if (sessionTimeoutVisible) {
+        console.log('Not showing biometric prompt - session timeout visible');
       }
     }
-  }, [shouldShowBiometric, isAuthenticated, masterPasswordConfigured, biometricEnabled, biometricAvailable, session.expired, biometricCancelled, hasAuthenticatedInSession]);
+  }, [
+    shouldShowBiometric,
+    isAuthenticated,
+    masterPasswordConfigured,
+    biometricEnabled,
+    biometricAvailable,
+    session.expired,
+    biometricCancelled,
+    hasAuthenticatedInSession,
+    sessionActive,
+    sessionTimeoutVisible,
+    showBiometricPrompt, // Added to fix ESLint warning
+  ]);
 
   // Reset authentication flag when user logs in (only when transitioning to logged in state)
   const prevAuthRef = React.useRef(isAuthenticated && masterPasswordConfigured);
   useEffect(() => {
     const currentlyLoggedIn = isAuthenticated && masterPasswordConfigured;
     if (currentlyLoggedIn && !prevAuthRef.current) {
-      // Just became logged in - reset for new session
-      console.log('🔐 User just logged in - reset biometric authentication flag');
+      // Just became logged in - require biometric authentication
+      console.log('🔐 User just logged in - require biometric authentication');
+
+      // Reset biometric cancelled flag on fresh login
+      setBiometricCancelled(false);
       setHasAuthenticatedInSession(false);
+
+      // Start session if not already started
+      if (!sessionActive) {
+        console.log('🔐 Starting session after master password setup');
+        startSession().catch(error => {
+          console.error('Failed to start session:', error);
+        });
+      }
     }
     prevAuthRef.current = currentlyLoggedIn;
-  }, [isAuthenticated, masterPasswordConfigured]);
+  }, [isAuthenticated, masterPasswordConfigured, sessionActive, startSession]);
 
   // Handle session timeout warning
   useEffect(() => {

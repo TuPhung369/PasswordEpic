@@ -16,7 +16,7 @@ const Stack = createNativeStackNavigator<AuthStackParamList>();
 
 export const AuthNavigator: React.FC = () => {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator id={undefined} screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Onboarding" component={OnboardingScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="MasterPassword" component={MasterPasswordScreen} />

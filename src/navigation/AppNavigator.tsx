@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+// @ts-ignore - Type declarations exist but TypeScript can't find them
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
   View,
@@ -16,6 +17,7 @@ import {
   logout,
   setMasterPasswordConfigured,
   setBiometricEnabled,
+  setSessionExpired,
 } from '../store/slices/authSlice';
 import { isMasterPasswordSet } from '../services/secureStorageService';
 import { useBiometric } from '../hooks/useBiometric';
@@ -185,9 +187,9 @@ export const AppNavigator: React.FC = () => {
     isAuthenticated,
   ]);
 
-  // Listen for app state changes to trigger biometric on resume
+  // Listen for app state changes to implement smart authentication flow
   useEffect(() => {
-    const handleAppStateChange = (nextAppState: any) => {
+    const handleAppStateChange = async (nextAppState: any) => {
       const currentAppState = appStateRef.current;
       console.log(`🔄 App state changed: ${currentAppState} → ${nextAppState}`);
 
@@ -197,7 +199,7 @@ export const AppNavigator: React.FC = () => {
       ) {
         // App is coming from background to foreground
         console.log(
-          '📱 App resumed from background - require biometric authentication',
+          '📱 App resumed from background - checking authentication requirement',
         );
 
         // Use refs to get latest values without re-registering listener
@@ -212,41 +214,94 @@ export const AppNavigator: React.FC = () => {
         // Only handle app resume if initial auth is complete
         if (!initAuthFromRef) {
           console.log(
-            '🔐 App resumed but initial auth not complete - skipping biometric',
+            '🔐 App resumed but initial auth not complete - skipping auth check',
           );
           appStateRef.current = nextAppState;
           return;
         }
 
-        if (
-          isAuthFromRef &&
-          masterPwFromRef &&
-          bioEnabledFromRef &&
-          bioAvailableFromRef
-        ) {
-          console.log(
-            '🔐 App resumed - reset authentication flag to require biometric',
-          );
-          // Reset flags to trigger biometric prompt
-          setHasAuthenticatedInSession(false);
-          setBiometricCancelled(false);
+        // Only check authentication if user was authenticated
+        if (isAuthFromRef && masterPwFromRef) {
+          try {
+            // Get smart authentication requirement based on session state
+            const SessionService = (await import('../services/sessionService'))
+              .SessionService;
+            const sessionService = SessionService.getInstance();
+            const authReq = await sessionService.getAuthenticationRequirement();
+
+            console.log(
+              `🔐 Authentication requirement: ${authReq.type} (${authReq.reason})`,
+            );
+
+            switch (authReq.type) {
+              case 'fullLogin':
+                // Session expired or policy requires full login
+                console.log('🔐 Requiring full login - logging out user');
+                dispatch(logout());
+                dispatch(
+                  setSessionExpired({
+                    expired: true,
+                    warning: false,
+                    timeRemaining: 0,
+                  }),
+                );
+                setHasAuthenticatedInSession(false);
+                setBiometricCancelled(false);
+                break;
+
+              case 'biometric':
+                // Session valid - allow biometric quick unlock
+                if (bioEnabledFromRef && bioAvailableFromRef) {
+                  console.log(
+                    '🔐 Session valid - requiring biometric for quick unlock',
+                  );
+                  setHasAuthenticatedInSession(false);
+                  setBiometricCancelled(false);
+                } else {
+                  console.log(
+                    '🔐 Session valid but biometric not available - allowing access',
+                  );
+                  // Session is valid, no biometric needed
+                }
+                break;
+
+              case 'none':
+                // Quick switch - no authentication needed
+                console.log(
+                  '🔐 Quick switch detected - no additional authentication required',
+                );
+                break;
+
+              default:
+                console.warn(
+                  '🔐 Unknown authentication requirement type:',
+                  authReq.type,
+                );
+                break;
+            }
+          } catch (error) {
+            console.error(
+              '🔐 Error checking authentication requirement:',
+              error,
+            );
+            // Fallback to requiring biometric if available
+            if (bioEnabledFromRef && bioAvailableFromRef) {
+              console.log(
+                '🔐 Error occurred - falling back to biometric requirement',
+              );
+              setHasAuthenticatedInSession(false);
+              setBiometricCancelled(false);
+            }
+          }
         } else {
-          // Log why we're not requiring biometric
+          // Log why we're not checking authentication
           if (!isAuthFromRef) {
             console.log(
-              '🔐 App resumed but not authenticated - skipping biometric',
+              '🔐 App resumed but not authenticated - skipping auth check',
             );
           } else if (!masterPwFromRef) {
             console.log(
-              '🔐 App resumed but master password not configured yet - skipping biometric',
-            );
-          } else if (!bioEnabledFromRef) {
-            console.log(
-              '🔐 App resumed but biometric not enabled - skipping biometric',
-            );
-          } else if (!bioAvailableFromRef) {
-            console.log(
-              '🔐 App resumed but biometric not available - skipping biometric',
+              '🔐 App resumed but master password not configured yet - skipping auth check',
             );
           }
         }
@@ -259,7 +314,7 @@ export const AppNavigator: React.FC = () => {
       handleAppStateChange,
     );
     return () => subscription?.remove();
-  }, []); // Empty deps - listener only registered once
+  }, [dispatch]); // Include dispatch dependency
 
   // Track when conditions change to trigger biometric authentication
   const shouldShowBiometric = React.useMemo(() => {
@@ -436,11 +491,19 @@ export const AppNavigator: React.FC = () => {
 
   return (
     <>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {isAuthenticated && masterPasswordConfigured ? (
-          <Stack.Screen name="Main" component={MainNavigator} />
+      <Stack.Navigator id={undefined} screenOptions={{ headerShown: false }}>
+        {!isAuthenticated || !masterPasswordConfigured ? (
+          <Stack.Screen
+            name="Auth"
+            component={AuthNavigator}
+            options={{ headerShown: false }}
+          />
         ) : (
-          <Stack.Screen name="Auth" component={AuthNavigator} />
+          <Stack.Screen
+            name="Main"
+            component={MainNavigator}
+            options={{ headerShown: false }}
+          />
         )}
       </Stack.Navigator>
 

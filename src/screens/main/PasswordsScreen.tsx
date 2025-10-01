@@ -20,12 +20,13 @@ export const PasswordsScreen: React.FC = () => {
   const { theme } = useTheme();
 
   const filteredPasswords = passwords.filter(
-    (password: PasswordEntry) =>
+    password =>
       password.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      password.website.toLowerCase().includes(searchQuery.toLowerCase()),
+      (password.website &&
+        password.website.toLowerCase().includes(searchQuery.toLowerCase())),
   );
 
-  const renderPasswordItem = ({ item }: { item: PasswordEntry }) => (
+  const renderPasswordItem = ({ item }: { item: PasswordEntry | any }) => (
     <TouchableOpacity
       style={[
         styles.passwordItem,

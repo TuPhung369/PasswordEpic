@@ -341,6 +341,15 @@ export const getBiometricStatus = async (): Promise<boolean> => {
   }
 };
 
+export const getMasterPasswordHash = async (): Promise<string | null> => {
+  try {
+    return await AsyncStorage.getItem(STORAGE_KEYS.MASTER_PASSWORD_HASH);
+  } catch (error) {
+    console.error('Failed to get master password hash:', error);
+    return null;
+  }
+};
+
 // SecureStorageService singleton class for biometric integration
 export class SecureStorageService {
   private static instance: SecureStorageService;

@@ -1,8 +1,7 @@
-// Firebase service with Google OAuth integration
+﻿// Firebase service with Google OAuth integration and Manual Persistence
 import { initializeApp, getApps } from 'firebase/app';
 import {
   getAuth,
-  initializeAuth,
   signInWithCredential,
   GoogleAuthProvider,
   signOut as firebaseSignOut,
@@ -10,98 +9,138 @@ import {
   User,
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 // Polyfills for Firebase
 import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
 
-// Firebase configuration - From google-services.json and GoogleService-Info.plist
+// Firebase configuration
 export const firebaseConfig = {
-  apiKey: 'AIzaSyAezBXf7E2IyXIKfrOLWeZe3yboFROgi9E', // From google-services.json
+  apiKey: 'AIzaSyAezBXf7E2IyXIKfrOLWeZe3yboFROgi9E',
   authDomain: 'passwordepic.firebaseapp.com',
   projectId: 'passwordepic',
   storageBucket: 'passwordepic.firebasestorage.app',
   messagingSenderId: '816139401561',
   appId:
     Platform.OS === 'ios'
-      ? '1:816139401561:ios:54cb13ede3e05c00a8b448' // iOS app ID from GoogleService-Info.plist
-      : '1:816139401561:android:3fa8015f67b531f9a8b448', // From google-services.json
+      ? '1:816139401561:ios:54cb13ede3e05c00a8b448'
+      : '1:816139401561:android:3fa8015f67b531f9a8b448',
 };
 
-// Initialize Firebase
-let app;
-let auth;
-let firestore;
+// Auth state management
+const AUTH_STORAGE_KEY = '@PasswordEpic:auth_state';
 
-try {
-  if (getApps().length === 0) {
-    app = initializeApp(firebaseConfig);
-    auth = initializeAuth(app);
-    firestore = getFirestore(app);
-    console.log('Firebase initialized successfully');
-  } else {
-    // Using existing Firebase app
-    app = getApps()[0];
-    auth = getAuth(app);
-    firestore = getFirestore(app);
-  }
-} catch (error) {
-  console.error('Firebase initialization error:', error);
-  // Don't throw the error, just log it and continue with null values
-  app = null;
-  auth = null;
-  firestore = null;
+interface StoredAuthData {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
 }
 
-// Firebase services
+const saveAuthState = async (user: User) => {
+  try {
+    const authData: StoredAuthData = {
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName,
+      photoURL: user.photoURL,
+    };
+    await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authData));
+    console.log('💾 Auth state saved');
+  } catch (error) {
+    console.error('❌ Failed to save auth state:', error);
+  }
+};
+
+const clearAuthState = async () => {
+  try {
+    await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    console.log('🗑️ Auth state cleared');
+  } catch (error) {
+    console.error('❌ Failed to clear auth state:', error);
+  }
+};
+
+// Initialize Firebase app once
+let app: any = null;
+let auth: any = null;
+let firestore: any = null;
+
+try {
+  console.log('🔄 Initializing Firebase app...');
+  if (getApps().length === 0) {
+    app = initializeApp(firebaseConfig);
+    console.log('✅ Firebase app initialized');
+  } else {
+    app = getApps()[0];
+    console.log('✅ Using existing Firebase app');
+  }
+
+  // Initialize auth immediately after app
+  if (app && !auth) {
+    console.log('🔐 Initializing Firebase Auth...');
+    auth = getAuth(app);
+    console.log('✅ Auth initialized');
+  }
+
+  // Initialize firestore immediately after app
+  if (app && !firestore) {
+    console.log('🗄️ Initializing Firestore...');
+    firestore = getFirestore(app);
+    console.log('✅ Firestore initialized');
+  }
+} catch (error) {
+  console.error('❌ Firebase initialization failed:', error);
+}
+
+// Service getters
+export const getFirebaseAuth = () => {
+  return auth;
+};
+
+export const getFirebaseFirestore = () => {
+  return firestore;
+};
+
+// Legacy exports
 export const firebaseAuth = auth;
 export const firebaseFirestore = firestore;
 
 // Auth state listener
 export const onAuthStateChange = (callback: (user: User | null) => void) => {
-  if (!firebaseAuth) {
-    console.warn(
-      'Firebase Auth not initialized, cannot listen to auth state changes',
-    );
-    return () => {}; // Return empty unsubscribe function
+  const authInstance = getFirebaseAuth();
+  if (!authInstance) {
+    console.warn('⚠️ Auth not available');
+    return () => {};
   }
-  return onAuthStateChanged(firebaseAuth, callback);
+
+  return onAuthStateChanged(authInstance, async user => {
+    if (user) {
+      await saveAuthState(user);
+      console.log('🔐 User authenticated');
+    } else {
+      await clearAuthState();
+      console.log('🚪 User signed out');
+    }
+    callback(user);
+  });
 };
 
-// Google Sign-In with Firebase
+// Google Sign-In
 export const signInWithGoogle = async (
   idToken: string,
   accessToken?: string,
 ) => {
   try {
-    console.log('Creating Google credential for Firebase...');
-    console.log('Tokens received:', {
-      hasIdToken: !!idToken,
-      hasAccessToken: !!accessToken,
-      idTokenLength: idToken?.length || 0,
-      accessTokenLength: accessToken?.length || 0,
-    });
-
-    if (!firebaseAuth) {
-      throw new Error('Firebase Auth is not initialized');
-    }
-
-    if (!idToken) {
-      throw new Error('ID token is required for Firebase authentication');
+    const authInstance = getFirebaseAuth();
+    if (!authInstance) {
+      throw new Error('Firebase Auth not available');
     }
 
     const credential = GoogleAuthProvider.credential(idToken, accessToken);
-    console.log('Google credential created successfully');
-
-    console.log('Signing in with Firebase...');
-    const result = await signInWithCredential(firebaseAuth, credential);
-
-    console.log('Firebase sign-in successful:', {
-      uid: result.user.uid,
-      email: result.user.email,
-      displayName: result.user.displayName,
-    });
+    const result = await signInWithCredential(authInstance, credential);
 
     return {
       success: true,
@@ -113,29 +152,10 @@ export const signInWithGoogle = async (
       },
     };
   } catch (error: any) {
-    // Use console.warn instead of console.error to prevent React Native error overlay
-    console.warn('Firebase Google Sign-In error:', {
-      code: error.code,
-      message: error.message,
-      stack: error.stack,
-      fullError: error,
-    });
-
-    let errorMessage = 'Failed to sign in with Google';
-
-    if (error.code === 'auth/invalid-credential') {
-      errorMessage = 'Invalid Google credentials. Please try signing in again.';
-    } else if (error.code === 'auth/network-request-failed') {
-      errorMessage = 'Network error. Please check your internet connection.';
-    } else if (error.code === 'auth/too-many-requests') {
-      errorMessage = 'Too many failed attempts. Please try again later.';
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-
+    console.warn('Firebase Google Sign-In error:', error);
     return {
       success: false,
-      error: errorMessage,
+      error: error.message || 'Failed to sign in with Google',
     };
   }
 };
@@ -143,10 +163,11 @@ export const signInWithGoogle = async (
 // Sign out
 export const signOut = async () => {
   try {
-    if (!firebaseAuth) {
-      return { success: false, error: 'Firebase Auth not initialized' };
+    const authInstance = getFirebaseAuth();
+    if (!authInstance) {
+      return { success: false, error: 'Firebase Auth not available' };
     }
-    await firebaseSignOut(firebaseAuth);
+    await firebaseSignOut(authInstance);
     return { success: true };
   } catch (error: any) {
     console.warn('Sign out error:', error);
@@ -156,33 +177,30 @@ export const signOut = async () => {
 
 // Get current user
 export const getCurrentUser = () => {
-  if (!firebaseAuth) {
-    console.warn('Firebase Auth not initialized, cannot get current user');
-    return null;
-  }
-  return firebaseAuth.currentUser;
+  const authInstance = getFirebaseAuth();
+  return authInstance?.currentUser || null;
 };
 
-// Initialize Firebase services
+// Initialize Firebase (for compatibility)
 export const initializeFirebase = () => {
   try {
-    // Check if Firebase services are properly initialized
-    if (!firebaseAuth) {
-      throw new Error('Firebase Auth not initialized');
+    console.log('🚀 Starting Firebase initialization...');
+    if (app && auth && firestore) {
+      console.log('✅ Firebase initialization complete');
+      return true;
+    } else {
+      console.error(
+        '❌ Firebase initialization failed - services not available',
+      );
+      return false;
     }
-    if (!firebaseFirestore) {
-      throw new Error('Firebase Firestore not initialized');
-    }
-
-    console.log('Firebase services validation successful');
-    return true;
-  } catch (error) {
-    console.error('Firebase initialization failed:', error);
+  } catch (error: any) {
+    console.error('❌ Firebase initialization error:', error);
     return false;
   }
 };
 
-// User data interface
+// User interface
 export interface FirebaseUser {
   uid: string;
   email: string | null;

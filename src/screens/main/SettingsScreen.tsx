@@ -170,13 +170,26 @@ export const SettingsScreen: React.FC = () => {
 
   const handleAutoLockChange = () => {
     const options = [
+      '30 seconds',
       '1 minute',
       '5 minutes',
       '15 minutes',
       '30 minutes',
       '1 hour',
     ];
-    const values = [1, 5, 15, 30, 60];
+    const values = [0.5, 1, 5, 15, 30, 60];
+    const descriptions = [
+      'High security - lock very quickly',
+      'Balanced security - quick sessions',
+      'Moderate security - normal usage',
+      'Convenience focused - longer sessions',
+      'Low security - extended usage',
+      'Maximum convenience - minimal locking',
+    ];
+
+    const formatDescription = (index: number): string => {
+      return `${options[index]}\n${descriptions[index]}`;
+    };
 
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
@@ -184,30 +197,61 @@ export const SettingsScreen: React.FC = () => {
           options: ['Cancel', ...options],
           cancelButtonIndex: 0,
           title: 'Auto-Lock Timeout',
+          message:
+            'Choose when to require authentication after inactivity.\n\n' +
+            '🔐 Biometric: Quick unlock for short backgrounds\n' +
+            '🔑 Master Password: Required when session expires',
         },
         buttonIndex => {
           if (buttonIndex > 0) {
             const newTimeout = values[buttonIndex - 1];
             dispatch(updateSecuritySettings({ autoLockTimeout: newTimeout }));
             updateSessionConfig({ timeout: newTimeout });
+
+            // Show confirmation with explanation
+            Alert.alert(
+              'Auto-Lock Updated',
+              `Session timeout set to ${options[buttonIndex - 1]}.\n\n` +
+                `• Quick app switches: Biometric authentication\n` +
+                `• After ${options[buttonIndex - 1]}: Master password required`,
+              [{ text: 'OK' }],
+            );
           }
         },
       );
     } else {
-      // For Android, you could implement a similar picker or modal
+      // Enhanced Android dialog with descriptions
+      const buttons = options
+        .map((option, index) => ({
+          text: formatDescription(index),
+          onPress: () => {
+            const newTimeout = values[index];
+            dispatch(updateSecuritySettings({ autoLockTimeout: newTimeout }));
+            updateSessionConfig({ timeout: newTimeout });
+
+            // Show confirmation with explanation
+            Alert.alert(
+              'Auto-Lock Updated',
+              `Session timeout set to ${option}.\n\n` +
+                `• Quick app switches: Biometric authentication\n` +
+                `• After ${option}: Master password required`,
+              [{ text: 'OK' }],
+            );
+          },
+        }))
+        .concat([
+          {
+            text: 'Cancel',
+            onPress: () => {},
+          },
+        ]);
+
       Alert.alert(
         'Auto-Lock Timeout',
-        'Choose when to automatically lock the app',
-        options
-          .map((option, index) => ({
-            text: option,
-            onPress: () => {
-              const newTimeout = values[index];
-              dispatch(updateSecuritySettings({ autoLockTimeout: newTimeout }));
-              updateSessionConfig({ timeout: newTimeout });
-            },
-          }))
-          .concat([{ text: 'Cancel', onPress: () => {} }]),
+        'Choose when to require authentication after inactivity.\n\n' +
+          '🔐 Biometric: Quick unlock for short backgrounds\n' +
+          '🔑 Master Password: Required when session expires\n',
+        buttons,
       );
     }
   };
@@ -349,9 +393,13 @@ export const SettingsScreen: React.FC = () => {
           <SettingItem
             icon="timer"
             title="Auto-Lock"
-            subtitle={`Lock after ${security.autoLockTimeout} minute${
-              security.autoLockTimeout === 1 ? '' : 's'
-            }`}
+            subtitle={`Session timeout: ${
+              security.autoLockTimeout === 0.5
+                ? '30 seconds'
+                : security.autoLockTimeout === 1
+                ? '1 minute'
+                : `${security.autoLockTimeout} minutes`
+            } • Biometric for quick access`}
             theme={theme}
             onPress={handleAutoLockChange}
           />

@@ -273,6 +273,83 @@ export class SessionService {
     await this.handleSessionExpiry();
   }
 
+  /**
+   * Get authentication requirement based on session state and background time
+   * This helps determine whether to show biometric, require full login, or allow access
+   */
+  public async getAuthenticationRequirement(): Promise<{
+    type: 'none' | 'biometric' | 'fullLogin';
+    reason: string;
+    sessionValid: boolean;
+  }> {
+    try {
+      // Load last activity from storage
+      const lastActivityStr = await AsyncStorage.getItem(
+        this.SESSION_LAST_ACTIVITY,
+      );
+
+      // No session data = require full login
+      if (!lastActivityStr || !this.isActive) {
+        return {
+          type: 'fullLogin',
+          reason: 'no_active_session',
+          sessionValid: false,
+        };
+      }
+
+      const lastActivity = parseInt(lastActivityStr, 10);
+      const now = Date.now();
+      const timeInBackground =
+        this.backgroundTime > 0 ? now - this.backgroundTime : 0;
+      const timeSinceActivity = now - lastActivity;
+      const sessionTimeout = this.config.timeout * 60 * 1000;
+
+      // Check if session expired due to inactivity
+      if (timeSinceActivity >= sessionTimeout) {
+        return {
+          type: 'fullLogin',
+          reason: 'session_expired',
+          sessionValid: false,
+        };
+      }
+
+      // Check background lock policy
+      if (this.config.lockOnBackground && timeInBackground > 30000) {
+        // For lockOnBackground, require full login after 30 seconds
+        return {
+          type: 'fullLogin',
+          reason: 'background_lock_policy',
+          sessionValid: true, // Session is technically valid, but policy requires full auth
+        };
+      }
+
+      // Session is valid - allow biometric for quick unlock
+      // But only if we've been in background (otherwise no auth needed)
+      if (timeInBackground > 1000) {
+        // 1 second threshold for actual background
+        return {
+          type: 'biometric',
+          reason: 'quick_unlock',
+          sessionValid: true,
+        };
+      }
+
+      // No authentication needed for very quick switches
+      return {
+        type: 'none',
+        reason: 'quick_switch',
+        sessionValid: true,
+      };
+    } catch (error) {
+      console.error('Failed to get authentication requirement:', error);
+      return {
+        type: 'fullLogin',
+        reason: 'error_checking_session',
+        sessionValid: false,
+      };
+    }
+  }
+
   // Private methods
 
   private startTimer(): void {
@@ -425,6 +502,30 @@ export class SessionService {
    */
   public async initialize(): Promise<void> {
     await this.loadConfig();
+  }
+
+  /**
+   * Get current session debug info (for testing/debugging)
+   */
+  public getDebugInfo(): {
+    isActive: boolean;
+    lastActivity: number;
+    backgroundTime: number;
+    config: SessionConfig;
+    timeInBackground: number;
+    timeSinceActivity: number;
+    sessionTimeout: number;
+  } {
+    const now = Date.now();
+    return {
+      isActive: this.isActive,
+      lastActivity: this.lastActivity,
+      backgroundTime: this.backgroundTime,
+      config: this.config,
+      timeInBackground: this.backgroundTime > 0 ? now - this.backgroundTime : 0,
+      timeSinceActivity: now - this.lastActivity,
+      sessionTimeout: this.config.timeout * 60 * 1000,
+    };
   }
 
   /**

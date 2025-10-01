@@ -47,6 +47,7 @@ export const MainNavigator: React.FC = () => {
 
   return (
     <Tab.Navigator
+      id={undefined}
       screenOptions={({ route }) => ({
         tabBarIcon: renderTabBarIcon(route.name),
         tabBarActiveTintColor: theme.primary,

@@ -1,18 +1,19 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   PasswordEntry,
   EncryptedPasswordEntry,
   PasswordCategory,
-} from "../types/password";
+} from '../types/password';
 import {
   encryptData,
   decryptData,
   generateSecureRandom,
-} from "./cryptoService";
-import { getMasterPasswordHash } from "./secureStorageService";
+  deriveKeyFromPassword,
+} from './cryptoService';
+import { getMasterPasswordHash } from './secureStorageService';
 
-const PASSWORDS_STORAGE_KEY = "encrypted_passwords";
-const CATEGORIES_STORAGE_KEY = "password_categories";
+const PASSWORDS_STORAGE_KEY = 'encrypted_passwords';
+const CATEGORIES_STORAGE_KEY = 'password_categories';
 
 export class EncryptedDatabaseService {
   private static instance: EncryptedDatabaseService;
@@ -30,11 +31,11 @@ export class EncryptedDatabaseService {
   /**
    * Initialize the database service with master password
    */
-  public async initialize(masterPassword: string): Promise<void> {
+  public async initialize(_masterPassword: string): Promise<void> {
     try {
       this.masterPasswordHash = await getMasterPasswordHash();
       if (!this.masterPasswordHash) {
-        throw new Error("Master password not configured");
+        throw new Error('Master password not configured');
       }
     } catch (error) {
       throw new Error(`Failed to initialize database: ${error}`);
@@ -46,27 +47,29 @@ export class EncryptedDatabaseService {
    */
   public async savePasswordEntry(
     entry: PasswordEntry,
-    masterPassword: string
+    masterPassword: string,
   ): Promise<void> {
     try {
       // Generate unique salt and IV for this entry
       const salt = generateSecureRandom(32);
       const iv = generateSecureRandom(16);
 
+      // Derive key from master password and salt
+      const derivedKey = deriveKeyFromPassword(masterPassword, salt);
+
       // Encrypt the password entry
-      const encryptedResult = await encryptData(
+      const encryptedResult = encryptData(
         JSON.stringify(entry),
-        masterPassword,
-        salt,
-        iv
+        derivedKey,
+        iv,
       );
 
       const encryptedEntry: EncryptedPasswordEntry = {
         id: entry.id,
-        encryptedData: encryptedResult.encryptedData,
-        salt: encryptedResult.salt,
+        encryptedData: encryptedResult.ciphertext,
+        salt: salt,
         iv: encryptedResult.iv,
-        authTag: encryptedResult.authTag,
+        authTag: encryptedResult.tag,
         createdAt: entry.createdAt,
         updatedAt: new Date(),
       };
@@ -75,13 +78,13 @@ export class EncryptedDatabaseService {
       const existingEntries = await this.getAllEncryptedEntries();
 
       // Update or add the entry
-      const updatedEntries = existingEntries.filter((e) => e.id !== entry.id);
+      const updatedEntries = existingEntries.filter(e => e.id !== entry.id);
       updatedEntries.push(encryptedEntry);
 
       // Save back to storage
       await AsyncStorage.setItem(
         PASSWORDS_STORAGE_KEY,
-        JSON.stringify(updatedEntries)
+        JSON.stringify(updatedEntries),
       );
     } catch (error) {
       throw new Error(`Failed to save password entry: ${error}`);
@@ -93,23 +96,28 @@ export class EncryptedDatabaseService {
    */
   public async getPasswordEntry(
     id: string,
-    masterPassword: string
+    masterPassword: string,
   ): Promise<PasswordEntry | null> {
     try {
       const encryptedEntries = await this.getAllEncryptedEntries();
-      const encryptedEntry = encryptedEntries.find((e) => e.id === id);
+      const encryptedEntry = encryptedEntries.find(e => e.id === id);
 
       if (!encryptedEntry) {
         return null;
       }
 
-      // Decrypt the entry
-      const decryptedData = await decryptData(
-        encryptedEntry.encryptedData,
+      // Derive key from master password and salt
+      const derivedKey = deriveKeyFromPassword(
         masterPassword,
         encryptedEntry.salt,
+      );
+
+      // Decrypt the entry
+      const decryptedData = decryptData(
+        encryptedEntry.encryptedData,
+        derivedKey,
         encryptedEntry.iv,
-        encryptedEntry.authTag
+        encryptedEntry.authTag,
       );
 
       const entry: PasswordEntry = JSON.parse(decryptedData);
@@ -123,7 +131,7 @@ export class EncryptedDatabaseService {
    * Decrypt and retrieve all password entries
    */
   public async getAllPasswordEntries(
-    masterPassword: string
+    masterPassword: string,
   ): Promise<PasswordEntry[]> {
     try {
       const encryptedEntries = await this.getAllEncryptedEntries();
@@ -131,12 +139,17 @@ export class EncryptedDatabaseService {
 
       for (const encryptedEntry of encryptedEntries) {
         try {
-          const decryptedData = await decryptData(
-            encryptedEntry.encryptedData,
+          // Derive key from master password and salt
+          const derivedKey = deriveKeyFromPassword(
             masterPassword,
             encryptedEntry.salt,
+          );
+
+          const decryptedData = decryptData(
+            encryptedEntry.encryptedData,
+            derivedKey,
             encryptedEntry.iv,
-            encryptedEntry.authTag
+            encryptedEntry.authTag,
           );
 
           const entry: PasswordEntry = JSON.parse(decryptedData);
@@ -148,7 +161,7 @@ export class EncryptedDatabaseService {
       }
 
       return decryptedEntries.sort(
-        (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()
+        (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime(),
       );
     } catch (error) {
       throw new Error(`Failed to retrieve password entries: ${error}`);
@@ -161,11 +174,11 @@ export class EncryptedDatabaseService {
   public async deletePasswordEntry(id: string): Promise<void> {
     try {
       const existingEntries = await this.getAllEncryptedEntries();
-      const updatedEntries = existingEntries.filter((e) => e.id !== id);
+      const updatedEntries = existingEntries.filter(e => e.id !== id);
 
       await AsyncStorage.setItem(
         PASSWORDS_STORAGE_KEY,
-        JSON.stringify(updatedEntries)
+        JSON.stringify(updatedEntries),
       );
     } catch (error) {
       throw new Error(`Failed to delete password entry: ${error}`);
@@ -177,23 +190,21 @@ export class EncryptedDatabaseService {
    */
   public async searchPasswordEntries(
     query: string,
-    masterPassword: string
+    masterPassword: string,
   ): Promise<PasswordEntry[]> {
     try {
       const allEntries = await this.getAllPasswordEntries(masterPassword);
       const lowercaseQuery = query.toLowerCase();
 
       return allEntries.filter(
-        (entry) =>
+        entry =>
           entry.title.toLowerCase().includes(lowercaseQuery) ||
           entry.username.toLowerCase().includes(lowercaseQuery) ||
           (entry.website &&
             entry.website.toLowerCase().includes(lowercaseQuery)) ||
           (entry.notes && entry.notes.toLowerCase().includes(lowercaseQuery)) ||
           (entry.tags &&
-            entry.tags.some((tag) =>
-              tag.toLowerCase().includes(lowercaseQuery)
-            ))
+            entry.tags.some(tag => tag.toLowerCase().includes(lowercaseQuery))),
       );
     } catch (error) {
       throw new Error(`Failed to search password entries: ${error}`);
@@ -205,11 +216,11 @@ export class EncryptedDatabaseService {
    */
   public async getPasswordEntriesByCategory(
     category: string,
-    masterPassword: string
+    masterPassword: string,
   ): Promise<PasswordEntry[]> {
     try {
       const allEntries = await this.getAllPasswordEntries(masterPassword);
-      return allEntries.filter((entry) => entry.category === category);
+      return allEntries.filter(entry => entry.category === category);
     } catch (error) {
       throw new Error(`Failed to get entries by category: ${error}`);
     }
@@ -220,7 +231,7 @@ export class EncryptedDatabaseService {
    */
   public async updateLastUsed(
     id: string,
-    masterPassword: string
+    masterPassword: string,
   ): Promise<void> {
     try {
       const entry = await this.getPasswordEntry(id, masterPassword);
@@ -239,14 +250,14 @@ export class EncryptedDatabaseService {
    */
   public async getFrequentlyUsedEntries(
     masterPassword: string,
-    limit: number = 10
+    limit: number = 10,
   ): Promise<PasswordEntry[]> {
     try {
       const allEntries = await this.getAllPasswordEntries(masterPassword);
       return allEntries
-        .filter((entry) => entry.lastUsed)
+        .filter(entry => entry.lastUsed)
         .sort(
-          (a, b) => (b.lastUsed?.getTime() || 0) - (a.lastUsed?.getTime() || 0)
+          (a, b) => (b.lastUsed?.getTime() || 0) - (a.lastUsed?.getTime() || 0),
         )
         .slice(0, limit);
     } catch (error) {
@@ -258,11 +269,11 @@ export class EncryptedDatabaseService {
    * Get favorite password entries
    */
   public async getFavoriteEntries(
-    masterPassword: string
+    masterPassword: string,
   ): Promise<PasswordEntry[]> {
     try {
       const allEntries = await this.getAllPasswordEntries(masterPassword);
-      return allEntries.filter((entry) => entry.isFavorite);
+      return allEntries.filter(entry => entry.isFavorite);
     } catch (error) {
       throw new Error(`Failed to get favorite entries: ${error}`);
     }
@@ -277,13 +288,13 @@ export class EncryptedDatabaseService {
     try {
       const existingCategories = await this.getAllCategories();
       const updatedCategories = existingCategories.filter(
-        (c) => c.id !== category.id
+        c => c.id !== category.id,
       );
       updatedCategories.push(category);
 
       await AsyncStorage.setItem(
         CATEGORIES_STORAGE_KEY,
-        JSON.stringify(updatedCategories)
+        JSON.stringify(updatedCategories),
       );
     } catch (error) {
       throw new Error(`Failed to save category: ${error}`);
@@ -301,12 +312,12 @@ export class EncryptedDatabaseService {
       }
 
       const categories: PasswordCategory[] = JSON.parse(categoriesJson);
-      return categories.map((cat) => ({
+      return categories.map(cat => ({
         ...cat,
         createdAt: new Date(cat.createdAt),
       }));
     } catch (error) {
-      console.error("Failed to get categories:", error);
+      console.error('Failed to get categories:', error);
       return this.getDefaultCategories();
     }
   }
@@ -317,11 +328,11 @@ export class EncryptedDatabaseService {
   public async deleteCategory(id: string): Promise<void> {
     try {
       const existingCategories = await this.getAllCategories();
-      const updatedCategories = existingCategories.filter((c) => c.id !== id);
+      const updatedCategories = existingCategories.filter(c => c.id !== id);
 
       await AsyncStorage.setItem(
         CATEGORIES_STORAGE_KEY,
-        JSON.stringify(updatedCategories)
+        JSON.stringify(updatedCategories),
       );
     } catch (error) {
       throw new Error(`Failed to delete category: ${error}`);
@@ -338,13 +349,13 @@ export class EncryptedDatabaseService {
       }
 
       const entries: EncryptedPasswordEntry[] = JSON.parse(entriesJson);
-      return entries.map((entry) => ({
+      return entries.map(entry => ({
         ...entry,
         createdAt: new Date(entry.createdAt),
         updatedAt: new Date(entry.updatedAt),
       }));
     } catch (error) {
-      console.error("Failed to get encrypted entries:", error);
+      console.error('Failed to get encrypted entries:', error);
       return [];
     }
   }
@@ -352,45 +363,45 @@ export class EncryptedDatabaseService {
   private getDefaultCategories(): PasswordCategory[] {
     return [
       {
-        id: "social",
-        name: "Social Media",
-        icon: "people",
-        color: "#3B82F6",
+        id: 'social',
+        name: 'Social Media',
+        icon: 'people',
+        color: '#3B82F6',
         createdAt: new Date(),
       },
       {
-        id: "work",
-        name: "Work",
-        icon: "work",
-        color: "#10B981",
+        id: 'work',
+        name: 'Work',
+        icon: 'work',
+        color: '#10B981',
         createdAt: new Date(),
       },
       {
-        id: "finance",
-        name: "Finance",
-        icon: "account-balance",
-        color: "#F59E0B",
+        id: 'finance',
+        name: 'Finance',
+        icon: 'account-balance',
+        color: '#F59E0B',
         createdAt: new Date(),
       },
       {
-        id: "shopping",
-        name: "Shopping",
-        icon: "shopping-cart",
-        color: "#EF4444",
+        id: 'shopping',
+        name: 'Shopping',
+        icon: 'shopping-cart',
+        color: '#EF4444',
         createdAt: new Date(),
       },
       {
-        id: "entertainment",
-        name: "Entertainment",
-        icon: "movie",
-        color: "#8B5CF6",
+        id: 'entertainment',
+        name: 'Entertainment',
+        icon: 'movie',
+        color: '#8B5CF6',
         createdAt: new Date(),
       },
       {
-        id: "other",
-        name: "Other",
-        icon: "folder",
-        color: "#6B7280",
+        id: 'other',
+        name: 'Other',
+        icon: 'folder',
+        color: '#6B7280',
         createdAt: new Date(),
       },
     ];
@@ -423,7 +434,7 @@ export class EncryptedDatabaseService {
         passwords: passwords ? JSON.parse(passwords) : [],
         categories: categories ? JSON.parse(categories) : [],
         exportedAt: new Date().toISOString(),
-        version: "1.0",
+        version: '1.0',
       };
 
       return JSON.stringify(exportData);
@@ -442,14 +453,14 @@ export class EncryptedDatabaseService {
       if (importData.passwords) {
         await AsyncStorage.setItem(
           PASSWORDS_STORAGE_KEY,
-          JSON.stringify(importData.passwords)
+          JSON.stringify(importData.passwords),
         );
       }
 
       if (importData.categories) {
         await AsyncStorage.setItem(
           CATEGORIES_STORAGE_KEY,
-          JSON.stringify(importData.categories)
+          JSON.stringify(importData.categories),
         );
       }
     } catch (error) {

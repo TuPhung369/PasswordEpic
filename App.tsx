@@ -17,15 +17,33 @@ const App: React.FC = () => {
   useEffect(() => {
     const initializeServices = async () => {
       try {
-        const firebaseInitialized = initializeFirebase();
-        let authInitialized = false;
-        if (firebaseInitialized) {
-          try {
-            authInitialized = initializeAuth();
-          } catch (authError) {
-            console.warn('Auth initialization failed:', authError);
-            authInitialized = false;
+        // Add a small delay to ensure React Native environment is fully ready
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        console.log('🚀 Initializing services...');
+
+        // Try Firebase initialization
+        try {
+          const firebaseInitialized = initializeFirebase();
+          if (firebaseInitialized) {
+            console.log('✅ Firebase initialized successfully');
+          } else {
+            console.warn('⚠️ Firebase initialization failed');
           }
+        } catch (firebaseError) {
+          console.warn('⚠️ Firebase initialization error:', firebaseError);
+        }
+
+        // Try Auth initialization
+        try {
+          const authInitialized = initializeAuth();
+          if (authInitialized) {
+            console.log('✅ Auth initialized successfully');
+          } else {
+            console.warn('⚠️ Auth initialization failed');
+          }
+        } catch (authError) {
+          console.warn('⚠️ Auth initialization error:', authError);
         }
 
         // Delay Google Sign-In initialization to ensure activity is ready
@@ -36,27 +54,16 @@ const App: React.FC = () => {
             if (googleSignInInitialized) {
               console.log('✅ Google Sign-In initialized successfully');
             } else {
-              console.warn('Google Sign-In initialization failed');
+              console.warn('⚠️ Google Sign-In initialization failed');
             }
           } catch (error) {
-            console.warn('Google Sign-In initialization error:', error);
+            console.warn('⚠️ Google Sign-In initialization error:', error);
           }
         }, 3000); // Wait 3 seconds for activity to be ready
 
-        if (firebaseInitialized) {
-          console.log('Firebase initialized successfully');
-          if (authInitialized) {
-            console.log('Auth initialized successfully');
-          } else {
-            console.warn(
-              'Auth initialization failed - Google Sign-In will not work',
-            );
-          }
-        } else {
-          console.warn('Firebase initialization failed');
-        }
+        console.log('✅ Service initialization completed');
       } catch (error) {
-        console.error('Service initialization error:', error);
+        console.error('❌ Service initialization error:', error);
       }
     };
 

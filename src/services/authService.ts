@@ -123,4 +123,4 @@ export interface AuthResult {
   error?: string;
 }
 
-export { FirebaseUser } from './firebase';
+export type { FirebaseUser } from './firebase';

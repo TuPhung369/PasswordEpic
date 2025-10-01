@@ -281,7 +281,10 @@ export class BiometricService {
           // Real device biometric authentication succeeded
           return { success: true, signature };
         } else {
-          const errorMessage = typeof error === 'string' ? error : 'Biometric authentication failed';
+          const errorMessage =
+            typeof error === 'string'
+              ? error
+              : 'Biometric authentication failed';
           console.error('Biometric authentication failed:', errorMessage);
           return {
             success: false,
@@ -363,17 +366,7 @@ export class BiometricService {
           return status;
         }
       } catch (keyCheckError) {
-        console.warn(
-          '🔐 isBiometricSetup: Key existence check failed (likely emulator):',
-          keyCheckError,
-        );
-
         // For emulator or when key check fails, rely on storage status only
-        // This allows biometric setup to work on emulator
-        console.log(
-          '🔐 isBiometricSetup: using emulator fallback - returning storage status:',
-          status,
-        );
         return status;
       }
     } catch (error) {

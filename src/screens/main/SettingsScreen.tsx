@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,16 +6,25 @@ import {
   TouchableOpacity,
   Switch,
   ScrollView,
+  Alert,
+  ActionSheetIOS,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppSelector, useAppDispatch } from '../../hooks/redux';
 import { RootState } from '../../store';
 import { logout } from '../../store/slices/authSlice';
+import {
+  updateSecuritySettings,
+  setBiometricEnabled,
+} from '../../store/slices/settingsSlice';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { ThemeSelector } from '../../components/ThemeSelector';
 import { ThemeModal } from '../../components/ThemeModal';
 import { useTheme } from '../../contexts/ThemeContext';
 import { signOut } from '../../services/authService';
+import { useBiometric } from '../../hooks/useBiometric';
+import { useSession } from '../../hooks/useSession';
 
 // Tách SettingItem ra ngoài để tránh re-render
 const SettingItem: React.FC<{
@@ -60,6 +69,129 @@ export const SettingsScreen: React.FC = () => {
   const { security } = useAppSelector((state: RootState) => state.settings);
   const { theme } = useTheme();
   const [themeModalVisible, setThemeModalVisible] = useState(false);
+
+  // Biometric and session hooks
+  const {
+    isAvailable: biometricAvailable,
+    biometryType,
+    setupBiometric,
+    disableBiometric: disableBiometricService,
+  } = useBiometric();
+
+  const { updateConfig: updateSessionConfig } = useSession();
+
+  // Debug Redux state changes
+  useEffect(() => {
+    console.log('⚙️ SettingsScreen: Redux security state:', security);
+    console.log('⚙️ SettingsScreen: biometricEnabled =', security.biometricEnabled);
+    console.log('⚙️ SettingsScreen: biometricAvailable =', biometricAvailable);
+    console.log('⚙️ SettingsScreen: Switch value =', security.biometricEnabled && biometricAvailable);
+  }, [security, biometricAvailable]);
+
+  // Handler functions
+  const handleBiometricToggle = async (enabled: boolean) => {
+    if (enabled) {
+      if (!biometricAvailable) {
+        Alert.alert(
+          'Biometric Not Available',
+          'Biometric authentication is not available on this device.',
+          [{ text: 'OK' }],
+        );
+        return;
+      }
+
+      try {
+        console.log('⚙️ SettingsScreen: Starting biometric setup...');
+        const success = await setupBiometric();
+        console.log('⚙️ SettingsScreen: Setup result:', success);
+        
+        if (success) {
+          console.log('⚙️ SettingsScreen: Setup successful, updating Redux...');
+          dispatch(setBiometricEnabled(true));
+          dispatch(updateSecuritySettings({ biometricEnabled: true }));
+          console.log('⚙️ SettingsScreen: Redux states updated');
+        } else {
+          console.log('⚙️ SettingsScreen: Setup failed');
+        }
+      } catch (error) {
+        console.error('⚙️ SettingsScreen: Setup error:', error);
+        Alert.alert(
+          'Setup Failed',
+          'Failed to setup biometric authentication. Please try again.',
+          [{ text: 'OK' }],
+        );
+      }
+    } else {
+      Alert.alert(
+        'Disable Biometric',
+        'Are you sure you want to disable biometric authentication?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Disable',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await disableBiometricService();
+                dispatch(setBiometricEnabled(false));
+                dispatch(updateSecuritySettings({ biometricEnabled: false }));
+              } catch (error) {
+                console.error('Failed to disable biometric:', error);
+              }
+            },
+          },
+        ],
+      );
+    }
+  };
+
+  const handleAutoLockChange = () => {
+    const options = [
+      '1 minute',
+      '5 minutes',
+      '15 minutes',
+      '30 minutes',
+      '1 hour',
+    ];
+    const values = [1, 5, 15, 30, 60];
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', ...options],
+          cancelButtonIndex: 0,
+          title: 'Auto-Lock Timeout',
+        },
+        buttonIndex => {
+          if (buttonIndex > 0) {
+            const newTimeout = values[buttonIndex - 1];
+            dispatch(updateSecuritySettings({ autoLockTimeout: newTimeout }));
+            updateSessionConfig({ timeout: newTimeout });
+          }
+        },
+      );
+    } else {
+      // For Android, you could implement a similar picker or modal
+      Alert.alert(
+        'Auto-Lock Timeout',
+        'Choose when to automatically lock the app',
+        options
+          .map((option, index) => ({
+            text: option,
+            onPress: () => {
+              const newTimeout = values[index];
+              dispatch(updateSecuritySettings({ autoLockTimeout: newTimeout }));
+              updateSessionConfig({ timeout: newTimeout });
+            },
+          }))
+          .concat([{ text: 'Cancel', onPress: () => {} }]),
+      );
+    }
+  };
+
+  const handleScreenProtectionToggle = (enabled: boolean) => {
+    dispatch(updateSecuritySettings({ screenProtectionEnabled: enabled }));
+  };
 
   const handleLogout = async () => {
     try {
@@ -116,12 +248,17 @@ export const SettingsScreen: React.FC = () => {
           <SettingItem
             icon="fingerprint"
             title="Biometric Authentication"
-            subtitle="Use fingerprint or face recognition"
+            subtitle={
+              biometricAvailable
+                ? `Use ${biometryType.toLowerCase()}`
+                : 'Not available on this device'
+            }
             theme={theme}
             rightElement={
               <Switch
                 value={security.biometricEnabled}
-                onValueChange={() => {}}
+                onValueChange={handleBiometricToggle}
+                disabled={!biometricAvailable}
                 trackColor={{ false: theme.surface, true: theme.primary }}
                 thumbColor={
                   security.biometricEnabled
@@ -135,9 +272,11 @@ export const SettingsScreen: React.FC = () => {
           <SettingItem
             icon="timer"
             title="Auto-Lock"
-            subtitle={`Lock after ${security.autoLockTimeout} minutes`}
+            subtitle={`Lock after ${security.autoLockTimeout} minute${
+              security.autoLockTimeout === 1 ? '' : 's'
+            }`}
             theme={theme}
-            onPress={() => {}}
+            onPress={handleAutoLockChange}
           />
 
           <SettingItem
@@ -148,7 +287,7 @@ export const SettingsScreen: React.FC = () => {
             rightElement={
               <Switch
                 value={security.screenProtectionEnabled}
-                onValueChange={() => {}}
+                onValueChange={handleScreenProtectionToggle}
                 trackColor={{ false: theme.surface, true: theme.primary }}
                 thumbColor={
                   security.screenProtectionEnabled

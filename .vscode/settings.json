@@ -4,11 +4,22 @@
   "java.project.outputPath": "",
   "java.compile.nullAnalysis.mode": "automatic",
   "java.configuration.checkProjectSettingsExclusions": false,
+  "java.import.gradle.enabled": false,
+  "java.autobuild.enabled": false,
+  "java.import.exclusions": [
+    "**/node_modules/**",
+    "**/node_modules/**/android/**",
+    "**/build/**",
+    "**/.gradle/**"
+  ],
   // Loại trừ các thư mục không cần thiết khỏi Java indexing
   "files.exclude": {
     "**/node_modules/**/android": true,
     "**/node_modules/**/.gradle": true,
-    "**/node_modules/**/build": true
+    "**/node_modules/**/build": true,
+    "**/node_modules/**/.settings": true,
+    "**/node_modules/**/.project": true,
+    "**/node_modules/**/.classpath": true
   },
   // Cấu hình cho React Native
   "typescript.preferences.importModuleSpecifier": "relative",

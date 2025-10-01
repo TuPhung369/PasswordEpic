@@ -7,6 +7,12 @@ interface User {
   photoURL: string | null;
 }
 
+interface SessionState {
+  expired: boolean;
+  warning: boolean;
+  timeRemaining: number;
+}
+
 interface AuthState {
   isAuthenticated: boolean;
   user: User | null;
@@ -14,6 +20,7 @@ interface AuthState {
   error: string | null;
   masterPasswordConfigured: boolean;
   biometricEnabled: boolean;
+  session: SessionState;
 }
 
 const initialState: AuthState = {
@@ -23,6 +30,11 @@ const initialState: AuthState = {
   error: null,
   masterPasswordConfigured: false,
   biometricEnabled: false,
+  session: {
+    expired: false,
+    warning: false,
+    timeRemaining: 0,
+  },
 };
 
 const authSlice = createSlice({
@@ -62,6 +74,19 @@ const authSlice = createSlice({
     setBiometricEnabled: (state, action: PayloadAction<boolean>) => {
       state.biometricEnabled = action.payload;
     },
+    setSessionExpired: (
+      state,
+      action: PayloadAction<Partial<SessionState>>,
+    ) => {
+      state.session = { ...state.session, ...action.payload };
+    },
+    clearSession: state => {
+      state.session = {
+        expired: false,
+        warning: false,
+        timeRemaining: 0,
+      };
+    },
   },
 });
 
@@ -73,5 +98,7 @@ export const {
   clearError,
   setMasterPasswordConfigured,
   setBiometricEnabled,
+  setSessionExpired,
+  clearSession,
 } = authSlice.actions;
 export default authSlice.reducer;

@@ -1,7 +1,8 @@
-import {createSlice, PayloadAction} from '@reduxjs/toolkit';
+import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 interface SecuritySettings {
   biometricEnabled: boolean;
+  biometricType: string;
   autoLockTimeout: number; // in minutes
   requireBiometricForAutoFill: boolean;
   screenProtectionEnabled: boolean;
@@ -26,6 +27,7 @@ interface SettingsState {
 const initialState: SettingsState = {
   security: {
     biometricEnabled: true,
+    biometricType: 'Biometric Authentication',
     autoLockTimeout: 5,
     requireBiometricForAutoFill: true,
     screenProtectionEnabled: true,
@@ -50,19 +52,25 @@ const settingsSlice = createSlice({
       state,
       action: PayloadAction<Partial<SecuritySettings>>,
     ) => {
-      state.security = {...state.security, ...action.payload};
+      state.security = { ...state.security, ...action.payload };
     },
     updateGeneratorSettings: (
       state,
       action: PayloadAction<Partial<GeneratorSettings>>,
     ) => {
-      state.generator = {...state.generator, ...action.payload};
+      state.generator = { ...state.generator, ...action.payload };
     },
     setTheme: (state, action: PayloadAction<'light' | 'dark' | 'system'>) => {
       state.theme = action.payload;
     },
     setLanguage: (state, action: PayloadAction<string>) => {
       state.language = action.payload;
+    },
+    setBiometricEnabled: (state, action: PayloadAction<boolean>) => {
+      state.security.biometricEnabled = action.payload;
+    },
+    setBiometricType: (state, action: PayloadAction<string>) => {
+      state.security.biometricType = action.payload;
     },
   },
 });
@@ -72,5 +80,7 @@ export const {
   updateGeneratorSettings,
   setTheme,
   setLanguage,
+  setBiometricEnabled,
+  setBiometricType,
 } = settingsSlice.actions;
 export default settingsSlice.reducer;

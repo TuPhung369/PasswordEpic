@@ -143,7 +143,7 @@ export const LoginScreen: React.FC = () => {
 
         {googleSignInAvailable && (
           <Text style={[styles.methodText, { color: theme.textSecondary }]}>
-            🔧 Sử dụng Native Google Sign-In
+            🔧 Using Native Google Sign-In
           </Text>
         )}
 

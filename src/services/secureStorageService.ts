@@ -1,37 +1,37 @@
 // Secure storage service using React Native Keychain and AsyncStorage
-import * as Keychain from "react-native-keychain";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
-import { generateSalt, hashPassword, verifyPassword } from "./cryptoService";
+import * as Keychain from 'react-native-keychain';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import { generateSalt, hashPassword, verifyPassword } from './cryptoService';
 
 // Keychain service configuration
-const KEYCHAIN_SERVICE = "PasswordEpic";
-const KEYCHAIN_OPTIONS: Keychain.Options = {
+const KEYCHAIN_SERVICE = 'PasswordEpic';
+const KEYCHAIN_OPTIONS = {
   service: KEYCHAIN_SERVICE,
   accessControl:
     Keychain.ACCESS_CONTROL.BIOMETRY_CURRENT_SET_OR_DEVICE_PASSCODE,
-  authenticatePrompt: "Authenticate to access your passwords",
+  authenticatePrompt: 'Authenticate to access your passwords',
   accessGroup:
-    Platform.OS === "ios" ? "group.passwordepic.keychain" : undefined,
+    Platform.OS === 'ios' ? 'group.passwordepic.keychain' : undefined,
   touchID: true,
   showModal: true,
-  kLocalizedFallbackTitle: "Use Passcode",
+  kLocalizedFallbackTitle: 'Use Passcode',
 };
 
 // Storage keys
 const STORAGE_KEYS = {
-  MASTER_PASSWORD_HASH: "master_password_hash",
-  MASTER_PASSWORD_SALT: "master_password_salt",
-  USER_SETTINGS: "user_settings",
-  ENCRYPTED_PASSWORDS: "encrypted_passwords",
-  BIOMETRIC_ENABLED: "biometric_enabled",
-  LAST_BACKUP: "last_backup",
+  MASTER_PASSWORD_HASH: 'master_password_hash',
+  MASTER_PASSWORD_SALT: 'master_password_salt',
+  USER_SETTINGS: 'user_settings',
+  ENCRYPTED_PASSWORDS: 'encrypted_passwords',
+  BIOMETRIC_ENABLED: 'biometric_enabled',
+  LAST_BACKUP: 'last_backup',
 };
 
 // Master password management
 export const storeMasterPassword = async (
   password: string,
-  enableBiometric: boolean = true
+  enableBiometric: boolean = true,
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     // Generate salt for password hashing
@@ -55,28 +55,28 @@ export const storeMasterPassword = async (
 
       await Keychain.setInternetCredentials(
         KEYCHAIN_SERVICE,
-        "master_password",
+        'master_password',
         password,
-        keychainOptions
+        keychainOptions,
       );
 
-      await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, "true");
+      await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'true');
     } else {
-      await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, "false");
+      await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'false');
     }
 
     return { success: true };
   } catch (error: any) {
-    console.error("Failed to store master password:", error);
+    console.error('Failed to store master password:', error);
     return {
       success: false,
-      error: error.message || "Failed to store master password",
+      error: error.message || 'Failed to store master password',
     };
   }
 };
 
 export const verifyMasterPassword = async (
-  password: string
+  password: string,
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     const [passwordHash, salt] = await AsyncStorage.multiGet([
@@ -85,21 +85,21 @@ export const verifyMasterPassword = async (
     ]);
 
     if (!passwordHash[1] || !salt[1]) {
-      return { success: false, error: "Master password not set" };
+      return { success: false, error: 'Master password not set' };
     }
 
     const isValid = verifyPassword(password, passwordHash[1], salt[1]);
 
     if (!isValid) {
-      return { success: false, error: "Invalid master password" };
+      return { success: false, error: 'Invalid master password' };
     }
 
     return { success: true };
   } catch (error: any) {
-    console.error("Failed to verify master password:", error);
+    console.error('Failed to verify master password:', error);
     return {
       success: false,
-      error: error.message || "Failed to verify master password",
+      error: error.message || 'Failed to verify master password',
     };
   }
 };
@@ -111,11 +111,11 @@ export const getMasterPasswordFromBiometric = async (): Promise<{
 }> => {
   try {
     const biometricEnabled = await AsyncStorage.getItem(
-      STORAGE_KEYS.BIOMETRIC_ENABLED
+      STORAGE_KEYS.BIOMETRIC_ENABLED,
     );
 
-    if (biometricEnabled !== "true") {
-      return { success: false, error: "Biometric authentication not enabled" };
+    if (biometricEnabled !== 'true') {
+      return { success: false, error: 'Biometric authentication not enabled' };
     }
 
     // Check if biometric authentication is available
@@ -123,18 +123,18 @@ export const getMasterPasswordFromBiometric = async (): Promise<{
     if (!biometryType) {
       return {
         success: false,
-        error: "Biometric authentication not available",
+        error: 'Biometric authentication not available',
       };
     }
 
     // Retrieve password from keychain with biometric authentication
     const credentials = await Keychain.getInternetCredentials(
       KEYCHAIN_SERVICE,
-      KEYCHAIN_OPTIONS
+      KEYCHAIN_OPTIONS,
     );
 
-    if (!credentials || credentials === false) {
-      return { success: false, error: "No stored credentials found" };
+    if (!credentials || typeof credentials === 'boolean') {
+      return { success: false, error: 'No stored credentials found' };
     }
 
     return {
@@ -142,16 +142,16 @@ export const getMasterPasswordFromBiometric = async (): Promise<{
       password: credentials.password,
     };
   } catch (error: any) {
-    console.error("Failed to get master password from biometric:", error);
+    console.error('Failed to get master password from biometric:', error);
 
-    let errorMessage = "Biometric authentication failed";
+    let errorMessage = 'Biometric authentication failed';
 
-    if (error.message?.includes("UserCancel")) {
-      errorMessage = "Authentication was cancelled";
-    } else if (error.message?.includes("UserFallback")) {
-      errorMessage = "User chose to enter password manually";
-    } else if (error.message?.includes("BiometryNotAvailable")) {
-      errorMessage = "Biometric authentication not available";
+    if (error.message?.includes('UserCancel')) {
+      errorMessage = 'Authentication was cancelled';
+    } else if (error.message?.includes('UserFallback')) {
+      errorMessage = 'User chose to enter password manually';
+    } else if (error.message?.includes('BiometryNotAvailable')) {
+      errorMessage = 'Biometric authentication not available';
     }
 
     return { success: false, error: errorMessage };
@@ -161,9 +161,9 @@ export const getMasterPasswordFromBiometric = async (): Promise<{
 export const isBiometricEnabled = async (): Promise<boolean> => {
   try {
     const enabled = await AsyncStorage.getItem(STORAGE_KEYS.BIOMETRIC_ENABLED);
-    return enabled === "true";
+    return enabled === 'true';
   } catch (error) {
-    console.error("Failed to check biometric status:", error);
+    console.error('Failed to check biometric status:', error);
     return false;
   }
 };
@@ -179,7 +179,7 @@ export const isBiometricAvailable = async (): Promise<{
       biometryType: biometryType || undefined,
     };
   } catch (error) {
-    console.error("Failed to check biometric availability:", error);
+    console.error('Failed to check biometric availability:', error);
     return { available: false };
   }
 };
@@ -187,7 +187,7 @@ export const isBiometricAvailable = async (): Promise<{
 // Encrypted data storage
 export const storeEncryptedData = async (
   key: string,
-  data: any
+  data: any,
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     const jsonData = JSON.stringify(data);
@@ -197,19 +197,19 @@ export const storeEncryptedData = async (
     console.error(`Failed to store encrypted data for key ${key}:`, error);
     return {
       success: false,
-      error: error.message || "Failed to store encrypted data",
+      error: error.message || 'Failed to store encrypted data',
     };
   }
 };
 
 export const getEncryptedData = async (
-  key: string
+  key: string,
 ): Promise<{ success: boolean; data?: any; error?: string }> => {
   try {
     const jsonData = await AsyncStorage.getItem(key);
 
     if (!jsonData) {
-      return { success: false, error: "No data found" };
+      return { success: false, error: 'No data found' };
     }
 
     const data = JSON.parse(jsonData);
@@ -218,13 +218,13 @@ export const getEncryptedData = async (
     console.error(`Failed to get encrypted data for key ${key}:`, error);
     return {
       success: false,
-      error: error.message || "Failed to retrieve encrypted data",
+      error: error.message || 'Failed to retrieve encrypted data',
     };
   }
 };
 
 export const removeEncryptedData = async (
-  key: string
+  key: string,
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     await AsyncStorage.removeItem(key);
@@ -233,14 +233,14 @@ export const removeEncryptedData = async (
     console.error(`Failed to remove encrypted data for key ${key}:`, error);
     return {
       success: false,
-      error: error.message || "Failed to remove encrypted data",
+      error: error.message || 'Failed to remove encrypted data',
     };
   }
 };
 
 // User settings management
 export interface UserSettings {
-  theme: "light" | "dark" | "system";
+  theme: 'light' | 'dark' | 'system';
   autoLockTimeout: number; // minutes
   biometricEnabled: boolean;
   screenProtectionEnabled: boolean;
@@ -249,7 +249,7 @@ export interface UserSettings {
 }
 
 export const storeUserSettings = async (
-  settings: UserSettings
+  settings: UserSettings,
 ): Promise<{ success: boolean; error?: string }> => {
   return storeEncryptedData(STORAGE_KEYS.USER_SETTINGS, settings);
 };
@@ -264,7 +264,7 @@ export const getUserSettings = async (): Promise<{
   if (!result.success) {
     // Return default settings if none exist
     const defaultSettings: UserSettings = {
-      theme: "dark",
+      theme: 'dark',
       autoLockTimeout: 5,
       biometricEnabled: false,
       screenProtectionEnabled: true,
@@ -289,18 +289,18 @@ export const clearAllStoredData = async (): Promise<{
 
     // Clear keychain data
     try {
-      await Keychain.resetInternetCredentials(KEYCHAIN_SERVICE);
+      await Keychain.resetInternetCredentials({ service: KEYCHAIN_SERVICE });
     } catch (keychainError) {
-      console.warn("Failed to clear keychain data:", keychainError);
+      console.warn('Failed to clear keychain data:', keychainError);
       // Don't fail the entire operation if keychain clearing fails
     }
 
     return { success: true };
   } catch (error: any) {
-    console.error("Failed to clear stored data:", error);
+    console.error('Failed to clear stored data:', error);
     return {
       success: false,
-      error: error.message || "Failed to clear stored data",
+      error: error.message || 'Failed to clear stored data',
     };
   }
 };
@@ -309,14 +309,59 @@ export const clearAllStoredData = async (): Promise<{
 export const isMasterPasswordSet = async (): Promise<boolean> => {
   try {
     const passwordHash = await AsyncStorage.getItem(
-      STORAGE_KEYS.MASTER_PASSWORD_HASH
+      STORAGE_KEYS.MASTER_PASSWORD_HASH,
     );
     return passwordHash !== null;
   } catch (error) {
-    console.error("Failed to check master password status:", error);
+    console.error('Failed to check master password status:', error);
     return false;
   }
 };
+
+// Biometric authentication management
+export const storeBiometricStatus = async (enabled: boolean): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.BIOMETRIC_ENABLED,
+      JSON.stringify(enabled),
+    );
+  } catch (error) {
+    console.error('Failed to store biometric status:', error);
+    throw error;
+  }
+};
+
+export const getBiometricStatus = async (): Promise<boolean> => {
+  try {
+    const status = await AsyncStorage.getItem(STORAGE_KEYS.BIOMETRIC_ENABLED);
+    return status ? JSON.parse(status) : false;
+  } catch (error) {
+    console.error('Failed to get biometric status:', error);
+    return false;
+  }
+};
+
+// SecureStorageService singleton class for biometric integration
+export class SecureStorageService {
+  private static instance: SecureStorageService;
+
+  private constructor() {}
+
+  public static getInstance(): SecureStorageService {
+    if (!SecureStorageService.instance) {
+      SecureStorageService.instance = new SecureStorageService();
+    }
+    return SecureStorageService.instance;
+  }
+
+  public async storeBiometricStatus(enabled: boolean): Promise<void> {
+    return storeBiometricStatus(enabled);
+  }
+
+  public async getBiometricStatus(): Promise<boolean> {
+    return getBiometricStatus();
+  }
+}
 
 // Storage keys export for external use
 export { STORAGE_KEYS };

@@ -17,6 +17,11 @@ import { logout } from '../../store/slices/authSlice';
 import {
   updateSecuritySettings,
   setBiometricEnabled,
+  setScreenProtectionEnabled,
+  setSecurityChecksEnabled,
+  setRootDetectionEnabled,
+  setAntiTamperingEnabled,
+  setMemoryProtectionEnabled,
 } from '../../store/slices/settingsSlice';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { ThemeSelector } from '../../components/ThemeSelector';
@@ -25,6 +30,8 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { signOut } from '../../services/authService';
 import { useBiometric } from '../../hooks/useBiometric';
 import { useSession } from '../../hooks/useSession';
+import { useSecurity } from '../../hooks/useSecurity';
+import SecurityWarningModal from '../../components/SecurityWarningModal';
 
 // Tách SettingItem ra ngoài để tránh re-render
 const SettingItem: React.FC<{
@@ -69,6 +76,7 @@ export const SettingsScreen: React.FC = () => {
   const { security } = useAppSelector((state: RootState) => state.settings);
   const { theme } = useTheme();
   const [themeModalVisible, setThemeModalVisible] = useState(false);
+  const [securityWarningVisible, setSecurityWarningVisible] = useState(false);
 
   // Biometric and session hooks
   const {
@@ -80,12 +88,27 @@ export const SettingsScreen: React.FC = () => {
 
   const { updateConfig: updateSessionConfig } = useSession();
 
+  // Security hooks
+  const {
+    security: securityState,
+    checkSecurity,
+    enableScreenProtection,
+    disableScreenProtection,
+    getSecuritySummary,
+  } = useSecurity();
+
   // Debug Redux state changes
   useEffect(() => {
     console.log('⚙️ SettingsScreen: Redux security state:', security);
-    console.log('⚙️ SettingsScreen: biometricEnabled =', security.biometricEnabled);
+    console.log(
+      '⚙️ SettingsScreen: biometricEnabled =',
+      security.biometricEnabled,
+    );
     console.log('⚙️ SettingsScreen: biometricAvailable =', biometricAvailable);
-    console.log('⚙️ SettingsScreen: Switch value =', security.biometricEnabled && biometricAvailable);
+    console.log(
+      '⚙️ SettingsScreen: Switch value =',
+      security.biometricEnabled && biometricAvailable,
+    );
   }, [security, biometricAvailable]);
 
   // Handler functions
@@ -104,7 +127,7 @@ export const SettingsScreen: React.FC = () => {
         console.log('⚙️ SettingsScreen: Starting biometric setup...');
         const success = await setupBiometric();
         console.log('⚙️ SettingsScreen: Setup result:', success);
-        
+
         if (success) {
           console.log('⚙️ SettingsScreen: Setup successful, updating Redux...');
           dispatch(setBiometricEnabled(true));
@@ -189,8 +212,62 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
-  const handleScreenProtectionToggle = (enabled: boolean) => {
-    dispatch(updateSecuritySettings({ screenProtectionEnabled: enabled }));
+  const handleScreenProtectionToggle = async (enabled: boolean) => {
+    if (enabled) {
+      const success = await enableScreenProtection();
+      if (success) {
+        dispatch(setScreenProtectionEnabled(true));
+
+        // Show warning if on emulator (Android only)
+        if (Platform.OS === 'android') {
+          Alert.alert(
+            'Screen Protection Enabled',
+            '⚠️ NOTE: Screenshot blocking does NOT work on Android emulators.\n\n' +
+              'FLAG_SECURE is set correctly, but emulators bypass it for development.\n\n' +
+              '✅ To test: Use a real Android device.',
+            [{ text: 'OK' }],
+          );
+        }
+      } else {
+        Alert.alert(
+          'Screen Protection',
+          'Screen protection requires native module implementation. Feature will be available in production build.',
+          [{ text: 'OK' }],
+        );
+      }
+    } else {
+      await disableScreenProtection();
+      dispatch(setScreenProtectionEnabled(false));
+    }
+  };
+
+  const handleSecurityChecksToggle = (enabled: boolean) => {
+    dispatch(setSecurityChecksEnabled(enabled));
+    if (enabled) {
+      checkSecurity(true);
+    }
+  };
+
+  const handleRootDetectionToggle = (enabled: boolean) => {
+    dispatch(setRootDetectionEnabled(enabled));
+  };
+
+  const handleAntiTamperingToggle = (enabled: boolean) => {
+    dispatch(setAntiTamperingEnabled(enabled));
+  };
+
+  const handleMemoryProtectionToggle = (enabled: boolean) => {
+    dispatch(setMemoryProtectionEnabled(enabled));
+  };
+
+  const handleViewSecurityStatus = async () => {
+    await checkSecurity(true);
+    if (securityState.threats.length > 0) {
+      setSecurityWarningVisible(true);
+    } else {
+      const summary = await getSecuritySummary();
+      Alert.alert('Security Status', summary, [{ text: 'OK' }]);
+    }
   };
 
   const handleLogout = async () => {
@@ -299,6 +376,101 @@ export const SettingsScreen: React.FC = () => {
           />
         </View>
 
+        {/* Advanced Security */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            Advanced Security
+          </Text>
+
+          <SettingItem
+            icon="verified-user"
+            title="Security Checks"
+            subtitle="Detect root, jailbreak, and tampering"
+            theme={theme}
+            rightElement={
+              <Switch
+                value={security.securityChecksEnabled}
+                onValueChange={handleSecurityChecksToggle}
+                trackColor={{ false: theme.surface, true: theme.primary }}
+                thumbColor={
+                  security.securityChecksEnabled
+                    ? theme.background
+                    : theme.textSecondary
+                }
+              />
+            }
+          />
+
+          <SettingItem
+            icon="phonelink-lock"
+            title="Root Detection"
+            subtitle="Block app on rooted/jailbroken devices"
+            theme={theme}
+            rightElement={
+              <Switch
+                value={security.rootDetectionEnabled}
+                onValueChange={handleRootDetectionToggle}
+                trackColor={{ false: theme.surface, true: theme.primary }}
+                thumbColor={
+                  security.rootDetectionEnabled
+                    ? theme.background
+                    : theme.textSecondary
+                }
+              />
+            }
+          />
+
+          <SettingItem
+            icon="shield"
+            title="Anti-Tampering"
+            subtitle="Detect app modifications and hooks"
+            theme={theme}
+            rightElement={
+              <Switch
+                value={security.antiTamperingEnabled}
+                onValueChange={handleAntiTamperingToggle}
+                trackColor={{ false: theme.surface, true: theme.primary }}
+                thumbColor={
+                  security.antiTamperingEnabled
+                    ? theme.background
+                    : theme.textSecondary
+                }
+              />
+            }
+          />
+
+          <SettingItem
+            icon="memory"
+            title="Memory Protection"
+            subtitle="Secure sensitive data in memory"
+            theme={theme}
+            rightElement={
+              <Switch
+                value={security.memoryProtectionEnabled}
+                onValueChange={handleMemoryProtectionToggle}
+                trackColor={{ false: theme.surface, true: theme.primary }}
+                thumbColor={
+                  security.memoryProtectionEnabled
+                    ? theme.background
+                    : theme.textSecondary
+                }
+              />
+            }
+          />
+
+          <SettingItem
+            icon="info"
+            title="Security Status"
+            subtitle={
+              securityState.isSecure
+                ? '✅ Secure'
+                : `⚠️ ${securityState.threats.length} threat(s)`
+            }
+            theme={theme}
+            onPress={handleViewSecurityStatus}
+          />
+        </View>
+
         {/* General Settings */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
@@ -371,6 +543,14 @@ export const SettingsScreen: React.FC = () => {
       <ThemeModal
         visible={themeModalVisible}
         onClose={() => setThemeModalVisible(false)}
+      />
+
+      <SecurityWarningModal
+        visible={securityWarningVisible}
+        threats={securityState.threats}
+        onClose={() => setSecurityWarningVisible(false)}
+        allowContinue={true}
+        onContinueAnyway={() => setSecurityWarningVisible(false)}
       />
     </SafeAreaView>
   );

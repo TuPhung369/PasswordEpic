@@ -36,21 +36,21 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
     onCloseRef.current = onClose;
   }, [authenticate, onSuccess, onError, onClose]);
 
-  console.log('🔐 BiometricPrompt: Component rendered', {
-    visible,
-    isAvailable,
-    hasTriggered: hasTriggeredRef.current,
-    isAuthenticating: isAuthenticatingRef.current,
-  });
+  // console.log('🔐 BiometricPrompt: Component rendered', {
+  //   visible,
+  //   isAvailable,
+  //   hasTriggered: hasTriggeredRef.current,
+  //   isAuthenticating: isAuthenticatingRef.current,
+  // });
 
   // Auto-trigger native biometric authentication when visible
   React.useEffect(() => {
-    console.log('🔐 BiometricPrompt: useEffect triggered', {
-      visible,
-      isAvailable,
-      hasTriggered: hasTriggeredRef.current,
-      isAuthenticating: isAuthenticatingRef.current,
-    });
+    // console.log('🔐 BiometricPrompt: useEffect triggered', {
+    //   visible,
+    //   isAvailable,
+    //   hasTriggered: hasTriggeredRef.current,
+    //   isAuthenticating: isAuthenticatingRef.current,
+    // });
 
     if (
       visible &&
@@ -58,27 +58,27 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
       !hasTriggeredRef.current &&
       !isAuthenticatingRef.current
     ) {
-      console.log(
-        '🔐 BiometricPrompt: Auto-triggering native biometric authentication...',
-      );
+      // console.log(
+      //   '🔐 BiometricPrompt: Auto-triggering native biometric authentication...',
+      // );
       hasTriggeredRef.current = true;
       isAuthenticatingRef.current = true;
 
       // Small delay to ensure proper initialization
       const timeout = setTimeout(async () => {
         try {
-          console.log('🔐 BiometricPrompt: Calling authenticate...');
+          // console.log('🔐 BiometricPrompt: Calling authenticate...');
           const success = await authenticateRef.current();
 
           if (success) {
-            console.log('🔐 BiometricPrompt: Authentication SUCCESS');
+            // console.log('🔐 BiometricPrompt: Authentication SUCCESS');
             onSuccessRef.current();
           } else {
-            console.log('🔐 BiometricPrompt: Authentication FAILED');
+            // console.log('🔐 BiometricPrompt: Authentication FAILED');
             onErrorRef.current('Authentication failed');
           }
         } catch (error: any) {
-          console.error('🔐 BiometricPrompt: Authentication ERROR:', error);
+          // console.error('🔐 BiometricPrompt: Authentication ERROR:', error);
 
           // Check if user cancelled (user-initiated cancellation)
           const isCancellation =

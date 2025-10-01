@@ -1,11 +1,22 @@
 {
   // Tắt Java Language Server cho node_modules để tránh warning
-  "java.project.sourcePaths": [],
-  "java.project.outputPath": "",
+  "java.project.sourcePaths": [
+    "android/app/src/main/java"
+  ],
+  "java.project.referencedLibraries": [],
+  "java.project.outputPath": "bin",
   "java.compile.nullAnalysis.mode": "automatic",
-  "java.configuration.checkProjectSettingsExclusions": false,
+  // Bật kiểm tra loại trừ để JDT LS không index các thư mục đã exclude
+  "java.configuration.checkProjectSettingsExclusions": true,
   "java.import.gradle.enabled": false,
   "java.autobuild.enabled": false,
+  "java.configuration.updateBuildConfiguration": "disabled",
+  // Loại trừ hoàn toàn node_modules và các thư mục build khỏi Java LS
+  "java.project.excludedPaths": [
+    "**/node_modules/**",
+    "**/.gradle/**",
+    "**/build/**"
+  ],
   "java.import.exclusions": [
     "**/node_modules/**",
     "**/node_modules/**/android/**",
@@ -19,7 +30,15 @@
     "**/node_modules/**/build": true,
     "**/node_modules/**/.settings": true,
     "**/node_modules/**/.project": true,
-    "**/node_modules/**/.classpath": true
+    "**/node_modules/**/.classpath": true,
+    "**/.classpath": true,
+    "**/.project": true,
+    "**/.settings": true,
+    "**/.factorypath": true
+  },
+  // Ẩn lỗi/warning từ node_modules trong Problems panel
+  "problems.exclude": {
+    "**/node_modules/**": true
   },
   // Cấu hình cho React Native
   "typescript.preferences.importModuleSpecifier": "relative",

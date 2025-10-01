@@ -6,6 +6,10 @@ interface SecuritySettings {
   autoLockTimeout: number; // in minutes
   requireBiometricForAutoFill: boolean;
   screenProtectionEnabled: boolean;
+  securityChecksEnabled: boolean;
+  rootDetectionEnabled: boolean;
+  antiTamperingEnabled: boolean;
+  memoryProtectionEnabled: boolean;
 }
 
 interface GeneratorSettings {
@@ -31,6 +35,10 @@ const initialState: SettingsState = {
     autoLockTimeout: 5,
     requireBiometricForAutoFill: true,
     screenProtectionEnabled: true,
+    securityChecksEnabled: true,
+    rootDetectionEnabled: true,
+    antiTamperingEnabled: true,
+    memoryProtectionEnabled: true,
   },
   generator: {
     defaultLength: 16,
@@ -72,6 +80,21 @@ const settingsSlice = createSlice({
     setBiometricType: (state, action: PayloadAction<string>) => {
       state.security.biometricType = action.payload;
     },
+    setScreenProtectionEnabled: (state, action: PayloadAction<boolean>) => {
+      state.security.screenProtectionEnabled = action.payload;
+    },
+    setSecurityChecksEnabled: (state, action: PayloadAction<boolean>) => {
+      state.security.securityChecksEnabled = action.payload;
+    },
+    setRootDetectionEnabled: (state, action: PayloadAction<boolean>) => {
+      state.security.rootDetectionEnabled = action.payload;
+    },
+    setAntiTamperingEnabled: (state, action: PayloadAction<boolean>) => {
+      state.security.antiTamperingEnabled = action.payload;
+    },
+    setMemoryProtectionEnabled: (state, action: PayloadAction<boolean>) => {
+      state.security.memoryProtectionEnabled = action.payload;
+    },
   },
 });
 
@@ -82,5 +105,10 @@ export const {
   setLanguage,
   setBiometricEnabled,
   setBiometricType,
+  setScreenProtectionEnabled,
+  setSecurityChecksEnabled,
+  setRootDetectionEnabled,
+  setAntiTamperingEnabled,
+  setMemoryProtectionEnabled,
 } = settingsSlice.actions;
 export default settingsSlice.reducer;

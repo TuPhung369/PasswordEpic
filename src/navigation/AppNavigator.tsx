@@ -32,7 +32,7 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const AppNavigator: React.FC = () => {
-  console.log('🔄 AppNavigator: Component rendering...');
+  // console.log('🔄 AppNavigator: Component rendering...');
   const dispatch = useAppDispatch();
   const { theme } = useTheme();
   const {
@@ -41,12 +41,12 @@ export const AppNavigator: React.FC = () => {
     biometricEnabled,
     session,
   } = useAppSelector(state => state.auth);
-  console.log('🔄 AppNavigator: Redux state:', {
-    isAuthenticated,
-    masterPasswordConfigured,
-    biometricEnabled,
-    session,
-  });
+  // console.log('🔄 AppNavigator: Redux state:', {
+  //   isAuthenticated,
+  //   masterPasswordConfigured,
+  //   biometricEnabled,
+  //   session,
+  // });
 
   // Biometric and session hooks - ALWAYS call these
   const { isAvailable: biometricAvailable } = useBiometric();

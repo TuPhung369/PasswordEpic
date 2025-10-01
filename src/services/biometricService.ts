@@ -26,9 +26,7 @@ export class BiometricService {
       allowDeviceCredentials: true, // Allow PIN/Pattern as fallback for emulator
     });
 
-    console.log(
-      '🔧 Debug: BiometricService initialized with allowDeviceCredentials: true',
-    );
+    // BiometricService initialized with device credentials allowed
   }
 
   public static getInstance(): BiometricService {
@@ -43,10 +41,7 @@ export class BiometricService {
    */
   public async checkBiometricCapability(): Promise<BiometricCapability> {
     try {
-      console.log('🔧 Debug: Checking biometric sensor availability...');
-
       const result = await this.rnBiometrics.isSensorAvailable();
-      console.log('🔧 Debug: isSensorAvailable result:', result);
 
       const { biometryType } = result;
 
@@ -97,7 +92,7 @@ export class BiometricService {
       }
 
       // For Android emulator, we need to handle key creation differently
-      console.log('Setting up biometric authentication...');
+      // Setting up biometric authentication
 
       try {
         // Try to delete existing keys first (ignore errors)
@@ -111,7 +106,6 @@ export class BiometricService {
         let publicKey;
 
         try {
-          console.log('Attempting to create biometric keys...');
           const result = await this.rnBiometrics.createKeys();
           publicKey = result.publicKey;
           console.log('✅ Biometric keys created successfully');
@@ -124,13 +118,11 @@ export class BiometricService {
             keyError.message?.includes('KeyStore') ||
             keyError.message?.includes('Hardware security module')
           ) {
-            console.log(
-              '🤖 Android emulator detected - using fallback mode for setup',
-            );
+            // Android emulator detected - using fallback mode for setup
             publicKey = 'emulator_mock_key';
           } else {
             // For other errors, try once more
-            console.log('Retrying key creation...');
+            // Retrying key creation
             try {
               await new Promise<void>(resolve =>
                 setTimeout(() => resolve(), 500),
@@ -185,8 +177,6 @@ export class BiometricService {
     promptMessage: string = 'Authenticate to access your passwords',
   ): Promise<BiometricAuthResult> {
     try {
-      console.log('🔐 Starting biometric authentication...');
-
       // Check if biometrics are available
       const capability = await this.checkBiometricCapability();
       if (!capability.available) {
@@ -207,30 +197,13 @@ export class BiometricService {
 
       // Create signature with current timestamp
       const payload = `auth_${Date.now()}`;
-      console.log('🔐 Creating biometric signature with payload:', payload);
 
       try {
         // First, check if we need to use emulator fallback immediately
         const { keysExist } = await this.rnBiometrics.biometricKeysExist();
 
         if (!keysExist) {
-          console.log(
-            '🤖 No real biometric keys found - likely emulator environment',
-          );
-
-          // For emulator without real keys, we still need to show the biometric prompt
-          // but it should work with Extended Controls Touch Sensor
-          console.log(
-            '🎭 Emulator mode: attempting biometric authentication...',
-          );
-          console.log('🔧 Debug: About to call createSignature with config:', {
-            promptMessage:
-              promptMessage +
-              '\n\n💡 Emulator: Use Extended Controls → Touch Sensor',
-            payload,
-            cancelButtonText: 'Cancel',
-          });
-
+          // Emulator mode: attempting biometric authentication
           try {
             // First try to use simplePrompt which is more reliable on emulator
             console.log('🎭 Emulator: Trying simplePrompt first...');
@@ -241,19 +214,13 @@ export class BiometricService {
               cancelButtonText: 'Cancel',
             });
 
-            console.log('🔧 Debug: simplePrompt result:', simpleResult);
-
             if (simpleResult.success) {
-              console.log(
-                '✅ Emulator biometric authentication succeeded via simplePrompt',
-              );
+              console.log('✅ Emulator biometric authentication succeeded');
               return {
                 success: true,
                 signature: 'emulator_fake_signature_' + Date.now(),
               };
             } else {
-              console.log('❌ simplePrompt failed, error:', simpleResult.error);
-
               // Check if user cancelled
               if (
                 simpleResult.error?.includes('cancelled') ||
@@ -302,7 +269,7 @@ export class BiometricService {
         }
 
         // For real devices with actual keys
-        console.log('📱 Using real device biometric authentication');
+        // Using real device biometric authentication
         const { success, signature, error } =
           await this.rnBiometrics.createSignature({
             promptMessage,
@@ -311,10 +278,10 @@ export class BiometricService {
           });
 
         if (success && signature) {
-          console.log('✅ Real device biometric authentication succeeded');
+          // Real device biometric authentication succeeded
           return { success: true, signature };
         } else {
-          console.log('❌ Real device biometric authentication failed:', error);
+          console.error('Biometric authentication failed:', error.message);
           return {
             success: false,
             error: error || 'Biometric authentication failed',

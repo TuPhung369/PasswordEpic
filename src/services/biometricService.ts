@@ -281,10 +281,11 @@ export class BiometricService {
           // Real device biometric authentication succeeded
           return { success: true, signature };
         } else {
-          console.error('Biometric authentication failed:', error.message);
+          const errorMessage = typeof error === 'string' ? error : 'Biometric authentication failed';
+          console.error('Biometric authentication failed:', errorMessage);
           return {
             success: false,
-            error: error || 'Biometric authentication failed',
+            error: errorMessage,
           };
         }
       } catch (signatureError: any) {
@@ -346,30 +347,19 @@ export class BiometricService {
     try {
       const status =
         await SecureStorageService.getInstance().getBiometricStatus();
-      console.log('🔐 isBiometricSetup: storage status =', status);
-
       // If biometric is disabled in storage, return false
       if (!status) {
-        console.log(
-          '🔐 isBiometricSetup: returning false - disabled in storage',
-        );
         return false;
       }
 
       try {
         const { keysExist } = await this.rnBiometrics.biometricKeysExist();
-        console.log('🔐 isBiometricSetup: keysExist =', keysExist);
 
         if (keysExist) {
           // Real device with actual keys
-          console.log('🔐 isBiometricSetup: returning true (real keys exist)');
           return true;
         } else {
-          // Emulator or no keys - check storage status for emulator mode
-          console.log(
-            '🔐 isBiometricSetup: no real keys - checking emulator mode',
-          );
-          console.log('🔐 isBiometricSetup: returning storage status:', status);
+          // Emulator or no keys - use storage status for emulator mode
           return status;
         }
       } catch (keyCheckError) {

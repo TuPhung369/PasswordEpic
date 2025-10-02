@@ -8,6 +8,7 @@ import {
   StyleSheet,
   AppState,
 } from 'react-native';
+
 import { AuthNavigator } from './AuthNavigator';
 import { MainNavigator } from './MainNavigator';
 import { useAppSelector, useAppDispatch } from '../hooks/redux';
@@ -187,20 +188,58 @@ export const AppNavigator: React.FC = () => {
     isAuthenticated,
   ]);
 
+  // Track app state change timing to distinguish real background vs modal navigation
+  const lastBackgroundTime = React.useRef<number>(0);
+
   // Listen for app state changes to implement smart authentication flow
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: any) => {
       const currentAppState = appStateRef.current;
       console.log(`🔄 App state changed: ${currentAppState} → ${nextAppState}`);
 
+      // Track when app goes to background
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        lastBackgroundTime.current = Date.now();
+      }
+
       if (
         currentAppState.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
+        // Calculate how long app was in background
+        const backgroundDuration = Date.now() - lastBackgroundTime.current;
+
         // App is coming from background to foreground
         console.log(
-          '📱 App resumed from background - checking authentication requirement',
+          `📱 App resumed from background after ${backgroundDuration}ms - checking authentication requirement`,
         );
+
+        // Check if user was in AddPassword modal (more lenient threshold)
+        let isInAddPasswordFlow = false;
+        try {
+          const AsyncStorage = await import(
+            '@react-native-async-storage/async-storage'
+          );
+          const currentActiveScreen = await AsyncStorage.default.getItem(
+            'last_active_screen',
+          );
+          isInAddPasswordFlow = currentActiveScreen === 'AddPassword';
+        } catch (error) {
+          console.error('Failed to check active screen:', error);
+        }
+
+        // Use longer threshold for AddPassword modal or general short duration
+        const threshold = isInAddPasswordFlow ? 10000 : 5000; // 10s for AddPassword, 5s for others
+
+        if (backgroundDuration < threshold) {
+          console.log(
+            `📱 Short background duration (${backgroundDuration}ms) detected - likely ${
+              isInAddPasswordFlow ? 'AddPassword modal' : 'modal/tab'
+            } navigation, skipping auth check`,
+          );
+          appStateRef.current = nextAppState;
+          return;
+        }
 
         // Use refs to get latest values without re-registering listener
         const {
@@ -255,8 +294,13 @@ export const AppNavigator: React.FC = () => {
                   console.log(
                     '🔐 Session valid - requiring biometric for quick unlock',
                   );
-                  setHasAuthenticatedInSession(false);
-                  setBiometricCancelled(false);
+                  // Add small delay to prevent immediate prompt while user might be navigating
+                  setBiometricPromptDelay(true);
+                  setTimeout(() => {
+                    setBiometricPromptDelay(false);
+                    setHasAuthenticatedInSession(false);
+                    setBiometricCancelled(false);
+                  }, 1000); // 1 second delay
                 } else {
                   console.log(
                     '🔐 Session valid but biometric not available - allowing access',
@@ -289,8 +333,13 @@ export const AppNavigator: React.FC = () => {
               console.log(
                 '🔐 Error occurred - falling back to biometric requirement',
               );
-              setHasAuthenticatedInSession(false);
-              setBiometricCancelled(false);
+              // Add delay for fallback case too
+              setBiometricPromptDelay(true);
+              setTimeout(() => {
+                setBiometricPromptDelay(false);
+                setHasAuthenticatedInSession(false);
+                setBiometricCancelled(false);
+              }, 1000);
             }
           }
         } else {
@@ -305,6 +354,25 @@ export const AppNavigator: React.FC = () => {
             );
           }
         }
+
+        // Check if we need to restore navigation state after authentication
+        try {
+          const AsyncStorage = await import(
+            '@react-native-async-storage/async-storage'
+          );
+          const lastActiveScreen = await AsyncStorage.default.getItem(
+            'last_active_screen',
+          );
+          if (lastActiveScreen === 'AddPassword') {
+            console.log(
+              '📱 Detected interrupted AddPassword session, will restore after auth',
+            );
+            // Clear the flag to prevent constant restoration
+            await AsyncStorage.default.removeItem('last_active_screen');
+          }
+        } catch (error) {
+          console.error('Failed to check last active screen:', error);
+        }
       }
       appStateRef.current = nextAppState;
     };
@@ -315,6 +383,12 @@ export const AppNavigator: React.FC = () => {
     );
     return () => subscription?.remove();
   }, [dispatch]); // Include dispatch dependency
+
+  // Add delay state to prevent immediate biometric prompt on app resume
+  const [biometricPromptDelay, setBiometricPromptDelay] = useState(false);
+
+  // Track if user is in sensitive operations (like adding/editing passwords)
+  const [_isInSensitiveOperation, _setIsInSensitiveOperation] = useState(false);
 
   // Track when conditions change to trigger biometric authentication
   const shouldShowBiometric = React.useMemo(() => {
@@ -327,7 +401,8 @@ export const AppNavigator: React.FC = () => {
       !biometricCancelled &&
       !hasAuthenticatedInSession &&
       sessionActive !== undefined &&
-      !sessionTimeoutVisible;
+      !sessionTimeoutVisible &&
+      !biometricPromptDelay; // Don't show during delay period
 
     // Biometric prompt decision calculated
 
@@ -342,6 +417,7 @@ export const AppNavigator: React.FC = () => {
     hasAuthenticatedInSession,
     sessionActive,
     sessionTimeoutVisible,
+    biometricPromptDelay,
   ]);
 
   // Handle biometric prompt display

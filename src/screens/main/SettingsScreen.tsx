@@ -33,15 +33,15 @@ import { useSession } from '../../hooks/useSession';
 import { useSecurity } from '../../hooks/useSecurity';
 import SecurityWarningModal from '../../components/SecurityWarningModal';
 
-// Tách SettingItem ra ngoài để tránh re-render
-const SettingItem: React.FC<{
+// Memoized SettingItem để tránh re-render
+const SettingItem = React.memo<{
   icon: string;
   title: string;
   subtitle?: string;
   onPress?: () => void;
   rightElement?: React.ReactNode;
   theme: any;
-}> = ({ icon, title, subtitle, onPress, rightElement, theme }) => (
+}>(({ icon, title, subtitle, onPress, rightElement, theme }) => (
   <TouchableOpacity
     style={[
       styles.settingItem,
@@ -68,7 +68,7 @@ const SettingItem: React.FC<{
       />
     )}
   </TouchableOpacity>
-);
+));
 
 export const SettingsScreen: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -110,6 +110,15 @@ export const SettingsScreen: React.FC = () => {
       security.biometricEnabled && biometricAvailable,
     );
   }, [security, biometricAvailable]);
+
+  // Cleanup effect to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      console.log('⚙️ SettingsScreen: Cleaning up...');
+      // Clear any pending timeouts or intervals
+      // Cancel any ongoing async operations
+    };
+  }, []);
 
   // Handler functions
   const handleBiometricToggle = async (enabled: boolean) => {

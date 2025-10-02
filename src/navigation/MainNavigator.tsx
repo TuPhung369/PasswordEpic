@@ -1,11 +1,13 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { PasswordsScreen } from '../screens/main/PasswordsScreen';
+import { PasswordsNavigator } from './PasswordsNavigator';
 import { GeneratorScreen } from '../screens/main/GeneratorScreen';
 import { SettingsScreen } from '../screens/main/SettingsScreen';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type MainTabParamList = {
   Passwords: undefined;
@@ -44,6 +46,37 @@ const renderTabBarIcon =
 
 export const MainNavigator: React.FC = () => {
   const { theme } = useTheme();
+  const navigation = useNavigation();
+
+  // Check if we need to restore to AddPassword screen
+  React.useEffect(() => {
+    const checkNavigationRestore = async () => {
+      try {
+        const lastActiveScreen = await AsyncStorage.getItem(
+          'last_active_screen',
+        );
+        if (lastActiveScreen === 'AddPassword') {
+          console.log(
+            '🔄 Restoring navigation to AddPassword after authentication',
+          );
+          // Small delay to ensure navigation stack is ready
+          setTimeout(() => {
+            (navigation as any).navigate('Passwords', {
+              screen: 'AddPassword',
+              // Pass a flag to restore form data
+              params: { restoreData: true },
+            });
+          }, 100);
+          // Clear the flag after restoring
+          await AsyncStorage.removeItem('last_active_screen');
+        }
+      } catch (error) {
+        console.error('Failed to check navigation restore:', error);
+      }
+    };
+
+    checkNavigationRestore();
+  }, [navigation]);
 
   return (
     <Tab.Navigator
@@ -65,9 +98,9 @@ export const MainNavigator: React.FC = () => {
     >
       <Tab.Screen
         name="Passwords"
-        component={PasswordsScreen}
+        component={PasswordsNavigator}
         options={{
-          tabBarLabel: 'Vault',
+          tabBarIcon: renderTabBarIcon('Passwords'),
         }}
       />
       <Tab.Screen

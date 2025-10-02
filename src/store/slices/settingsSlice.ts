@@ -19,6 +19,9 @@ interface GeneratorSettings {
   includeNumbers: boolean;
   includeSymbols: boolean;
   excludeSimilar: boolean;
+  excludeAmbiguous: boolean;
+  minNumbers: number;
+  minSymbols: number;
 }
 
 interface SettingsState {
@@ -47,6 +50,9 @@ const initialState: SettingsState = {
     includeNumbers: true,
     includeSymbols: true,
     excludeSimilar: false,
+    excludeAmbiguous: false,
+    minNumbers: 2,
+    minSymbols: 1,
   },
   theme: 'system',
   language: 'en',

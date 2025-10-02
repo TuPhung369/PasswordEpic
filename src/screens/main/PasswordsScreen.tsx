@@ -1,87 +1,275 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAppSelector } from '../../hooks/redux';
 import { RootState } from '../../store';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { PasswordEntry } from '../../types';
+import { PasswordEntry as Password } from '../../types/password';
 import { useTheme } from '../../contexts/ThemeContext';
+import PasswordEntryComponent from '../../components/PasswordEntry';
+import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
+
+type NavigationProp = NativeStackNavigationProp<
+  PasswordsStackParamList,
+  'PasswordsList'
+>;
 
 export const PasswordsScreen: React.FC = () => {
-  const { passwords, searchQuery } = useAppSelector(
-    (state: RootState) => state.passwords,
-  );
   const { theme } = useTheme();
+  const navigation = useNavigation<NavigationProp>();
+  const { passwords } = useAppSelector((state: RootState) => state.passwords);
 
-  const filteredPasswords = passwords.filter(
-    password =>
-      password.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (password.website &&
-        password.website.toLowerCase().includes(searchQuery.toLowerCase())),
+  // State management
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const [selectedPasswords, setSelectedPasswords] = useState<string[]>([]);
+  const [bulkMode, setBulkMode] = useState(false);
+
+  // Filter passwords based on search query
+  const filteredPasswords = useMemo(() => {
+    if (!searchQuery.trim()) return passwords;
+
+    return passwords.filter(
+      password =>
+        password.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (password.username &&
+          password.username
+            .toLowerCase()
+            .includes(searchQuery.toLowerCase())) ||
+        (password.website &&
+          password.website.toLowerCase().includes(searchQuery.toLowerCase())),
+    );
+  }, [passwords, searchQuery]);
+
+  // Calculate statistics
+  const statistics = useMemo(() => {
+    const weakPasswords = filteredPasswords.filter(
+      p =>
+        p.auditData?.passwordStrength && p.auditData.passwordStrength.score < 2,
+    ).length;
+
+    const compromisedPasswords = filteredPasswords.filter(
+      p => p.breachStatus?.isBreached,
+    ).length;
+
+    const duplicatePasswords = filteredPasswords.filter(
+      p => p.auditData?.duplicateCount && p.auditData.duplicateCount > 0,
+    ).length;
+
+    return {
+      weakPasswords,
+      compromisedPasswords,
+      duplicatePasswords,
+    };
+  }, [filteredPasswords]);
+
+  // Handlers
+  const handlePasswordPress = (password: Password) => {
+    if (bulkMode) {
+      togglePasswordSelection(password.id);
+    } else {
+      // Navigate to password details
+      // navigation.navigate('PasswordDetails', { passwordId: password.id });
+    }
+  };
+
+  const handlePasswordEdit = (password: Password) => {
+    navigation.navigate('EditPassword', { passwordId: password.id });
+  };
+
+  const handlePasswordDelete = async (password: Password) => {
+    Alert.alert(
+      'Delete Password',
+      `Are you sure you want to delete "${password.title}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // TODO: Implement password deletion
+              console.log('Delete password:', password.id);
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete password');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const togglePasswordSelection = (passwordId: string) => {
+    setSelectedPasswords(prev =>
+      prev.includes(passwordId)
+        ? prev.filter(id => id !== passwordId)
+        : [...prev, passwordId],
+    );
+  };
+
+  const selectAllPasswords = () => {
+    setSelectedPasswords(filteredPasswords.map(p => p.id));
+  };
+
+  const clearSelection = () => {
+    setSelectedPasswords([]);
+  };
+
+  const handleAddPassword = () => {
+    navigation.navigate('AddPassword');
+  };
+
+  const toggleBulkMode = () => {
+    setBulkMode(!bulkMode);
+    if (!bulkMode) {
+      clearSelection();
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedPasswords.length === 0) return;
+
+    Alert.alert(
+      'Delete Passwords',
+      `Are you sure you want to delete ${selectedPasswords.length} password(s)?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // TODO: Implement bulk deletion
+              console.log('Delete passwords:', selectedPasswords);
+              setBulkMode(false);
+              clearSelection();
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete passwords');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const renderPasswordItem = ({ item }: { item: Password }) => (
+    <PasswordEntryComponent
+      password={item}
+      onPress={() => handlePasswordPress(item)}
+      onEdit={() => handlePasswordEdit(item)}
+      onDelete={() => handlePasswordDelete(item)}
+      selectable={bulkMode}
+      selected={selectedPasswords.includes(item.id)}
+      onSelect={_selected => togglePasswordSelection(item.id)}
+      showActions={!bulkMode}
+    />
   );
 
-  const renderPasswordItem = ({ item }: { item: PasswordEntry | any }) => (
-    <TouchableOpacity
-      style={[
-        styles.passwordItem,
-        { backgroundColor: theme.card, borderColor: theme.border },
-      ]}
-    >
-      <View style={[styles.passwordIcon, { backgroundColor: theme.surface }]}>
-        <MaterialIcons name="lock" size={20} color={theme.primary} />
-      </View>
-      <View style={styles.passwordInfo}>
-        <Text style={[styles.passwordTitle, { color: theme.text }]}>
-          {item.title}
-        </Text>
-        <Text style={[styles.passwordWebsite, { color: theme.textSecondary }]}>
-          {item.website}
-        </Text>
-      </View>
-      <View style={styles.actionButtons}>
-        <TouchableOpacity style={styles.actionButton}>
-          <MaterialIcons
-            name="content-copy"
-            size={18}
-            color={theme.textSecondary}
-          />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton}>
-          <MaterialIcons
-            name="visibility"
-            size={18}
-            color={theme.textSecondary}
-          />
-        </TouchableOpacity>
-        <MaterialIcons
-          name="chevron-right"
-          size={20}
-          color={theme.textSecondary}
+  const renderSearchBar = () => {
+    if (!showSearch) return null;
+
+    return (
+      <View
+        style={[
+          styles.searchContainer,
+          { backgroundColor: theme.surface, borderColor: theme.border },
+        ]}
+      >
+        <MaterialIcons name="search" size={20} color={theme.textSecondary} />
+        <TextInput
+          style={[styles.searchInput, { color: theme.text }]}
+          placeholder="Search passwords..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholderTextColor={theme.textSecondary}
+          autoFocus
         />
+        <TouchableOpacity
+          onPress={() => {
+            setShowSearch(false);
+            setSearchQuery('');
+          }}
+          style={styles.searchClose}
+        >
+          <MaterialIcons name="close" size={20} color={theme.textSecondary} />
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
-  );
+    );
+  };
 
-  return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: theme.background }]}
-    >
-      <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <View style={styles.headerLeft}>
-          <Text style={[styles.title, { color: theme.text }]}>🔐 Vault</Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            {filteredPasswords.length} passwords
+  const renderBulkActions = () => {
+    if (!bulkMode) return null;
+
+    return (
+      <View
+        style={[
+          styles.bulkActions,
+          { backgroundColor: theme.surface, borderColor: theme.border },
+        ]}
+      >
+        <TouchableOpacity
+          onPress={selectAllPasswords}
+          style={styles.bulkButton}
+        >
+          <MaterialIcons name="select-all" size={20} color={theme.primary} />
+          <Text style={[styles.bulkButtonText, { color: theme.primary }]}>
+            All
           </Text>
-        </View>
-        <View style={styles.headerRight}>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={handleBulkDelete}
+          style={styles.bulkButton}
+          disabled={selectedPasswords.length === 0}
+        >
+          <MaterialIcons name="delete" size={20} color={theme.error} />
+          <Text style={[styles.bulkButtonText, { color: theme.error }]}>
+            Delete
+          </Text>
+        </TouchableOpacity>
+
+        <Text style={[styles.selectionCount, { color: theme.textSecondary }]}>
+          {selectedPasswords.length} selected
+        </Text>
+      </View>
+    );
+  };
+
+  const renderHeader = () => (
+    <View style={[styles.header, { borderBottomColor: theme.border }]}>
+      <View style={styles.headerLeft}>
+        <Text style={[styles.title, { color: theme.text }]}>🔐 Vault</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+          {filteredPasswords.length} passwords
+          {statistics.weakPasswords > 0 && (
+            <Text style={{ color: theme.warning }}>
+              {' '}
+              • {statistics.weakPasswords} weak
+            </Text>
+          )}
+          {statistics.compromisedPasswords > 0 && (
+            <Text style={{ color: theme.error }}>
+              {' '}
+              • {statistics.compromisedPasswords} compromised
+            </Text>
+          )}
+        </Text>
+      </View>
+      <View style={styles.headerRight}>
+        {!bulkMode && (
           <TouchableOpacity
-            style={[styles.searchButton, { backgroundColor: theme.surface }]}
+            onPress={() => setShowSearch(!showSearch)}
+            style={[styles.headerButton, { backgroundColor: theme.surface }]}
           >
             <MaterialIcons
               name="search"
@@ -89,43 +277,77 @@ export const PasswordsScreen: React.FC = () => {
               color={theme.textSecondary}
             />
           </TouchableOpacity>
+        )}
+
+        <TouchableOpacity
+          onPress={toggleBulkMode}
+          style={[
+            styles.headerButton,
+            { backgroundColor: bulkMode ? theme.primary : theme.surface },
+          ]}
+        >
+          <MaterialIcons
+            name="checklist"
+            size={22}
+            color={bulkMode ? '#FFFFFF' : theme.textSecondary}
+          />
+        </TouchableOpacity>
+
+        {!bulkMode && (
           <TouchableOpacity
+            onPress={handleAddPassword}
             style={[styles.addButton, { backgroundColor: theme.primary }]}
           >
-            <MaterialIcons name="add" size={22} color="#ffffff" />
+            <MaterialIcons name="add" size={22} color="#FFFFFF" />
           </TouchableOpacity>
-        </View>
+        )}
       </View>
+    </View>
+  );
+
+  const renderEmptyState = () => (
+    <View style={styles.emptyState}>
+      <View style={[styles.emptyIcon, { backgroundColor: theme.surface }]}>
+        <MaterialIcons name="lock" size={48} color={theme.primary} />
+      </View>
+      <Text style={[styles.emptyTitle, { color: theme.text }]}>
+        Your Vault is Empty
+      </Text>
+      <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
+        Add your first password to get started with secure storage
+      </Text>
+      <TouchableOpacity
+        onPress={handleAddPassword}
+        style={[
+          styles.emptyButton,
+          { backgroundColor: theme.card, borderColor: theme.primary },
+        ]}
+      >
+        <MaterialIcons name="add" size={20} color={theme.primary} />
+        <Text style={[styles.emptyButtonText, { color: theme.primary }]}>
+          Add Password
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  return (
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
+      {renderHeader()}
+      {renderSearchBar()}
+      {renderBulkActions()}
 
       {filteredPasswords.length === 0 ? (
-        <View style={styles.emptyState}>
-          <View style={[styles.emptyIcon, { backgroundColor: theme.surface }]}>
-            <MaterialIcons name="lock" size={48} color={theme.primary} />
-          </View>
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>
-            Your Vault is Empty
-          </Text>
-          <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-            Add your first password to get started with secure storage
-          </Text>
-          <TouchableOpacity
-            style={[
-              styles.emptyButton,
-              { backgroundColor: theme.card, borderColor: theme.primary },
-            ]}
-          >
-            <MaterialIcons name="add" size={20} color={theme.primary} />
-            <Text style={[styles.emptyButtonText, { color: theme.primary }]}>
-              Add Password
-            </Text>
-          </TouchableOpacity>
-        </View>
+        renderEmptyState()
       ) : (
         <FlatList
           data={filteredPasswords}
           renderItem={renderPasswordItem}
           keyExtractor={item => item.id}
           style={styles.list}
+          showsVerticalScrollIndicator={false}
         />
       )}
     </SafeAreaView>
@@ -165,11 +387,10 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     fontWeight: '500',
   },
-  searchButton: {
+  headerButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#1C1C1E',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -181,10 +402,48 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 16,
+  },
+  searchClose: {
+    padding: 4,
+  },
+  bulkActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    gap: 16,
+  },
+  bulkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  bulkButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  selectionCount: {
+    fontSize: 14,
+    marginLeft: 'auto',
+  },
   list: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 8,
   },
   passwordItem: {
     flexDirection: 'row',

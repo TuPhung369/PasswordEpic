@@ -48,10 +48,38 @@ export const MainNavigator: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation();
 
-  // Check if we need to restore to AddPassword screen
+  // Save current tab when component mounts and navigation changes
+  const [initialTab, setInitialTab] = React.useState<string | null>(null);
+
+  // Listen for tab navigation changes to save current tab
   React.useEffect(() => {
-    const checkNavigationRestore = async () => {
+    const unsubscribe = navigation.addListener('state', e => {
       try {
+        // Get current tab from navigation state
+        const state = e.data.state;
+        if (state && state.routes && state.routes[state.index]) {
+          const currentRoute = state.routes[state.index];
+          const currentTab = currentRoute.name;
+
+          if (['Passwords', 'Generator', 'Settings'].includes(currentTab)) {
+            console.log(`💾 Saving current tab: ${currentTab}`);
+            AsyncStorage.setItem('last_active_tab', currentTab).catch(error => {
+              console.error('Failed to save active tab:', error);
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Failed to track navigation state:', error);
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation]);
+
+  React.useEffect(() => {
+    const restoreNavigationState = async () => {
+      try {
+        // Check for AddPassword restoration first
         const lastActiveScreen = await AsyncStorage.getItem(
           'last_active_screen',
         );
@@ -59,28 +87,47 @@ export const MainNavigator: React.FC = () => {
           console.log(
             '🔄 Restoring navigation to AddPassword after authentication',
           );
-          // Small delay to ensure navigation stack is ready
           setTimeout(() => {
             (navigation as any).navigate('Passwords', {
               screen: 'AddPassword',
-              // Pass a flag to restore form data
               params: { restoreData: true },
             });
           }, 100);
-          // Clear the flag after restoring
           await AsyncStorage.removeItem('last_active_screen');
+          return;
+        }
+
+        // Check for saved tab restoration
+        const lastActiveTab = await AsyncStorage.getItem('last_active_tab');
+        if (
+          lastActiveTab &&
+          ['Passwords', 'Generator', 'Settings'].includes(lastActiveTab)
+        ) {
+          console.log(
+            `🔄 MainNavigator: Restoring to ${lastActiveTab} tab after authentication`,
+          );
+          setInitialTab(lastActiveTab);
+        } else {
+          // Default to Passwords if no saved tab
+          setInitialTab('Passwords');
         }
       } catch (error) {
-        console.error('Failed to check navigation restore:', error);
+        console.error('Failed to restore navigation state:', error);
       }
     };
 
-    checkNavigationRestore();
+    restoreNavigationState();
   }, [navigation]);
+
+  // Don't render until initialTab is determined
+  if (initialTab === null) {
+    return null; // Or a loading spinner
+  }
 
   return (
     <Tab.Navigator
       id={undefined}
+      initialRouteName={initialTab as keyof MainTabParamList}
       screenOptions={({ route }) => ({
         tabBarIcon: renderTabBarIcon(route.name),
         tabBarActiveTintColor: theme.primary,

@@ -7,7 +7,6 @@ import {
   Switch,
   ScrollView,
   Alert,
-  ActionSheetIOS,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,10 +25,10 @@ import {
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { ThemeSelector } from '../../components/ThemeSelector';
 import { ThemeModal } from '../../components/ThemeModal';
+import { AutoLockSelector } from '../../components/AutoLockSelector';
 import { useTheme } from '../../contexts/ThemeContext';
 import { signOut } from '../../services/authService';
 import { useBiometric } from '../../hooks/useBiometric';
-import { useSession } from '../../hooks/useSession';
 import { useSecurity } from '../../hooks/useSecurity';
 import SecurityWarningModal from '../../components/SecurityWarningModal';
 
@@ -85,8 +84,6 @@ export const SettingsScreen: React.FC = () => {
     setupBiometric,
     disableBiometric: disableBiometricService,
   } = useBiometric();
-
-  const { updateConfig: updateSessionConfig } = useSession();
 
   // Security hooks
   const {
@@ -173,94 +170,6 @@ export const SettingsScreen: React.FC = () => {
             },
           },
         ],
-      );
-    }
-  };
-
-  const handleAutoLockChange = () => {
-    const options = [
-      '30 seconds',
-      '1 minute',
-      '5 minutes',
-      '15 minutes',
-      '30 minutes',
-      '1 hour',
-    ];
-    const values = [0.5, 1, 5, 15, 30, 60];
-    const descriptions = [
-      'High security - lock very quickly',
-      'Balanced security - quick sessions',
-      'Moderate security - normal usage',
-      'Convenience focused - longer sessions',
-      'Low security - extended usage',
-      'Maximum convenience - minimal locking',
-    ];
-
-    const formatDescription = (index: number): string => {
-      return `${options[index]}\n${descriptions[index]}`;
-    };
-
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Cancel', ...options],
-          cancelButtonIndex: 0,
-          title: 'Auto-Lock Timeout',
-          message:
-            'Choose when to require authentication after inactivity.\n\n' +
-            '🔐 Biometric: Quick unlock for short backgrounds\n' +
-            '🔑 Master Password: Required when session expires',
-        },
-        buttonIndex => {
-          if (buttonIndex > 0) {
-            const newTimeout = values[buttonIndex - 1];
-            dispatch(updateSecuritySettings({ autoLockTimeout: newTimeout }));
-            updateSessionConfig({ timeout: newTimeout });
-
-            // Show confirmation with explanation
-            Alert.alert(
-              'Auto-Lock Updated',
-              `Session timeout set to ${options[buttonIndex - 1]}.\n\n` +
-                `• Quick app switches: Biometric authentication\n` +
-                `• After ${options[buttonIndex - 1]}: Master password required`,
-              [{ text: 'OK' }],
-            );
-          }
-        },
-      );
-    } else {
-      // Enhanced Android dialog with descriptions
-      const buttons = options
-        .map((option, index) => ({
-          text: formatDescription(index),
-          onPress: () => {
-            const newTimeout = values[index];
-            dispatch(updateSecuritySettings({ autoLockTimeout: newTimeout }));
-            updateSessionConfig({ timeout: newTimeout });
-
-            // Show confirmation with explanation
-            Alert.alert(
-              'Auto-Lock Updated',
-              `Session timeout set to ${option}.\n\n` +
-                `• Quick app switches: Biometric authentication\n` +
-                `• After ${option}: Master password required`,
-              [{ text: 'OK' }],
-            );
-          },
-        }))
-        .concat([
-          {
-            text: 'Cancel',
-            onPress: () => {},
-          },
-        ]);
-
-      Alert.alert(
-        'Auto-Lock Timeout',
-        'Choose when to require authentication after inactivity.\n\n' +
-          '🔐 Biometric: Quick unlock for short backgrounds\n' +
-          '🔑 Master Password: Required when session expires\n',
-        buttons,
       );
     }
   };
@@ -399,19 +308,33 @@ export const SettingsScreen: React.FC = () => {
             }
           />
 
-          <SettingItem
-            icon="timer"
-            title="Auto-Lock"
-            subtitle={`Session timeout: ${
-              security.autoLockTimeout === 0.5
-                ? '30 seconds'
-                : security.autoLockTimeout === 1
-                ? '1 minute'
-                : `${security.autoLockTimeout} minutes`
-            } • Biometric for quick access`}
-            theme={theme}
-            onPress={handleAutoLockChange}
-          />
+          {/* Auto Lock Selector */}
+          <View
+            style={[
+              styles.autoLockContainer,
+              { backgroundColor: theme.surface },
+            ]}
+          >
+            <Text style={[styles.settingLabel, { color: theme.text }]}>
+              Auto-Lock
+            </Text>
+            <Text
+              style={[
+                styles.settingDescription,
+                { color: theme.textSecondary },
+              ]}
+            >
+              Automatically lock app with biometric authentication after
+              inactivity
+            </Text>
+            <AutoLockSelector
+              currentValue={security.autoLockTimeout}
+              onValueChange={value => {
+                dispatch(updateSecuritySettings({ autoLockTimeout: value }));
+                // Note: Session timeout is fixed at 7 days, this only affects biometric auto-lock
+              }}
+            />
+          </View>
 
           <SettingItem
             icon="security"
@@ -713,6 +636,22 @@ const styles = StyleSheet.create({
   settingSubtitle: {
     fontSize: 14,
     color: '#8E8E93',
+  },
+  autoLockContainer: {
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    borderRadius: 12,
+  },
+  settingLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  settingDescription: {
+    fontSize: 14,
+    marginBottom: 12,
+    lineHeight: 20,
   },
   logoutButton: {
     flexDirection: 'row',

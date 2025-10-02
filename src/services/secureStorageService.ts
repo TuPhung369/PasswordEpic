@@ -265,7 +265,7 @@ export const getUserSettings = async (): Promise<{
     // Return default settings if none exist
     const defaultSettings: UserSettings = {
       theme: 'dark',
-      autoLockTimeout: 5,
+      autoLockTimeout: 5, // 5 minutes default
       biometricEnabled: false,
       screenProtectionEnabled: true,
       autoBackupEnabled: false,

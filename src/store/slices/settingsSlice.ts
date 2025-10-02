@@ -35,7 +35,7 @@ const initialState: SettingsState = {
   security: {
     biometricEnabled: true,
     biometricType: 'Biometric Authentication',
-    autoLockTimeout: 5,
+    autoLockTimeout: 5, // 5 minutes default
     requireBiometricForAutoFill: true,
     screenProtectionEnabled: true,
     securityChecksEnabled: true,

@@ -1,4 +1,4 @@
-﻿import React, { useEffect } from 'react';
+﻿import React, { useEffect, useRef } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider } from 'react-redux';
 import { NavigationContainer } from '@react-navigation/native';
@@ -14,6 +14,8 @@ import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
 
 const App: React.FC = () => {
+  const navigationRef = useRef<any>(null);
+
   useEffect(() => {
     const initializeServices = async () => {
       try {
@@ -74,7 +76,45 @@ const App: React.FC = () => {
     <Provider store={store}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <NavigationContainer>
+          <NavigationContainer
+            ref={navigationRef}
+            onStateChange={state => {
+              // Save navigation state when it changes
+              try {
+                if (state && state.routes) {
+                  // Find the current main tab
+                  const authRoute = state.routes.find(
+                    route => route.name === 'Main',
+                  );
+                  if (authRoute && authRoute.state && authRoute.state.routes) {
+                    const currentTabRoute =
+                      authRoute.state.routes[authRoute.state.index || 0];
+                    const currentTab = currentTabRoute.name;
+
+                    if (
+                      ['Passwords', 'Generator', 'Settings'].includes(
+                        currentTab,
+                      )
+                    ) {
+                      console.log(
+                        `💾 App.tsx: Saving current tab: ${currentTab}`,
+                      );
+                      import('@react-native-async-storage/async-storage').then(
+                        ({ default: AsyncStorage }) => {
+                          AsyncStorage.setItem(
+                            'last_active_tab',
+                            currentTab,
+                          ).catch(console.error);
+                        },
+                      );
+                    }
+                  }
+                }
+              } catch (error) {
+                console.error('Failed to save navigation state:', error);
+              }
+            }}
+          >
             <AppNavigator />
           </NavigationContainer>
         </ThemeProvider>

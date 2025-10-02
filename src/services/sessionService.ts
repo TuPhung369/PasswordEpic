@@ -33,8 +33,8 @@ export class SessionService {
 
   private constructor() {
     this.config = {
-      timeout: 15, // 15 minutes default
-      warningTime: 2, // 2 minutes warning
+      timeout: 10080, // 7 days default (7 * 24 * 60 minutes)
+      warningTime: 2, // 2 minutes warning (not used)
       extendOnActivity: true,
       lockOnBackground: true,
     };
@@ -112,7 +112,10 @@ export class SessionService {
    * Update last activity timestamp
    */
   public async updateActivity(): Promise<void> {
-    if (!this.isActive) return;
+    if (!this.isActive) {
+      console.log('🔐 Session not active, skipping activity update');
+      return;
+    }
 
     try {
       this.lastActivity = Date.now();
@@ -125,6 +128,7 @@ export class SessionService {
 
       // Restart timer if extend on activity is enabled
       if (this.config.extendOnActivity) {
+        console.log('🔐 Session extended due to user activity');
         this.startTimer();
       }
     } catch (error) {
@@ -401,31 +405,11 @@ export class SessionService {
   }
 
   private handleSessionWarning(): void {
-    if (!this.isActive) return;
-
-    const timeRemaining = this.getTimeUntilExpiry();
-    const minutesRemaining = Math.ceil(timeRemaining / (60 * 1000));
-
+    // Session warnings are disabled - auto expire without warning
     console.log(
-      '🔐 SessionService: Session warning triggered, timeout:',
-      this.config.timeout,
-      'warningTime:',
-      this.config.warningTime,
-      'minutesRemaining:',
-      minutesRemaining,
+      '🔐 SessionService: Session warning disabled, will auto-expire on timeout',
     );
-
-    // Only show warning if we have meaningful time remaining
-    if (minutesRemaining > 0) {
-      // Dispatch session warning to Redux
-      store.dispatch(
-        setSessionExpired({
-          warning: true,
-          expired: false,
-          timeRemaining: minutesRemaining,
-        }),
-      );
-    }
+    return;
   }
 
   private async handleSessionExpiry(): Promise<void> {

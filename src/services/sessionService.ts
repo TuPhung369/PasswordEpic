@@ -75,6 +75,10 @@ export class SessionService {
       this.lastActivity = Date.now();
       this.isActive = true;
 
+      // Reset background time to prevent stale background lock checks
+      // This ensures that after unlock, the background timer starts fresh
+      this.backgroundTime = 0;
+
       // Save session start time
       await AsyncStorage.setItem(
         this.SESSION_LAST_ACTIVITY,
@@ -84,7 +88,8 @@ export class SessionService {
       // Start session timer
       this.startTimer();
 
-      console.log(`Session started with ${this.config.timeout} minute timeout`);
+      // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+      // console.log(`Session started with ${this.config.timeout} minute timeout`);
     } catch (error) {
       console.error('Failed to start session:', error);
       throw error;
@@ -227,38 +232,52 @@ export class SessionService {
    */
   public async checkSessionOnResume(): Promise<boolean> {
     try {
+      const now = Date.now();
+      const timeInBackground =
+        this.backgroundTime > 0 ? now - this.backgroundTime : 0;
+
+      console.log('🔐 SessionService: Checking session on resume', {
+        timeInBackground: Math.round(timeInBackground / 1000) + 's',
+        lockOnBackground: this.config.lockOnBackground,
+        isActive: this.isActive,
+      });
+
+      // Check background lock policy FIRST
+      // If lockOnBackground is enabled and app was in background > 30 seconds, require re-authentication
+      if (this.config.lockOnBackground && timeInBackground > 30000) {
+        console.log(
+          '🔐 SessionService: Background time exceeded 30s, requiring re-authentication',
+        );
+        // Don't call handleSessionExpiry here - just return false to trigger biometric
+        // This preserves the session but requires re-authentication
+        return false;
+      }
+
       // Load last activity from storage
       const lastActivityStr = await AsyncStorage.getItem(
         this.SESSION_LAST_ACTIVITY,
       );
 
       if (!lastActivityStr) {
+        console.log('🔐 SessionService: No active session found');
         return false; // No active session
       }
 
       const lastActivity = parseInt(lastActivityStr, 10);
-      const now = Date.now();
-      const timeInBackground = now - this.backgroundTime;
       const timeSinceActivity = now - lastActivity;
 
-      // Check if session expired
+      // Check if session expired due to inactivity timeout
       const sessionTimeout = this.config.timeout * 60 * 1000;
 
       if (timeSinceActivity >= sessionTimeout) {
-        // Session expired
+        console.log('🔐 SessionService: Session expired due to timeout');
+        // Session expired - clear it
         await this.handleSessionExpiry();
         return false;
       }
 
-      // Check background lock policy
-      if (this.config.lockOnBackground && timeInBackground > 30000) {
-        // 30 seconds
-        // Auto-lock after background time
-        await this.handleSessionExpiry();
-        return false;
-      }
-
-      // Session is still valid
+      // Session is still valid - restore it
+      console.log('🔐 SessionService: Session is valid, restoring...');
       this.lastActivity = lastActivity;
       this.isActive = true;
       this.startTimer();
@@ -319,11 +338,12 @@ export class SessionService {
 
       // Check background lock policy
       if (this.config.lockOnBackground && timeInBackground > 30000) {
-        // For lockOnBackground, require full login after 30 seconds
+        // For lockOnBackground, require biometric after 30 seconds
+        // Session is still valid, just need re-authentication
         return {
-          type: 'fullLogin',
+          type: 'biometric',
           reason: 'background_lock_policy',
-          sessionValid: true, // Session is technically valid, but policy requires full auth
+          sessionValid: true, // Session is technically valid, but policy requires re-auth
         };
       }
 
@@ -441,17 +461,16 @@ export class SessionService {
 
   private handleAppStateChange(nextAppState: AppStateStatus): void {
     if (nextAppState === 'background' || nextAppState === 'inactive') {
-      // App going to background
+      // App going to background - just record the time
+      // Don't lock immediately to allow quick app switches
       this.backgroundTime = Date.now();
-
-      if (this.config.lockOnBackground) {
-        // Immediate lock on background
-        setTimeout(() => {
-          this.handleSessionExpiry();
-        }, 100);
-      }
+      console.log(
+        '🔐 SessionService: App went to background at',
+        new Date(this.backgroundTime).toLocaleTimeString(),
+      );
     } else if (nextAppState === 'active') {
-      // App becoming active
+      // App becoming active - check if we should lock based on background time
+      console.log('🔐 SessionService: App became active, checking session...');
       if (this.backgroundTime > 0) {
         this.checkSessionOnResume();
       }

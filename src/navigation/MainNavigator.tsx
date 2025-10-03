@@ -6,7 +6,7 @@ import { GeneratorScreen } from '../screens/main/GeneratorScreen';
 import { SettingsScreen } from '../screens/main/SettingsScreen';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useTheme } from '../contexts/ThemeContext';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type MainTabParamList = {
@@ -50,6 +50,8 @@ export const MainNavigator: React.FC = () => {
 
   // Save current tab when component mounts and navigation changes
   const [initialTab, setInitialTab] = React.useState<string | null>(null);
+  const [shouldRestoreNavigation, setShouldRestoreNavigation] =
+    React.useState(false);
 
   // Listen for tab navigation changes to save current tab
   React.useEffect(() => {
@@ -76,48 +78,51 @@ export const MainNavigator: React.FC = () => {
     return unsubscribe;
   }, [navigation]);
 
-  React.useEffect(() => {
-    const restoreNavigationState = async () => {
-      try {
-        // Check for AddPassword restoration first
-        const lastActiveScreen = await AsyncStorage.getItem(
-          'last_active_screen',
+  // Restore navigation state
+  const restoreNavigationState = React.useCallback(async () => {
+    try {
+      // Check for saved tab restoration
+      const lastActiveTab = await AsyncStorage.getItem('last_active_tab');
+      if (
+        lastActiveTab &&
+        ['Passwords', 'Generator', 'Settings'].includes(lastActiveTab)
+      ) {
+        console.log(
+          `🔄 MainNavigator: Restoring to ${lastActiveTab} tab after authentication`,
         );
-        if (lastActiveScreen === 'AddPassword') {
-          console.log(
-            '🔄 Restoring navigation to AddPassword after authentication',
-          );
-          setTimeout(() => {
-            (navigation as any).navigate('Passwords', {
-              screen: 'AddPassword',
-              params: { restoreData: true },
-            });
-          }, 100);
-          await AsyncStorage.removeItem('last_active_screen');
-          return;
-        }
-
-        // Check for saved tab restoration
-        const lastActiveTab = await AsyncStorage.getItem('last_active_tab');
-        if (
-          lastActiveTab &&
-          ['Passwords', 'Generator', 'Settings'].includes(lastActiveTab)
-        ) {
-          console.log(
-            `🔄 MainNavigator: Restoring to ${lastActiveTab} tab after authentication`,
-          );
-          setInitialTab(lastActiveTab);
-        } else {
-          // Default to Passwords if no saved tab
-          setInitialTab('Passwords');
-        }
-      } catch (error) {
-        console.error('Failed to restore navigation state:', error);
+        setInitialTab(lastActiveTab);
+      } else {
+        // Default to Passwords if no saved tab
+        setInitialTab('Passwords');
       }
-    };
+    } catch (error) {
+      console.error('Failed to restore navigation state:', error);
+    }
+  }, []);
 
+  // Initial restore on mount
+  React.useEffect(() => {
     restoreNavigationState();
-  }, [navigation]);
+  }, [restoreNavigationState]);
+
+  // Restore navigation when shouldRestoreNavigation flag is set
+  React.useEffect(() => {
+    if (shouldRestoreNavigation) {
+      console.log('🔄 Triggering navigation restoration after unlock');
+      restoreNavigationState();
+      setShouldRestoreNavigation(false);
+    }
+  }, [shouldRestoreNavigation, restoreNavigationState]);
+
+  // Restore navigation when screen gains focus (after unlock)
+  // Note: Nested screen restoration (like AddPassword) is handled by PasswordsNavigator
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log(
+        '🔄 MainNavigator gained focus - tab restoration handled on mount',
+      );
+    }, []),
+  );
 
   // Don't render until initialTab is determined
   if (initialTab === null) {

@@ -46,7 +46,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     password: '',
     website: '',
     notes: '',
-    category: '',
+    category: 'General', // Match default value in PasswordForm
     tags: [],
     customFields: [],
     isFavorite: false,
@@ -73,16 +73,14 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       const saved = await AsyncStorage.getItem('temp_add_password_form');
       if (saved) {
         const parsedData = JSON.parse(saved);
+        console.log('📦 Loaded form data from storage:', parsedData);
         setFormData(parsedData);
         setIsDataRestored(true);
-        // Show notification that data was restored
-        Alert.alert(
-          'Data Restored',
-          'Your previously entered data has been restored.',
-          [{ text: 'OK' }],
-        );
-        // Clear the saved data after loading
-        await AsyncStorage.removeItem('temp_add_password_form');
+        console.log('✅ Form data restored from storage');
+        // DON'T clear the saved data here - keep it until user saves or cancels
+        // This allows data to persist through multiple lock/unlock cycles
+      } else {
+        console.log('📦 No saved form data found in storage');
       }
     } catch (error) {
       console.error('Failed to load form data:', error);
@@ -92,18 +90,39 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [_isDataRestored, setIsDataRestored] = useState(false);
 
+  // Use ref to track latest formData without causing re-renders
+  const formDataRef = React.useRef(formData);
+  React.useEffect(() => {
+    formDataRef.current = formData;
+  }, [formData]);
+
   // Check for unsaved changes
   const hasUnsavedChanges = useCallback((): boolean => {
-    return !!(
+    const hasChanges = !!(
       formData.title ||
       formData.username ||
       formData.password ||
       formData.website ||
       formData.notes ||
-      formData.category ||
+      // Don't count default category value as unsaved change
+      (formData.category && formData.category !== 'General') ||
       (formData.tags && formData.tags.length > 0) ||
       (formData.customFields && formData.customFields.length > 0)
     );
+
+    console.log('🔍 hasUnsavedChanges check:', {
+      hasChanges,
+      title: formData.title,
+      username: formData.username,
+      password: formData.password,
+      website: formData.website,
+      notes: formData.notes,
+      category: formData.category,
+      tags: formData.tags,
+      customFields: formData.customFields,
+    });
+
+    return hasChanges;
   }, [formData]);
 
   // Load saved data on component mount
@@ -118,6 +137,71 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       console.log('AddPasswordScreen: Cleaning up...');
     };
   }, []);
+
+  // Handle hardware back button on Android
+  React.useEffect(() => {
+    const { BackHandler } = require('react-native');
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      async () => {
+        // Clear the navigation flag when user presses back
+        try {
+          await AsyncStorage.removeItem('last_active_screen');
+        } catch (error) {
+          console.error('Failed to clear last_active_screen on back:', error);
+        }
+
+        // Check for unsaved changes
+        const currentFormData = formDataRef.current;
+        const currentHasChanges = !!(
+          currentFormData.title ||
+          currentFormData.username ||
+          currentFormData.password ||
+          currentFormData.website ||
+          currentFormData.notes ||
+          (currentFormData.category &&
+            currentFormData.category !== 'General') ||
+          (currentFormData.tags && currentFormData.tags.length > 0) ||
+          (currentFormData.customFields &&
+            currentFormData.customFields.length > 0)
+        );
+
+        if (currentHasChanges) {
+          // Show confirmation dialog
+          Alert.alert(
+            'Discard Changes?',
+            'You have unsaved changes. Are you sure you want to discard them?',
+            [
+              {
+                text: 'Keep Editing',
+                style: 'cancel',
+              },
+              {
+                text: 'Discard',
+                style: 'destructive',
+                onPress: async () => {
+                  try {
+                    await AsyncStorage.removeItem('temp_add_password_form');
+                  } catch (error) {
+                    console.error('Failed to clear temp form data:', error);
+                  }
+                  navigation.navigate('PasswordsList');
+                },
+              },
+            ],
+          );
+        } else {
+          // No changes, just go back
+          navigation.navigate('PasswordsList');
+        }
+
+        return true; // Prevent default back behavior
+      },
+    );
+
+    return () => backHandler.remove();
+  }, [navigation]);
 
   // Focus effect to handle screen focus/blur events
   useFocusEffect(
@@ -140,15 +224,15 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 
       return () => {
         console.log('AddPasswordScreen: Screen blurred');
-        // Save current form data when leaving screen
-        if (hasUnsavedChanges()) {
-          saveFormDataToStorage(formData);
-        }
+        // DON'T clear last_active_screen here - it will be cleared by:
+        // 1. handleSave() when user saves successfully
+        // 2. handleCancel() when user cancels
+        // 3. PasswordsNavigator after successful restoration
+        // This ensures the flag persists through lock/unlock cycles
       };
     }, [
-      formData,
-      saveFormDataToStorage,
-      hasUnsavedChanges,
+      // Only depend on stable functions and navigation params
+      // DON'T include formData, hasUnsavedChanges - they cause re-render loop
       loadFormDataFromStorage,
       navigation,
       route?.params?.restoreData,
@@ -159,23 +243,43 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   React.useEffect(() => {
     console.log('🏗️ AddPasswordScreen mounted');
 
-    // Set the active screen flag when component mounts
-    AsyncStorage.setItem('last_active_screen', 'AddPassword').catch(
-      console.error,
-    );
+    // DON'T set flag on mount - only set it when user has unsaved changes
+    // This prevents unwanted navigation restoration when user is on other screens
 
     const handleAppStateChange = (nextAppState: string) => {
       if (nextAppState === 'background' || nextAppState === 'inactive') {
         console.log(
           'AddPasswordScreen: App going to background, saving form data',
         );
-        if (hasUnsavedChanges()) {
-          saveFormDataToStorage(formData);
-        }
-        // Also save navigation state to restore properly
+        // Check if there are unsaved changes at the time of background
+        // Use current formData from ref
+        const currentFormData = formDataRef.current;
+        const currentHasChanges = !!(
+          currentFormData.title ||
+          currentFormData.username ||
+          currentFormData.password ||
+          currentFormData.website ||
+          currentFormData.notes ||
+          (currentFormData.category &&
+            currentFormData.category !== 'General') ||
+          (currentFormData.tags && currentFormData.tags.length > 0) ||
+          (currentFormData.customFields &&
+            currentFormData.customFields.length > 0)
+        );
+
+        // Always save navigation state when user is on AddPassword screen
+        // This ensures we restore to AddPassword even if form is empty
+        console.log(
+          '💾 AddPasswordScreen: Saving last_active_screen = AddPassword',
+        );
         AsyncStorage.setItem('last_active_screen', 'AddPassword').catch(
           console.error,
         );
+
+        // Only save form data if there are actual changes
+        if (currentHasChanges) {
+          saveFormDataToStorage(currentFormData);
+        }
       }
     };
 
@@ -188,10 +292,11 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       console.log('🏗️ AddPasswordScreen unmounting');
       subscription?.remove();
 
-      // Clear the flag when component unmounts (user is leaving voluntarily)
-      AsyncStorage.removeItem('last_active_screen').catch(console.error);
+      // DON'T save on unmount - it causes mount/unmount loop
+      // Data is already saved by auto-save in PasswordForm
+      // Only save navigation flag when app goes to background (handled above)
     };
-  }, [formData, hasUnsavedChanges, saveFormDataToStorage]);
+  }, [saveFormDataToStorage]);
 
   // Memoize styles to prevent recreation on every render
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -224,6 +329,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
               // Clear temporary data when discarding
               try {
                 await AsyncStorage.removeItem('temp_add_password_form');
+                await AsyncStorage.removeItem('last_active_screen');
               } catch (error) {
                 console.error('Failed to clear temp form data:', error);
               }
@@ -237,6 +343,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       // Clear any temporary data
       try {
         await AsyncStorage.removeItem('temp_add_password_form');
+        await AsyncStorage.removeItem('last_active_screen');
       } catch (error) {
         console.error('Failed to clear temp form data:', error);
       }
@@ -300,6 +407,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       // Clear temporary data after successful save
       try {
         await AsyncStorage.removeItem('temp_add_password_form');
+        await AsyncStorage.removeItem('last_active_screen');
       } catch (error) {
         console.error('Failed to clear temp form data:', error);
       }

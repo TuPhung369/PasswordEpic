@@ -96,22 +96,24 @@ export const SettingsScreen: React.FC = () => {
 
   // Debug Redux state changes
   useEffect(() => {
-    console.log('⚙️ SettingsScreen: Redux security state:', security);
-    console.log(
-      '⚙️ SettingsScreen: biometricEnabled =',
-      security.biometricEnabled,
-    );
-    console.log('⚙️ SettingsScreen: biometricAvailable =', biometricAvailable);
-    console.log(
-      '⚙️ SettingsScreen: Switch value =',
-      security.biometricEnabled && biometricAvailable,
-    );
+    // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+    // console.log('⚙️ SettingsScreen: Redux security state:', security);
+    // console.log(
+    //   '⚙️ SettingsScreen: biometricEnabled =',
+    //   security.biometricEnabled,
+    // );
+    // console.log('⚙️ SettingsScreen: biometricAvailable =', biometricAvailable);
+    // console.log(
+    //   '⚙️ SettingsScreen: Switch value =',
+    //   security.biometricEnabled && biometricAvailable,
+    // );
   }, [security, biometricAvailable]);
 
   // Cleanup effect to prevent memory leaks
   useEffect(() => {
     return () => {
-      console.log('⚙️ SettingsScreen: Cleaning up...');
+      // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+      // console.log('⚙️ SettingsScreen: Cleaning up...');
       // Clear any pending timeouts or intervals
       // Cancel any ongoing async operations
     };
@@ -130,20 +132,21 @@ export const SettingsScreen: React.FC = () => {
       }
 
       try {
-        console.log('⚙️ SettingsScreen: Starting biometric setup...');
+        // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+        // console.log('⚙️ SettingsScreen: Starting biometric setup...');
         const success = await setupBiometric();
-        console.log('⚙️ SettingsScreen: Setup result:', success);
+        // console.log('⚙️ SettingsScreen: Setup result:', success);
 
         if (success) {
-          console.log('⚙️ SettingsScreen: Setup successful, updating Redux...');
+          // console.log('⚙️ SettingsScreen: Setup successful, updating Redux...');
           dispatch(setBiometricEnabled(true));
           dispatch(updateSecuritySettings({ biometricEnabled: true }));
-          console.log('⚙️ SettingsScreen: Redux states updated');
+          // console.log('⚙️ SettingsScreen: Redux states updated');
         } else {
-          console.log('⚙️ SettingsScreen: Setup failed');
+          // console.log('⚙️ SettingsScreen: Setup failed');
         }
       } catch (error) {
-        console.error('⚙️ SettingsScreen: Setup error:', error);
+        // console.error('⚙️ SettingsScreen: Setup error:', error);
         Alert.alert(
           'Setup Failed',
           'Failed to setup biometric authentication. Please try again.',

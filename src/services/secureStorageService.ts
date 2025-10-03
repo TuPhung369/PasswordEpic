@@ -22,6 +22,7 @@ const KEYCHAIN_OPTIONS = {
 const STORAGE_KEYS = {
   MASTER_PASSWORD_HASH: 'master_password_hash',
   MASTER_PASSWORD_SALT: 'master_password_salt',
+  MASTER_PASSWORD_LAST_VERIFIED: 'master_password_last_verified',
   USER_SETTINGS: 'user_settings',
   ENCRYPTED_PASSWORDS: 'encrypted_passwords',
   BIOMETRIC_ENABLED: 'biometric_enabled',
@@ -40,10 +41,11 @@ export const storeMasterPassword = async (
     // Hash password for verification (not for encryption)
     const passwordHash = hashPassword(password, salt);
 
-    // Store hash and salt in AsyncStorage for verification
+    // Store hash, salt, and initial verification timestamp in AsyncStorage
     await AsyncStorage.multiSet([
       [STORAGE_KEYS.MASTER_PASSWORD_HASH, passwordHash],
       [STORAGE_KEYS.MASTER_PASSWORD_SALT, salt],
+      [STORAGE_KEYS.MASTER_PASSWORD_LAST_VERIFIED, Date.now().toString()],
     ]);
 
     // Store actual password in secure keychain if biometric is enabled
@@ -93,6 +95,12 @@ export const verifyMasterPassword = async (
     if (!isValid) {
       return { success: false, error: 'Invalid master password' };
     }
+
+    // Update last verified timestamp on successful verification
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.MASTER_PASSWORD_LAST_VERIFIED,
+      Date.now().toString(),
+    );
 
     return { success: true };
   } catch (error: any) {
@@ -347,6 +355,66 @@ export const getMasterPasswordHash = async (): Promise<string | null> => {
   } catch (error) {
     console.error('Failed to get master password hash:', error);
     return null;
+  }
+};
+
+/**
+ * Check if master password verification is required (after 7 days)
+ * @returns true if master password needs to be re-verified
+ */
+export const isMasterPasswordVerificationRequired =
+  async (): Promise<boolean> => {
+    try {
+      const lastVerifiedStr = await AsyncStorage.getItem(
+        STORAGE_KEYS.MASTER_PASSWORD_LAST_VERIFIED,
+      );
+
+      // If never verified, require verification
+      if (!lastVerifiedStr) {
+        return true;
+      }
+
+      const lastVerified = parseInt(lastVerifiedStr, 10);
+      const now = Date.now();
+      const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+
+      // Check if more than 7 days have passed
+      const timeSinceVerification = now - lastVerified;
+      const isRequired = timeSinceVerification >= sevenDaysInMs;
+
+      console.log('🔐 Master password verification check:', {
+        lastVerified: new Date(lastVerified).toLocaleString(),
+        daysSinceVerification: (
+          timeSinceVerification /
+          (24 * 60 * 60 * 1000)
+        ).toFixed(2),
+        isRequired,
+      });
+
+      return isRequired;
+    } catch (error) {
+      console.error(
+        'Failed to check master password verification requirement:',
+        error,
+      );
+      // On error, require verification for security
+      return true;
+    }
+  };
+
+/**
+ * Update master password last verified timestamp
+ * This should be called after successful biometric authentication as well
+ */
+export const updateMasterPasswordLastVerified = async (): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.MASTER_PASSWORD_LAST_VERIFIED,
+      Date.now().toString(),
+    );
+    console.log('🔐 Master password last verified timestamp updated');
+  } catch (error) {
+    console.error('Failed to update master password last verified:', error);
   }
 };
 

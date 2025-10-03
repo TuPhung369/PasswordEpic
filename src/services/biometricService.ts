@@ -41,7 +41,10 @@ export class BiometricService {
    */
   public async checkBiometricCapability(): Promise<BiometricCapability> {
     try {
+      // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+      // console.log('🔐 BiometricService: checkBiometricCapability called');
       const result = await this.rnBiometrics.isSensorAvailable();
+      // console.log('🔐 BiometricService: isSensorAvailable result:', result);
 
       const { biometryType } = result;
 
@@ -97,9 +100,10 @@ export class BiometricService {
       try {
         // Try to delete existing keys first (ignore errors)
         await this.rnBiometrics.deleteKeys().catch(() => {
-          console.log(
-            'No existing keys to delete or deletion failed - continuing...',
-          );
+          // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+          // console.log(
+          //   'No existing keys to delete or deletion failed - continuing...',
+          // );
         });
 
         // Create new key pair with smart emulator detection
@@ -108,7 +112,8 @@ export class BiometricService {
         try {
           const result = await this.rnBiometrics.createKeys();
           publicKey = result.publicKey;
-          console.log('✅ Biometric keys created successfully');
+          // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+          // console.log('✅ Biometric keys created successfully');
         } catch (keyError: any) {
           console.warn('Key creation failed:', keyError.message);
 
@@ -129,7 +134,8 @@ export class BiometricService {
               );
               const retryResult = await this.rnBiometrics.createKeys();
               publicKey = retryResult.publicKey;
-              console.log('✅ Biometric keys created on retry');
+              // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+              // console.log('✅ Biometric keys created on retry');
             } catch (retryError: any) {
               console.error(
                 'Key creation failed on retry:',
@@ -143,12 +149,13 @@ export class BiometricService {
         // Store biometric setup status
         await SecureStorageService.getInstance().storeBiometricStatus(true);
 
-        const isEmulator = publicKey === 'emulator_mock_key';
-        console.log(
-          `✅ Biometric authentication setup completed ${
-            isEmulator ? '(emulator mode)' : '(real device)'
-          }`,
-        );
+        //const isEmulator = publicKey === 'emulator_mock_key';
+        // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+        // console.log(
+        //   `✅ Biometric authentication setup completed ${
+        //     isEmulator ? '(emulator mode)' : '(real device)'
+        //   }`,
+        // );
 
         return {
           success: true,
@@ -177,9 +184,15 @@ export class BiometricService {
     promptMessage: string = 'Authenticate to access your passwords',
   ): Promise<BiometricAuthResult> {
     try {
+      // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+      // console.log(
+      //   '🔐 BiometricService: authenticateWithBiometrics called with message:',
+      //   promptMessage,
+      // );
       // Check if biometrics are available
       const capability = await this.checkBiometricCapability();
       if (!capability.available) {
+        // console.log('🔐 BiometricService: Biometric not available');
         return {
           success: false,
           error: 'Biometric authentication is not available',
@@ -189,12 +202,14 @@ export class BiometricService {
       // Check if biometric auth is set up
       const isSetup = await this.isBiometricSetup();
       if (!isSetup) {
+        // console.log('🔐 BiometricService: Biometric not set up');
         return {
           success: false,
           error: 'Biometric authentication is not set up',
         };
       }
 
+      // console.log('🔐 BiometricService: Starting biometric authentication...');
       // Create signature with current timestamp
       const payload = `auth_${Date.now()}`;
 
@@ -206,7 +221,8 @@ export class BiometricService {
           // Emulator mode: attempting biometric authentication
           try {
             // First try to use simplePrompt which is more reliable on emulator
-            console.log('🎭 Emulator: Trying simplePrompt first...');
+            // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+            // console.log('🎭 Emulator: Trying simplePrompt first...');
             const simpleResult = await this.rnBiometrics.simplePrompt({
               promptMessage:
                 promptMessage +
@@ -215,7 +231,8 @@ export class BiometricService {
             });
 
             if (simpleResult.success) {
-              console.log('✅ Emulator biometric authentication succeeded');
+              // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+              // console.log('✅ Emulator biometric authentication succeeded');
               return {
                 success: true,
                 signature: 'emulator_fake_signature_' + Date.now(),
@@ -252,7 +269,8 @@ export class BiometricService {
               emulatorError.message?.includes('Cancel') ||
               emulatorError.message?.includes('authentication was cancelled')
             ) {
-              console.log('❌ User cancelled emulator authentication');
+              // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+              // console.log('❌ User cancelled emulator authentication');
               return {
                 success: false,
                 error: 'Authentication cancelled by user',
@@ -300,7 +318,8 @@ export class BiometricService {
           signatureError.message?.includes('Cancel') ||
           signatureError.message?.includes('authentication was cancelled')
         ) {
-          console.log('❌ User cancelled authentication');
+          // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+          // console.log('❌ User cancelled authentication');
           return { success: false, error: 'Authentication cancelled by user' };
         }
 
@@ -314,7 +333,8 @@ export class BiometricService {
           signatureError.message?.includes('generating signature') ||
           signatureError.message?.includes('Hardware security module')
         ) {
-          console.log('❌ Hardware biometric authentication failed');
+          // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+          // console.log('❌ Hardware biometric authentication failed');
           return {
             success: false,
             error: 'Biometric hardware authentication failed',
@@ -348,25 +368,50 @@ export class BiometricService {
    */
   public async isBiometricSetup(): Promise<boolean> {
     try {
+      // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+      // console.log('🔐 BiometricService: isBiometricSetup called');
       const status =
         await SecureStorageService.getInstance().getBiometricStatus();
+      // console.log('🔐 BiometricService: Storage status:', status);
       // If biometric is disabled in storage, return false
       if (!status) {
+        // console.log(
+        //   '🔐 BiometricService: Biometric disabled in storage, returning false',
+        // );
         return false;
       }
 
       try {
+        // console.log('🔐 BiometricService: Checking if biometric keys exist...');
+        // console.log(
+        //   '⚠️ WARNING: biometricKeysExist() might trigger native biometric prompt!',
+        // );
         const { keysExist } = await this.rnBiometrics.biometricKeysExist();
+        // console.log('🔐 BiometricService: Keys exist:', keysExist);
+        // console.log(
+        //   '✅ biometricKeysExist() completed without triggering prompt',
+        // );
 
         if (keysExist) {
           // Real device with actual keys
+          // console.log(
+          //   '🔐 BiometricService: Real device with keys, returning true',
+          // );
           return true;
         } else {
           // Emulator or no keys - use storage status for emulator mode
+          // console.log(
+          //   '🔐 BiometricService: Emulator mode, returning storage status:',
+          //   status,
+          // );
           return status;
         }
       } catch (keyCheckError) {
         // For emulator or when key check fails, rely on storage status only
+        // console.log(
+        //   '🔐 BiometricService: Key check error, returning storage status:',
+        //   status,
+        // );
         return status;
       }
     } catch (error) {

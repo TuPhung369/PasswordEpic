@@ -115,13 +115,14 @@ export const useBiometric = (): UseBiometricReturn => {
         await biometricService.setupBiometricAuth();
 
       if (result.success) {
-        console.log('📱 useBiometric: Setup successful, updating states...');
+        // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+        // console.log('📱 useBiometric: Setup successful, updating states...');
         setIsSetup(true);
         dispatch(setBiometricEnabled(true));
-        console.log('📱 useBiometric: Redux state updated to enabled=true');
+        // console.log('📱 useBiometric: Redux state updated to enabled=true');
         return true;
       } else {
-        console.error('📱 useBiometric: Setup failed:', result.error);
+        // console.error('📱 useBiometric: Setup failed:', result.error);
         setError(result.error || 'Failed to setup biometric authentication');
         return false;
       }
@@ -140,12 +141,13 @@ export const useBiometric = (): UseBiometricReturn => {
   const authenticate = useCallback(
     async (message?: string): Promise<boolean> => {
       try {
-        console.log('📱 useBiometric.authenticate: Starting authentication...');
-        console.log('📱 useBiometric.authenticate: message =', message);
-        console.log(
-          '📱 useBiometric.authenticate: biometryType =',
-          biometryType,
-        );
+        // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+        // console.log('📱 useBiometric.authenticate: Starting authentication...');
+        // console.log('📱 useBiometric.authenticate: message =', message);
+        // console.log(
+        //   '📱 useBiometric.authenticate: biometryType =',
+        //   biometryType,
+        // );
 
         setIsLoading(true);
         setError(null);
@@ -160,27 +162,27 @@ export const useBiometric = (): UseBiometricReturn => {
         // Authentication completed
 
         if (result.success) {
-          console.log('📱 useBiometric.authenticate: SUCCESS!');
+          // console.log('📱 useBiometric.authenticate: SUCCESS!');
           return true;
         } else {
-          console.log(
-            '📱 useBiometric.authenticate: FAILED - error =',
-            result.error,
-          );
+          // console.log(
+          //   '📱 useBiometric.authenticate: FAILED - error =',
+          //   result.error,
+          // );
           setError(result.error || 'Authentication failed');
           return false;
         }
       } catch (err) {
-        console.error(
-          '📱 useBiometric.authenticate: EXCEPTION during authentication:',
-          err,
-        );
+        // console.error(
+        //   '📱 useBiometric.authenticate: EXCEPTION during authentication:',
+        //   err,
+        // );
         setError('Authentication failed');
         return false;
       } finally {
-        console.log(
-          '📱 useBiometric.authenticate: Cleaning up - setIsLoading(false)',
-        );
+        // console.log(
+        //   '📱 useBiometric.authenticate: Cleaning up - setIsLoading(false)',
+        // );
         setIsLoading(false);
       }
     },

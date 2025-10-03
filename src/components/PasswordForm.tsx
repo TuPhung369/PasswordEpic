@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   Alert,
@@ -23,6 +22,7 @@ import {
   generateSecurePassword,
 } from '../utils/passwordUtils';
 import { PasswordValidationService } from '../services/passwordValidationService';
+import { TrackedTextInput as TextInput } from './TrackedTextInput';
 // import CategorySelector from './CategorySelector'; // Will be implemented next
 
 interface PasswordFormProps {
@@ -130,6 +130,45 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
       setPasswordStrength(null);
     }
   }, [passwordValue]);
+
+  // Auto-save form data when any field changes
+  useEffect(() => {
+    // Only auto-save if there's actual data (not initial empty state)
+    const hasData =
+      title ||
+      username ||
+      passwordValue ||
+      website ||
+      notes ||
+      customFields.length > 0;
+
+    if (hasData) {
+      console.log('💾 Auto-saving form data...');
+      onSave({
+        title,
+        username,
+        password: passwordValue,
+        website,
+        notes,
+        category,
+        isFavorite,
+        customFields,
+        tags: password?.tags || [], // Preserve tags from parent
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    title,
+    username,
+    passwordValue,
+    website,
+    notes,
+    category,
+    isFavorite,
+    customFields,
+    // DON'T include onSave in dependencies - it causes infinite loop
+    // onSave is stable and doesn't need to be tracked
+  ]);
 
   // Validate form when fields change
   useEffect(() => {

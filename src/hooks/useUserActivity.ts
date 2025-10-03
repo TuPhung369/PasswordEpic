@@ -145,6 +145,7 @@ export const useUserActivity = (
       onStartShouldSetPanResponder: () => {
         // Record interaction on touch start only
         // The service has debounce logic to prevent excessive calls
+        console.log('🎯 PanResponder: Touch detected');
         recordInteraction();
         return false; // Don't capture the gesture
       },

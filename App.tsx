@@ -1,13 +1,15 @@
 ﻿import React, { useEffect, useRef } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider } from 'react-redux';
+import { PersistGate } from 'redux-persist/integration/react';
 import { NavigationContainer } from '@react-navigation/native';
-import { store } from './src/store';
+import { store, persistor } from './src/store';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { ThemeProvider } from './src/contexts/ThemeContext';
 import { initializeAuth } from './src/services/authService';
 import { initializeFirebase } from './src/services/firebase';
 import { initializeGoogleSignIn } from './src/services/googleAuthNative';
+import { ActivityIndicator, View, StyleSheet } from 'react-native';
 
 // Import polyfills for crypto and URL
 import 'react-native-get-random-values';
@@ -74,53 +76,74 @@ const App: React.FC = () => {
 
   return (
     <Provider store={store}>
-      <SafeAreaProvider>
-        <ThemeProvider>
-          <NavigationContainer
-            ref={navigationRef}
-            onStateChange={state => {
-              // Save navigation state when it changes
-              try {
-                if (state && state.routes) {
-                  // Find the current main tab
-                  const authRoute = state.routes.find(
-                    route => route.name === 'Main',
-                  );
-                  if (authRoute && authRoute.state && authRoute.state.routes) {
-                    const currentTabRoute =
-                      authRoute.state.routes[authRoute.state.index || 0];
-                    const currentTab = currentTabRoute.name;
-
+      <PersistGate
+        loading={
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#007AFF" />
+          </View>
+        }
+        persistor={persistor}
+      >
+        <SafeAreaProvider>
+          <ThemeProvider>
+            <NavigationContainer
+              ref={navigationRef}
+              onStateChange={state => {
+                // Save navigation state when it changes
+                try {
+                  if (state && state.routes) {
+                    // Find the current main tab
+                    const authRoute = state.routes.find(
+                      route => route.name === 'Main',
+                    );
                     if (
-                      ['Passwords', 'Generator', 'Settings'].includes(
-                        currentTab,
-                      )
+                      authRoute &&
+                      authRoute.state &&
+                      authRoute.state.routes
                     ) {
-                      console.log(
-                        `💾 App.tsx: Saving current tab: ${currentTab}`,
-                      );
-                      import('@react-native-async-storage/async-storage').then(
-                        ({ default: AsyncStorage }) => {
+                      const currentTabRoute =
+                        authRoute.state.routes[authRoute.state.index || 0];
+                      const currentTab = currentTabRoute.name;
+
+                      if (
+                        ['Passwords', 'Generator', 'Settings'].includes(
+                          currentTab,
+                        )
+                      ) {
+                        console.log(
+                          `💾 App.tsx: Saving current tab: ${currentTab}`,
+                        );
+                        import(
+                          '@react-native-async-storage/async-storage'
+                        ).then(({ default: AsyncStorage }) => {
                           AsyncStorage.setItem(
                             'last_active_tab',
                             currentTab,
                           ).catch(console.error);
-                        },
-                      );
+                        });
+                      }
                     }
                   }
+                } catch (error) {
+                  console.error('Failed to save navigation state:', error);
                 }
-              } catch (error) {
-                console.error('Failed to save navigation state:', error);
-              }
-            }}
-          >
-            <AppNavigator />
-          </NavigationContainer>
-        </ThemeProvider>
-      </SafeAreaProvider>
+              }}
+            >
+              <AppNavigator />
+            </NavigationContainer>
+          </ThemeProvider>
+        </SafeAreaProvider>
+      </PersistGate>
     </Provider>
   );
 };
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+});
 
 export default App;

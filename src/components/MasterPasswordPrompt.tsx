@@ -42,14 +42,14 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
 
     setLoading(true);
     try {
-      const isValid = await verifyMasterPassword(password);
-      if (isValid) {
+      const result = await verifyMasterPassword(password);
+      if (result.success) {
         setPassword('');
         onSuccess();
       } else {
         Alert.alert(
           'Invalid Password',
-          'The master password you entered is incorrect',
+          result.error || 'The master password you entered is incorrect',
         );
       }
     } catch (error) {

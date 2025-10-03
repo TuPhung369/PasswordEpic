@@ -36,31 +36,14 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
     onCloseRef.current = onClose;
   }, [authenticate, onSuccess, onError, onClose]);
 
-  // console.log('🔐 BiometricPrompt: Component rendered', {
-  //   visible,
-  //   isAvailable,
-  //   hasTriggered: hasTriggeredRef.current,
-  //   isAuthenticating: isAuthenticatingRef.current,
-  // });
-
   // Auto-trigger native biometric authentication when visible
   React.useEffect(() => {
-    // console.log('🔐 BiometricPrompt: useEffect triggered', {
-    //   visible,
-    //   isAvailable,
-    //   hasTriggered: hasTriggeredRef.current,
-    //   isAuthenticating: isAuthenticatingRef.current,
-    // });
-
     if (
       visible &&
       isAvailable &&
       !hasTriggeredRef.current &&
       !isAuthenticatingRef.current
     ) {
-      // console.log(
-      //   '🔐 BiometricPrompt: Auto-triggering native biometric authentication...',
-      // );
       hasTriggeredRef.current = true;
       isAuthenticatingRef.current = true;
 
@@ -88,7 +71,7 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
             error.code === 'AUTHENTICATION_CANCELED';
 
           if (isCancellation) {
-            console.log('🔐 BiometricPrompt: User CANCELLED authentication');
+            // console.log('🔐 BiometricPrompt: User CANCELLED authentication');
             // Only call onClose for user cancellation (which triggers logout)
             onCloseRef.current();
           } else {
@@ -112,7 +95,7 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
 
   // Reset when visibility changes
   React.useEffect(() => {
-    // Biometric prompt visibility changed
+    // console.log('🔐 BiometricPrompt: Visibility changed', { visible });
     if (!visible) {
       hasTriggeredRef.current = false;
       isAuthenticatingRef.current = false;

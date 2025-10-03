@@ -98,7 +98,8 @@ export const useSession = (): UseSessionReturn => {
         // Clear any existing session warnings
         dispatch(clearSession());
 
-        console.log('Session started successfully');
+        // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+        // console.log('Session started successfully');
       } catch (error) {
         console.error('Failed to start session:', error);
         throw error;
@@ -115,7 +116,8 @@ export const useSession = (): UseSessionReturn => {
       const sessionService = SessionService.getInstance();
       await sessionService.endSession();
       dispatch(clearSession());
-      console.log('Session ended successfully');
+      // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+      // console.log('Session ended successfully');
     } catch (error) {
       console.error('Failed to end session:', error);
     }
@@ -130,7 +132,8 @@ export const useSession = (): UseSessionReturn => {
         const sessionService = SessionService.getInstance();
         await sessionService.extendSession(minutes);
         dispatch(clearSession()); // Clear warnings
-        console.log('Session extended by', minutes, 'minutes');
+        // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+        // console.log('Session extended by', minutes, 'minutes');
       } catch (error) {
         console.error('Failed to extend session:', error);
         throw error;
@@ -161,7 +164,8 @@ export const useSession = (): UseSessionReturn => {
         await sessionService.updateConfig(newConfig);
         const updatedConfig = sessionService.getConfig();
         setConfig(updatedConfig);
-        console.log('Session config updated:', updatedConfig);
+        // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+        // console.log('Session config updated:', updatedConfig);
       } catch (error) {
         console.error('Failed to update session config:', error);
         throw error;
@@ -210,7 +214,8 @@ export const useSession = (): UseSessionReturn => {
       await sessionService.forceExpiry();
       dispatch(logout());
       dispatch(clearSession());
-      console.log('Forced logout completed');
+      // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
+      // console.log('Forced logout completed');
     } catch (error) {
       console.error('Failed to force logout:', error);
     }
@@ -338,15 +343,9 @@ export const useSession = (): UseSessionReturn => {
             await updateActivityRef.current();
           }
         }
-      } else if (nextAppState === 'background' || nextAppState === 'inactive') {
-        // App going to background
-        if (configRef.current.lockOnBackground && isAuthenticatedRef.current) {
-          // Immediate lock on background if configured
-          setTimeout(async () => {
-            await forceLogoutRef.current();
-          }, 1000); // 1 second delay to allow for quick app switches
-        }
       }
+      // Note: Background lock is handled by SessionService.handleAppStateChange
+      // Removed duplicate lock logic here to prevent timing conflicts
     },
     [], // No dependencies - use refs instead
   );

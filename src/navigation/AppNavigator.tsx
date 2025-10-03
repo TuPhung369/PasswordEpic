@@ -26,6 +26,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { BiometricPrompt } from '../components/BiometricPrompt';
 import { MasterPasswordPrompt } from '../components/MasterPasswordPrompt';
 import { useUserActivity } from '../hooks/useUserActivity';
+import { NavigationPersistenceService } from '../services/navigationPersistenceService';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -34,10 +35,17 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-export const AppNavigator: React.FC = () => {
+interface AppNavigatorProps {
+  navigationRef?: React.RefObject<any>;
+}
+
+export const AppNavigator: React.FC<AppNavigatorProps> = ({
+  navigationRef,
+}) => {
   // console.log('🔄 AppNavigator: Component rendering...');
   const dispatch = useAppDispatch();
   const { theme } = useTheme();
+  const navPersistence = NavigationPersistenceService.getInstance();
   const {
     isAuthenticated,
     masterPasswordConfigured,
@@ -59,7 +67,7 @@ export const AppNavigator: React.FC = () => {
 
   // User activity tracking for proper auto-lock based on interaction
   const { updateConfig: updateActivityConfig, panResponder } = useUserActivity(
-    () => {
+    async () => {
       // Auto-lock callback when user is inactive
       console.log('🎯 Auto-lock triggered due to user inactivity');
       if (
@@ -68,12 +76,35 @@ export const AppNavigator: React.FC = () => {
         biometricEnabled &&
         biometricAvailable
       ) {
+        // Save navigation state immediately to restore after unlock
+        try {
+          const currentState = navigationRef?.current?.getRootState();
+          if (currentState) {
+            console.log('🎯 Auto-lock: Saving navigation state for restore');
+            const path = navPersistence.getNavigationPath(currentState);
+            console.log(
+              '🎯 Auto-lock navigation path:',
+              path?.map(p => p.screenName).join(' -> ') || 'Unknown',
+            );
+            await navPersistence.saveNavigationState(currentState);
+            console.log('🎯 Auto-lock: Navigation state saved successfully');
+          }
+        } catch (error) {
+          console.error(
+            'Failed to save navigation state during auto-lock:',
+            error,
+          );
+        }
+
+        // Trigger biometric authentication requirement (no session extension needed)
+        // Session remains valid (7 days), only user interaction is locked
+        console.log('🎯 Auto-lock: Requiring biometric authentication');
         setHasAuthenticatedInSession(false);
         setBiometricCancelled(false);
       }
     },
     {
-      inactivityTimeout: 5, // Will be updated from settings
+      inactivityTimeout: security.autoLockTimeout || 5, // Use setting value, default to 5 minutes
       trackUserInteraction: true,
     },
   );
@@ -372,19 +403,19 @@ export const AppNavigator: React.FC = () => {
       !sessionTimeoutVisible &&
       initialAuthComplete; // Only show biometric after Firebase auth is initialized
 
-    console.log('🔐 shouldShowBiometric calculated:', {
-      result,
-      isAuthenticated,
-      masterPasswordConfigured,
-      biometricEnabled,
-      biometricAvailable,
-      sessionExpired: session.expired,
-      biometricCancelled,
-      hasAuthenticatedInSession,
-      sessionActive,
-      sessionTimeoutVisible,
-      initialAuthComplete,
-    });
+    // console.log('🔐 shouldShowBiometric calculated:', {
+    //   result,
+    //   isAuthenticated,
+    //   masterPasswordConfigured,
+    //   biometricEnabled,
+    //   biometricAvailable,
+    //   sessionExpired: session.expired,
+    //   biometricCancelled,
+    //   hasAuthenticatedInSession,
+    //   sessionActive,
+    //   sessionTimeoutVisible,
+    //   initialAuthComplete,
+    // });
 
     return result;
   }, [
@@ -402,10 +433,11 @@ export const AppNavigator: React.FC = () => {
 
   // Handle biometric prompt display
   useEffect(() => {
-    console.log('🔐 Biometric prompt effect triggered:', {
-      shouldShowBiometric,
-      showBiometricPrompt,
-    });
+    // console.log('🔐 Biometric prompt effect triggered:', {
+    //   shouldShowBiometric,
+    //   showBiometricPrompt,
+    //   timestamp: new Date().toLocaleTimeString(),
+    // });
 
     if (shouldShowBiometric && !showBiometricPrompt) {
       // Check if master password verification is required (7 days check)
@@ -422,13 +454,87 @@ export const AppNavigator: React.FC = () => {
             console.log(
               '🔐 7 days passed - requiring master password instead of biometric',
             );
+
+            // Save navigation state BEFORE showing master password prompt
+            // Add delay to ensure navigation state is fully updated
+            // Use longer delay since auto-lock might trigger during navigation transitions
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            const currentState = navigationRef?.current?.getRootState();
+            if (currentState) {
+              console.log('🗺️ Master password prompt: Saving navigation state');
+
+              // Extract current screen info for logging
+              const path = navPersistence.getNavigationPath(currentState);
+              console.log(
+                '🗺️ Master password prompt navigation path:',
+                path?.map(p => p.screenName).join(' -> ') || 'Unknown',
+              );
+
+              // Check if this state is different from what we might have saved during auto-lock
+              const previousState = await navPersistence.getNavigationState();
+              const previousPath =
+                navPersistence.getNavigationPath(previousState);
+              const currentPathStr =
+                path?.map(p => p.screenName).join(' -> ') || 'Unknown';
+              const previousPathStr =
+                previousPath?.map(p => p.screenName).join(' -> ') || 'Unknown';
+
+              if (currentPathStr !== previousPathStr) {
+                console.log('🗺️ Navigation state changed since auto-lock!');
+                console.log('🗺️ Previous path:', previousPathStr);
+                console.log('🗺️ Current path:', currentPathStr);
+              } else {
+                console.log('🗺️ Navigation state unchanged since auto-lock');
+              }
+
+              await navPersistence.saveNavigationState(currentState);
+            }
+
             setShowMasterPasswordPrompt(true);
             return;
           }
 
           // Less than 7 days - allow biometric
           // All conditions met and not already showing - show it!
-          console.log('✅ Showing biometric prompt');
+          // console.log('✅ Showing biometric prompt');
+
+          // Save navigation state BEFORE showing biometric prompt
+          // Add delay to ensure navigation state is fully updated
+          // Use longer delay since auto-lock might trigger during navigation transitions
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          const currentState = navigationRef?.current?.getRootState();
+          if (currentState) {
+            // console.log('🗺️ Biometric prompt: Saving navigation state');
+
+            // Extract current screen info for logging
+            // const path = navPersistence.getNavigationPath(currentState);
+            // console.log(
+            //   '🗺️ Biometric prompt navigation path:',
+            //   path?.map(p => p.screenName).join(' -> ') || 'Unknown',
+            // );
+
+            // Check if this state is different from what we might have saved during auto-lock
+            // const previousState = await navPersistence.getNavigationState();
+            // const previousPath =
+            //   navPersistence.getNavigationPath(previousState);
+            // const currentPathStr =
+            //   path?.map(p => p.screenName).join(' -> ') || 'Unknown';
+            // const previousPathStr =
+            //   previousPath?.map(p => p.screenName).join(' -> ') || 'Unknown';
+
+            // if (currentPathStr !== previousPathStr) {
+            //   console.log('🗺️ Navigation state changed since auto-lock!');
+            //   console.log('🗺️ Previous path:', previousPathStr);
+            //   console.log('🗺️ Current path:', currentPathStr);
+            // } else {
+            //   console.log('🗺️ Navigation state unchanged since auto-lock');
+            // }
+
+            await navPersistence.saveNavigationState(currentState);
+          }
+
           setShowBiometricPrompt(true);
         } catch (error) {
           console.error('Failed to check master password requirement:', error);
@@ -440,37 +546,37 @@ export const AppNavigator: React.FC = () => {
       checkMasterPasswordRequirement();
     } else if (!shouldShowBiometric && showBiometricPrompt) {
       // Conditions no longer met but prompt is showing - hide it
-      console.log('❌ Hiding biometric prompt - conditions no longer met');
+      // console.log('❌ Hiding biometric prompt - conditions no longer met');
       setShowBiometricPrompt(false);
     } else if (showBiometricPrompt) {
-      console.log('Not showing biometric prompt - already showing');
+      // console.log('Not showing biometric prompt - already showing');
     } else {
       // Log why we're not showing the prompt
-      if (!isAuthenticated) {
-        console.log('Not showing biometric prompt - not authenticated');
-      } else if (!masterPasswordConfigured) {
-        console.log(
-          'Not showing biometric prompt - master password not configured',
-        );
-      } else if (!biometricEnabled) {
-        console.log('Not showing biometric prompt - biometric not enabled');
-      } else if (!biometricAvailable) {
-        console.log('Not showing biometric prompt - biometric not available');
-      } else if (session.expired) {
-        console.log('Not showing biometric prompt - session expired');
-      } else if (biometricCancelled) {
-        console.log('Not showing biometric prompt - user cancelled');
-      } else if (hasAuthenticatedInSession) {
-        console.log(
-          'Not showing biometric prompt - already authenticated in this session',
-        );
-      } else if (sessionActive === undefined) {
-        console.log('Not showing biometric prompt - session not initialized');
-      } else if (sessionTimeoutVisible) {
-        console.log('Not showing biometric prompt - session timeout visible');
-      } else if (!initialAuthComplete) {
-        console.log('Not showing biometric prompt - initial auth not complete');
-      }
+      // if (!isAuthenticated) {
+      //   console.log('Not showing biometric prompt - not authenticated');
+      // } else if (!masterPasswordConfigured) {
+      //   console.log(
+      //     'Not showing biometric prompt - master password not configured',
+      //   );
+      // } else if (!biometricEnabled) {
+      //   console.log('Not showing biometric prompt - biometric not enabled');
+      // } else if (!biometricAvailable) {
+      //   console.log('Not showing biometric prompt - biometric not available');
+      // } else if (session.expired) {
+      //   console.log('Not showing biometric prompt - session expired');
+      // } else if (biometricCancelled) {
+      //   console.log('Not showing biometric prompt - user cancelled');
+      // } else if (hasAuthenticatedInSession) {
+      //   console.log(
+      //     'Not showing biometric prompt - already authenticated in this session',
+      //   );
+      // } else if (sessionActive === undefined) {
+      //   console.log('Not showing biometric prompt - session not initialized');
+      // } else if (sessionTimeoutVisible) {
+      //   console.log('Not showing biometric prompt - session timeout visible');
+      // } else if (!initialAuthComplete) {
+      //   console.log('Not showing biometric prompt - initial auth not complete');
+      // }
     }
   }, [
     shouldShowBiometric,
@@ -485,6 +591,8 @@ export const AppNavigator: React.FC = () => {
     sessionTimeoutVisible,
     showBiometricPrompt,
     initialAuthComplete,
+    navPersistence,
+    navigationRef,
   ]);
 
   // Reset authentication flag when user logs in (only when transitioning to logged in state)
@@ -611,39 +719,48 @@ export const AppNavigator: React.FC = () => {
             console.error('Failed to restart session:', error);
           });
 
-          // Trigger navigation restoration by setting a flag
-          // This will be picked up by PasswordsNavigator to restore the screen
+          // Re-sync auto-lock timeout from settings after unlock
+          // This ensures the timer uses the current user setting and restarts the timer
           try {
-            const AsyncStorage = await import(
-              '@react-native-async-storage/async-storage'
-            ).then(m => m.default);
-            const lastScreen = await AsyncStorage.getItem('last_active_screen');
-
-            if (lastScreen) {
-              console.log(
-                '🔄 Biometric success - navigation will restore to:',
-                lastScreen,
-              );
-
-              // Increment trigger counter FIRST
-              const currentCounter = await AsyncStorage.getItem(
-                'navigation_restore_trigger',
-              );
-              const newCounter = String(Number(currentCounter || '0') + 1);
-
-              // Set both flags atomically (no delay between them)
-              await AsyncStorage.multiSet([
-                ['should_restore_navigation', 'true'],
-                ['navigation_restore_trigger', newCounter],
-              ]);
-
-              console.log(
-                '🔄 Set navigation restore flags - trigger:',
-                newCounter,
-              );
-            }
+            await updateActivityConfig({
+              inactivityTimeout: security.autoLockTimeout,
+              trackUserInteraction: true, // Ensure tracking is enabled
+            });
+            console.log(
+              '🎯 Re-synced auto-lock timeout after unlock:',
+              security.autoLockTimeout,
+              'minutes',
+            );
           } catch (error) {
-            console.error('Failed to check navigation restoration:', error);
+            console.error(
+              'Failed to re-sync activity timeout after unlock:',
+              error,
+            );
+          }
+
+          // Trigger navigation restoration using the new service
+          try {
+            await navPersistence.markForRestore();
+            // console.log('🗺️ Biometric success - restoring navigation');
+
+            // Delay restoration to allow navigation tree to stabilize
+            // This prevents conflict with default navigation behavior
+            setTimeout(async () => {
+              try {
+                if (navigationRef?.current) {
+                  // console.log('🗺️ Starting delayed navigation restoration...');
+                  await navPersistence.restoreNavigation(navigationRef);
+                } else {
+                  // console.log(
+                  //   '🗺️ navigationRef not available for delayed restoration',
+                  // );
+                }
+              } catch (error) {
+                console.error('Failed to restore navigation (delayed):', error);
+              }
+            }, 1000); // 1 second delay to allow navigation to settle
+          } catch (error) {
+            console.error('Failed to prepare navigation restoration:', error);
           }
         }}
         onError={async _error => {
@@ -673,38 +790,48 @@ export const AppNavigator: React.FC = () => {
             console.error('Failed to restart session:', error);
           });
 
-          // Trigger navigation restoration by setting a flag
+          // Re-sync auto-lock timeout from settings after unlock
+          // This ensures the timer uses the current user setting and restarts the timer
           try {
-            const AsyncStorage = await import(
-              '@react-native-async-storage/async-storage'
-            ).then(m => m.default);
-            const lastScreen = await AsyncStorage.getItem('last_active_screen');
-
-            if (lastScreen) {
-              console.log(
-                '🔄 Master password success - navigation will restore to:',
-                lastScreen,
-              );
-
-              // Increment trigger counter FIRST
-              const currentCounter = await AsyncStorage.getItem(
-                'navigation_restore_trigger',
-              );
-              const newCounter = String(Number(currentCounter || '0') + 1);
-
-              // Set both flags atomically (no delay between them)
-              await AsyncStorage.multiSet([
-                ['should_restore_navigation', 'true'],
-                ['navigation_restore_trigger', newCounter],
-              ]);
-
-              console.log(
-                '🔄 Set navigation restore flags - trigger:',
-                newCounter,
-              );
-            }
+            await updateActivityConfig({
+              inactivityTimeout: security.autoLockTimeout,
+              trackUserInteraction: true, // Ensure tracking is enabled
+            });
+            console.log(
+              '🎯 Re-synced auto-lock timeout after unlock:',
+              security.autoLockTimeout,
+              'minutes',
+            );
           } catch (error) {
-            console.error('Failed to check navigation restoration:', error);
+            console.error(
+              'Failed to re-sync activity timeout after unlock:',
+              error,
+            );
+          }
+
+          // Trigger navigation restoration using the new service
+          try {
+            await navPersistence.markForRestore();
+            // console.log('🗺️ Master password success - restoring navigation');
+
+            // Delay restoration to allow navigation tree to stabilize
+            // This prevents conflict with default navigation behavior
+            setTimeout(async () => {
+              try {
+                if (navigationRef?.current) {
+                  // console.log('🗺️ Starting delayed navigation restoration...');
+                  await navPersistence.restoreNavigation(navigationRef);
+                } else {
+                  // console.log(
+                  //   '🗺️ navigationRef not available for delayed restoration',
+                  // );
+                }
+              } catch (error) {
+                console.error('Failed to restore navigation (delayed):', error);
+              }
+            }, 1000); // 1 second delay to allow navigation to settle
+          } catch (error) {
+            console.error('Failed to prepare navigation restoration:', error);
           }
         }}
         onCancel={async () => {

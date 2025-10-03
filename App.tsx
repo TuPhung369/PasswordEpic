@@ -2,14 +2,18 @@
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
-import { NavigationContainer } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  type NavigationState,
+} from '@react-navigation/native';
 import { store, persistor } from './src/store';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { ThemeProvider } from './src/contexts/ThemeContext';
 import { initializeAuth } from './src/services/authService';
 import { initializeFirebase } from './src/services/firebase';
 import { initializeGoogleSignIn } from './src/services/googleAuthNative';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, AppState } from 'react-native';
+import { NavigationPersistenceService } from './src/services/navigationPersistenceService';
 
 // Import polyfills for crypto and URL
 import 'react-native-get-random-values';
@@ -17,6 +21,71 @@ import 'react-native-url-polyfill/auto';
 
 const App: React.FC = () => {
   const navigationRef = useRef<any>(null);
+  const appStateRef = useRef(AppState.currentState);
+  const navigationPersistence = NavigationPersistenceService.getInstance();
+
+  // Save navigation state when it changes (with debounce to avoid too many saves)
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const handleNavigationStateChange = (state: NavigationState | undefined) => {
+    if (state) {
+      // Log the navigation state change immediately
+      const path = navigationPersistence.getNavigationPath(state);
+      console.log('🗺️ Navigation state changed:', {
+        timestamp: new Date().toLocaleTimeString(),
+        path: path?.map(p => p.screenName).join(' -> ') || 'Unknown',
+      });
+
+      // Debounce saves to avoid performance issues
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      saveTimeoutRef.current = setTimeout(() => {
+        console.log('🗺️ Auto-saving navigation state (debounced)');
+        navigationPersistence.saveNavigationState(state);
+      }, 500); // Save after 500ms of no navigation changes
+    }
+  };
+
+  // Also save when app goes to background
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: any) => {
+      if (
+        appStateRef.current === 'active' &&
+        (nextAppState === 'background' || nextAppState === 'inactive')
+      ) {
+        // App is going to background - save navigation state immediately
+        // Clear any pending debounced save first
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+          saveTimeoutRef.current = null;
+        }
+
+        const currentState = navigationRef.current?.getRootState();
+        if (currentState) {
+          console.log(
+            '🗺️ App going to background - saving navigation state immediately',
+          );
+
+          // Extract current screen info for logging
+          const path = navigationPersistence.getNavigationPath(currentState);
+          console.log(
+            '🗺️ Background save - navigation path:',
+            path?.map(p => p.screenName).join(' -> ') || 'Unknown',
+          );
+
+          navigationPersistence.saveNavigationState(currentState);
+        }
+      }
+
+      appStateRef.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+    return () => subscription?.remove();
+  }, [navigationPersistence]);
 
   useEffect(() => {
     const initializeServices = async () => {
@@ -88,48 +157,9 @@ const App: React.FC = () => {
           <ThemeProvider>
             <NavigationContainer
               ref={navigationRef}
-              onStateChange={state => {
-                // Save navigation state when it changes
-                try {
-                  if (state && state.routes) {
-                    // Find the current main tab
-                    const authRoute = state.routes.find(
-                      route => route.name === 'Main',
-                    );
-                    if (
-                      authRoute &&
-                      authRoute.state &&
-                      authRoute.state.routes
-                    ) {
-                      const currentTabRoute =
-                        authRoute.state.routes[authRoute.state.index || 0];
-                      const currentTab = currentTabRoute.name;
-
-                      if (
-                        ['Passwords', 'Generator', 'Settings'].includes(
-                          currentTab,
-                        )
-                      ) {
-                        console.log(
-                          `💾 App.tsx: Saving current tab: ${currentTab}`,
-                        );
-                        import(
-                          '@react-native-async-storage/async-storage'
-                        ).then(({ default: AsyncStorage }) => {
-                          AsyncStorage.setItem(
-                            'last_active_tab',
-                            currentTab,
-                          ).catch(console.error);
-                        });
-                      }
-                    }
-                  }
-                } catch (error) {
-                  console.error('Failed to save navigation state:', error);
-                }
-              }}
+              onStateChange={handleNavigationStateChange}
             >
-              <AppNavigator />
+              <AppNavigator navigationRef={navigationRef} />
             </NavigationContainer>
           </ThemeProvider>
         </SafeAreaProvider>

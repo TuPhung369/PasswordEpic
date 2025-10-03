@@ -184,6 +184,7 @@ export class UserActivityService {
     newConfig: Partial<UserActivityConfig>,
   ): Promise<void> {
     const oldTimeout = this.config.inactivityTimeout;
+    const forceRestart = newConfig.trackUserInteraction === true;
     this.config = { ...this.config, ...newConfig };
 
     try {
@@ -192,16 +193,22 @@ export class UserActivityService {
         JSON.stringify(this.config),
       );
 
-      // Only restart timer if timeout value actually changed
+      // Restart timer if timeout value changed OR if explicitly requested via trackUserInteraction
       const timeoutChanged = oldTimeout !== this.config.inactivityTimeout;
-      if (this.isTracking && timeoutChanged) {
-        console.log(
-          `🎯 Timeout changed from ${oldTimeout} to ${this.config.inactivityTimeout} minutes - restarting timer`,
-        );
+      if (this.isTracking && (timeoutChanged || forceRestart)) {
+        if (timeoutChanged) {
+          console.log(
+            `🎯 Timeout changed from ${oldTimeout} to ${this.config.inactivityTimeout} minutes - restarting timer`,
+          );
+        } else if (forceRestart) {
+          console.log(
+            `🎯 Timer restart requested via trackUserInteraction - restarting timer with ${this.config.inactivityTimeout} minutes`,
+          );
+        }
         this.startInactivityTimer();
       }
 
-      console.log('🎯 Activity config updated:', this.config);
+      // console.log('🎯 Activity config updated:', this.config);
     } catch (error) {
       console.error('Failed to update activity config:', error);
     }

@@ -25,6 +25,7 @@ export interface UseSessionReturn {
   startSession: (config?: Partial<SessionConfig>) => Promise<void>;
   endSession: () => Promise<void>;
   extendSession: (minutes?: number) => Promise<void>;
+  extendSessionImmediate: (minutes?: number) => void;
   updateActivity: () => Promise<void>;
   updateConfig: (config: Partial<SessionConfig>) => Promise<void>;
   dismissWarning: () => void;
@@ -40,7 +41,7 @@ export const useSession = (): UseSessionReturn => {
   const { isAuthenticated, session } = useAppSelector(
     (state: RootState) => state.auth,
   );
-  const { security } = useAppSelector((state: RootState) => state.settings);
+  // Note: security.autoLockTimeout is handled by UserActivityService, not SessionService
 
   const [sessionInfo, setSessionInfo] = useState<SessionInfo>({
     isActive: false,
@@ -85,27 +86,32 @@ export const useSession = (): UseSessionReturn => {
       try {
         const sessionService = SessionService.getInstance();
         const finalConfig = {
-          timeout: security.autoLockTimeout,
+          timeout: 10080, // 7 days in minutes (7 * 24 * 60) - for session expiry (master password requirement)
           warningTime: 2,
           extendOnActivity: true,
           lockOnBackground: true,
           ...sessionConfig,
         };
 
+        // FORCE update config to override any saved config from AsyncStorage
+        await sessionService.updateConfig(finalConfig);
         await sessionService.startSession(finalConfig);
         setConfig(finalConfig);
 
         // Clear any existing session warnings
         dispatch(clearSession());
 
-        // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
-        // console.log('Session started successfully');
+        console.log(
+          '🔐 Session started with 7-day timeout:',
+          finalConfig.timeout,
+          'minutes',
+        );
       } catch (error) {
         console.error('Failed to start session:', error);
         throw error;
       }
     },
-    [dispatch, security.autoLockTimeout],
+    [dispatch],
   );
 
   /**
@@ -137,6 +143,23 @@ export const useSession = (): UseSessionReturn => {
       } catch (error) {
         console.error('Failed to extend session:', error);
         throw error;
+      }
+    },
+    [dispatch],
+  );
+
+  /**
+   * Extend session immediately (synchronous) - for critical operations like auto-lock
+   */
+  const extendSessionImmediate = useCallback(
+    (minutes: number = 15): void => {
+      try {
+        const sessionService = SessionService.getInstance();
+        sessionService.extendSessionImmediate(minutes);
+        dispatch(clearSession()); // Clear warnings
+        console.log('🔐 Session extended immediately by', minutes, 'minutes');
+      } catch (error) {
+        console.error('Failed to extend session immediately:', error);
       }
     },
     [dispatch],
@@ -175,25 +198,12 @@ export const useSession = (): UseSessionReturn => {
   );
 
   /**
-   * Update session timeout based on security settings
-   * FIXED: Only depend on security.autoLockTimeout to avoid loop
+   * NOTE: Session timeout is fixed at 7 days for master password requirement
+   * Auto-lock timeout (security.autoLockTimeout) is handled separately by UserActivityService
+   * These are two different concepts:
+   * - Session timeout: 7 days -> requires master password re-entry
+   * - Auto-lock timeout: user configurable -> requires biometric unlock
    */
-  useEffect(() => {
-    if (security.autoLockTimeout !== config.timeout) {
-      const newConfig = {
-        ...config,
-        timeout: security.autoLockTimeout,
-      };
-      setConfig(newConfig);
-
-      // Call updateConfig without adding it to deps
-      const sessionService = SessionService.getInstance();
-      sessionService.updateConfig(newConfig).catch(error => {
-        console.error('Failed to update session config:', error);
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [security.autoLockTimeout]); // Only depend on the value that should trigger update
 
   /**
    * Dismiss session warning
@@ -439,6 +449,7 @@ export const useSession = (): UseSessionReturn => {
     startSession,
     endSession,
     extendSession,
+    extendSessionImmediate,
     updateActivity,
     updateConfig,
     dismissWarning,

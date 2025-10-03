@@ -54,6 +54,12 @@ export class SessionService {
    */
   public async startSession(config?: Partial<SessionConfig>): Promise<void> {
     try {
+      console.log('🔐 SessionService: Starting session with config:', config);
+      console.log(
+        '🔐 SessionService: Current config before update:',
+        this.config,
+      );
+
       // Update config if provided
       if (config) {
         this.config = { ...this.config, ...config };
@@ -67,6 +73,11 @@ export class SessionService {
         } else {
           this.config.warningTime = Math.min(2, this.config.timeout * 0.3); // 30% of timeout, max 2 minutes
         }
+
+        console.log(
+          '🔐 SessionService: Final config after update:',
+          this.config,
+        );
 
         // Config adjusted for timeout and warning time
         await this.saveConfig();
@@ -181,24 +192,75 @@ export class SessionService {
    * Extend session by specified minutes
    */
   public async extendSession(minutes: number = 15): Promise<void> {
-    if (!this.isActive) return;
+    if (!this.isActive) {
+      console.log('🔐 Session not active, cannot extend');
+      return;
+    }
 
     try {
+      // IMMEDIATELY clear any existing timers to prevent expiry during extension
+      this.clearTimers();
+
+      // Update activity timestamp
       this.lastActivity = Date.now();
 
-      // Save extended time
+      // Save extended time to storage
       await AsyncStorage.setItem(
         this.SESSION_LAST_ACTIVITY,
         this.lastActivity.toString(),
       );
 
-      // Restart timer
+      // Restart timer with fresh timeout
       this.startTimer();
 
-      console.log('Session extended by', minutes, 'minutes');
+      console.log(
+        '🔐 Session extended by',
+        minutes,
+        'minutes, new expiry:',
+        new Date(this.lastActivity + this.config.timeout * 60 * 1000),
+      );
     } catch (error) {
       console.error('Failed to extend session:', error);
+      // Even if storage fails, keep the session active in memory
+      this.startTimer();
     }
+  }
+
+  /**
+   * Extend session immediately (synchronous timer reset)
+   * Use this for critical operations like auto-lock where we need to prevent race conditions
+   */
+  public extendSessionImmediate(minutes: number = 15): void {
+    if (!this.isActive) {
+      console.log('🔐 Session not active, cannot extend immediately');
+      return;
+    }
+
+    console.log('🔐 Extending session immediately to prevent expiry');
+
+    // IMMEDIATELY clear any existing timers to prevent expiry
+    this.clearTimers();
+
+    // Update activity timestamp immediately
+    this.lastActivity = Date.now();
+
+    // Restart timer immediately
+    this.startTimer();
+
+    // Save to storage asynchronously (non-blocking)
+    AsyncStorage.setItem(
+      this.SESSION_LAST_ACTIVITY,
+      this.lastActivity.toString(),
+    ).catch(error => {
+      console.error('Failed to save extended session to storage:', error);
+    });
+
+    console.log(
+      '🔐 Session extended immediately by',
+      minutes,
+      'minutes, new expiry:',
+      new Date(this.lastActivity + this.config.timeout * 60 * 1000),
+    );
   }
 
   /**
@@ -433,7 +495,16 @@ export class SessionService {
   }
 
   private async handleSessionExpiry(): Promise<void> {
-    console.log('Session expired');
+    console.log('🔐 SessionService: Session expired naturally');
+
+    // Add some debug info about when this happened
+    const debugInfo = this.getDebugInfo();
+    console.log('🔐 SessionService: Session expiry debug info:', {
+      timeSinceActivity: Math.round(debugInfo.timeSinceActivity / 1000) + 's',
+      sessionTimeout: Math.round(debugInfo.sessionTimeout / 1000) + 's',
+      timeInBackground: Math.round(debugInfo.timeInBackground / 1000) + 's',
+      config: debugInfo.config,
+    });
 
     this.clearTimers();
     this.isActive = false;

@@ -10,7 +10,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -19,6 +18,7 @@ import PasswordForm from '../../components/PasswordForm';
 import ErrorBoundary from '../../components/ErrorBoundary';
 import { PasswordEntry } from '../../types/password';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
+import { NavigationPersistenceService } from '../../services/navigationPersistenceService';
 
 type AddPasswordScreenNavigationProp = NativeStackNavigationProp<
   PasswordsStackParamList,
@@ -52,31 +52,31 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     isFavorite: false,
   });
 
+  const navigationPersistence = NavigationPersistenceService.getInstance();
+
   // Save form data to prevent loss during navigation interruptions
   const saveFormDataToStorage = useCallback(
     async (data: Partial<PasswordEntry>) => {
       try {
-        await AsyncStorage.setItem(
-          'temp_add_password_form',
-          JSON.stringify(data),
-        );
+        await navigationPersistence.saveScreenData('AddPassword', data);
       } catch (error) {
         console.error('Failed to save form data:', error);
       }
     },
-    [],
+    [navigationPersistence],
   );
 
   // Load saved form data
   const loadFormDataFromStorage = useCallback(async () => {
     try {
-      const saved = await AsyncStorage.getItem('temp_add_password_form');
+      const saved = await navigationPersistence.getScreenData<
+        Partial<PasswordEntry>
+      >('AddPassword');
       if (saved) {
-        const parsedData = JSON.parse(saved);
-        console.log('📦 Loaded form data from storage:', parsedData);
-        setFormData(parsedData);
+        // console.log('📦 Loaded form data from storage:', saved);
+        setFormData(saved);
         setIsDataRestored(true);
-        console.log('✅ Form data restored from storage');
+        // console.log('✅ Form data restored from storage');
         // DON'T clear the saved data here - keep it until user saves or cancels
         // This allows data to persist through multiple lock/unlock cycles
       } else {
@@ -85,7 +85,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     } catch (error) {
       console.error('Failed to load form data:', error);
     }
-  }, []);
+  }, [navigationPersistence]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [_isDataRestored, setIsDataRestored] = useState(false);
@@ -145,13 +145,6 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     const backHandler = BackHandler.addEventListener(
       'hardwareBackPress',
       async () => {
-        // Clear the navigation flag when user presses back
-        try {
-          await AsyncStorage.removeItem('last_active_screen');
-        } catch (error) {
-          console.error('Failed to clear last_active_screen on back:', error);
-        }
-
         // Check for unsaved changes
         const currentFormData = formDataRef.current;
         const currentHasChanges = !!(
@@ -182,7 +175,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
                 style: 'destructive',
                 onPress: async () => {
                   try {
-                    await AsyncStorage.removeItem('temp_add_password_form');
+                    await navigationPersistence.clearScreenData('AddPassword');
                   } catch (error) {
                     console.error('Failed to clear temp form data:', error);
                   }
@@ -201,7 +194,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     );
 
     return () => backHandler.remove();
-  }, [navigation]);
+  }, [navigation, navigationPersistence]);
 
   // Focus effect to handle screen focus/blur events
   useFocusEffect(
@@ -267,15 +260,6 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
             currentFormData.customFields.length > 0)
         );
 
-        // Always save navigation state when user is on AddPassword screen
-        // This ensures we restore to AddPassword even if form is empty
-        console.log(
-          '💾 AddPasswordScreen: Saving last_active_screen = AddPassword',
-        );
-        AsyncStorage.setItem('last_active_screen', 'AddPassword').catch(
-          console.error,
-        );
-
         // Only save form data if there are actual changes
         if (currentHasChanges) {
           saveFormDataToStorage(currentFormData);
@@ -304,12 +288,14 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   // Memoized callback for form save
   const handleFormSave = useCallback(
     (updatedData: Partial<PasswordEntry>) => {
-      const newData = { ...formData, ...updatedData };
-      setFormData(newData);
-      // Save to storage to prevent data loss
-      saveFormDataToStorage(newData);
+      setFormData(prevFormData => {
+        const newData = { ...prevFormData, ...updatedData };
+        // Save to storage to prevent data loss
+        saveFormDataToStorage(newData);
+        return newData;
+      });
     },
-    [formData, saveFormDataToStorage],
+    [saveFormDataToStorage], // Remove formData dependency to prevent infinite loop
   );
 
   const handleCancel = async () => {
@@ -328,8 +314,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
             onPress: async () => {
               // Clear temporary data when discarding
               try {
-                await AsyncStorage.removeItem('temp_add_password_form');
-                await AsyncStorage.removeItem('last_active_screen');
+                await navigationPersistence.clearScreenData('AddPassword');
               } catch (error) {
                 console.error('Failed to clear temp form data:', error);
               }
@@ -342,8 +327,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     } else {
       // Clear any temporary data
       try {
-        await AsyncStorage.removeItem('temp_add_password_form');
-        await AsyncStorage.removeItem('last_active_screen');
+        await navigationPersistence.clearScreenData('AddPassword');
       } catch (error) {
         console.error('Failed to clear temp form data:', error);
       }
@@ -406,8 +390,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 
       // Clear temporary data after successful save
       try {
-        await AsyncStorage.removeItem('temp_add_password_form');
-        await AsyncStorage.removeItem('last_active_screen');
+        await navigationPersistence.clearScreenData('AddPassword');
       } catch (error) {
         console.error('Failed to clear temp form data:', error);
       }

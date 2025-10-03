@@ -121,6 +121,29 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     excludeSimilar: true,
   });
 
+  // Use ref to track previous password prop to avoid infinite loops
+  const prevPasswordRef = React.useRef(password);
+
+  // Sync form state with password prop when it changes (for data restoration)
+  useEffect(() => {
+    // Only sync if password prop actually changed (not form state changes)
+    if (password && password !== prevPasswordRef.current) {
+      // console.log(
+      //   '🔄 PasswordForm: Syncing with updated password prop:',
+      //   password,
+      // );
+      setTitle(password.title || '');
+      setUsername(password.username || '');
+      setPasswordValue(password.password || '');
+      setWebsite(password.website || '');
+      setNotes(password.notes || '');
+      setCategory(password.category || 'General');
+      setIsFavorite(password.isFavorite || false);
+      setCustomFields(password.customFields || []);
+      prevPasswordRef.current = password;
+    }
+  }, [password]); // Only depend on password prop, not form state
+
   // Calculate password strength when password changes
   useEffect(() => {
     if (passwordValue) {
@@ -131,7 +154,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     }
   }, [passwordValue]);
 
-  // Auto-save form data when any field changes
+  // Debounced auto-save to prevent excessive calls
   useEffect(() => {
     // Only auto-save if there's actual data (not initial empty state)
     const hasData =
@@ -143,18 +166,23 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
       customFields.length > 0;
 
     if (hasData) {
-      console.log('💾 Auto-saving form data...');
-      onSave({
-        title,
-        username,
-        password: passwordValue,
-        website,
-        notes,
-        category,
-        isFavorite,
-        customFields,
-        tags: password?.tags || [], // Preserve tags from parent
-      });
+      // Debounce auto-save to prevent rapid successive calls
+      const timeoutId = setTimeout(() => {
+        // console.log('💾 Auto-saving form data...');
+        onSave({
+          title,
+          username,
+          password: passwordValue,
+          website,
+          notes,
+          category,
+          isFavorite,
+          customFields,
+          tags: password?.tags || [], // Preserve tags from parent
+        });
+      }, 300); // 300ms debounce
+
+      return () => clearTimeout(timeoutId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [

@@ -112,45 +112,108 @@ export const verifyMasterPassword = async (
   }
 };
 
+// Cache biometric support check to avoid repeated expensive calls
+let biometricSupportCache: { supported: boolean; timestamp: number } | null =
+  null;
+const BIOMETRIC_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const BIOMETRIC_TIMEOUT = 15 * 1000; // 15 seconds timeout
+
+// Timeout wrapper for biometric operations
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('Biometric authentication timeout')),
+        timeoutMs,
+      ),
+    ),
+  ]);
+};
+
 export const getMasterPasswordFromBiometric = async (): Promise<{
   success: boolean;
   password?: string;
   error?: string;
 }> => {
+  const startTime = Date.now();
+  console.log('🔐 [Biometric] Starting biometric authentication...');
+
   try {
+    // Fast check: is biometric enabled?
+    const checkStart = Date.now();
     const biometricEnabled = await AsyncStorage.getItem(
       STORAGE_KEYS.BIOMETRIC_ENABLED,
     );
+    console.log(`🔍 [Biometric] Enabled check: ${Date.now() - checkStart}ms`);
 
     if (biometricEnabled !== 'true') {
+      console.log(`❌ [Biometric] Not enabled (${Date.now() - startTime}ms)`);
       return { success: false, error: 'Biometric authentication not enabled' };
     }
 
-    // Check if biometric authentication is available
-    const biometryType = await Keychain.getSupportedBiometryType();
-    if (!biometryType) {
+    // Check biometric support (with caching)
+    const supportStart = Date.now();
+    let biometricSupported = false;
+
+    if (
+      biometricSupportCache &&
+      Date.now() - biometricSupportCache.timestamp < BIOMETRIC_CACHE_TTL
+    ) {
+      console.log('🚀 [Biometric] Using cached support status');
+      biometricSupported = biometricSupportCache.supported;
+    } else {
+      console.log('🔍 [Biometric] Checking biometric support...');
+      const biometryType = await Keychain.getSupportedBiometryType();
+      biometricSupported = !!biometryType;
+
+      // Cache the result
+      biometricSupportCache = {
+        supported: biometricSupported,
+        timestamp: Date.now(),
+      };
+      console.log(`✅ [Biometric] Support cached: ${biometricSupported}`);
+    }
+
+    console.log(`📊 [Biometric] Support check: ${Date.now() - supportStart}ms`);
+
+    if (!biometricSupported) {
+      const duration = Date.now() - startTime;
+      console.log(`❌ [Biometric] Not supported (${duration}ms)`);
       return {
         success: false,
         error: 'Biometric authentication not available',
       };
     }
 
-    // Retrieve password from keychain with biometric authentication
-    const credentials = await Keychain.getInternetCredentials(
-      KEYCHAIN_SERVICE,
-      KEYCHAIN_OPTIONS,
+    // Retrieve password from keychain with biometric authentication (with timeout)
+    console.log('🔑 [Biometric] Accessing keychain...');
+    const keychainStart = Date.now();
+
+    const credentials = await withTimeout(
+      Keychain.getInternetCredentials(KEYCHAIN_SERVICE, KEYCHAIN_OPTIONS),
+      BIOMETRIC_TIMEOUT,
+    );
+
+    console.log(
+      `🔑 [Biometric] Keychain access: ${Date.now() - keychainStart}ms`,
     );
 
     if (!credentials || typeof credentials === 'boolean') {
+      const duration = Date.now() - startTime;
+      console.log(`❌ [Biometric] No credentials found (${duration}ms)`);
       return { success: false, error: 'No stored credentials found' };
     }
 
+    const duration = Date.now() - startTime;
+    console.log(`✅ [Biometric] Authentication successful (${duration}ms)`);
     return {
       success: true,
       password: credentials.password,
     };
   } catch (error: any) {
-    console.error('Failed to get master password from biometric:', error);
+    const duration = Date.now() - startTime;
+    console.error(`❌ [Biometric] Failed after ${duration}ms:`, error);
 
     let errorMessage = 'Biometric authentication failed';
 

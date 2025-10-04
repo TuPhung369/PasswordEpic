@@ -8,3 +8,6 @@ declare module '@react-navigation/native' {
   export * from '@react-navigation/native/lib/typescript/src/index';
   export { default } from '@react-navigation/native/lib/typescript/src/index';
 }
+
+// React Native global declarations
+declare var __DEV__: boolean;

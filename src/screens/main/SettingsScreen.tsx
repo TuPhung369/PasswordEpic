@@ -506,6 +506,121 @@ export const SettingsScreen: React.FC = () => {
             theme={theme}
             onPress={() => {}}
           />
+
+          <SettingItem
+            icon="bug-report"
+            title="Dynamic Master Password Test"
+            subtitle="Test new security system"
+            theme={theme}
+            onPress={async () => {
+              try {
+                // Import dynamic master password test utilities
+
+                Alert.alert(
+                  'Dynamic Master Password Test',
+                  'This will test the new dynamic master password system. Check console for detailed results.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Run Test',
+                      onPress: async () => {
+                        try {
+                          console.log(
+                            '🚀 Starting Comprehensive Dynamic Master Password Test',
+                          );
+
+                          // Import performance monitor
+                          const {
+                            performanceMonitor,
+                          } = require('../../utils/dynamicMasterPasswordPerformanceMonitor');
+
+                          // Test user authentication first
+                          const authTest =
+                            await performanceMonitor.testUserAuthentication();
+                          console.log(
+                            `🔐 Authentication: ${
+                              authTest.isAuthenticated
+                                ? 'AUTHENTICATED'
+                                : 'NOT AUTHENTICATED'
+                            }`,
+                          );
+                          if (authTest.userInfo) {
+                            console.log(
+                              `   - User: ${
+                                authTest.userInfo.email
+                              } (${authTest.userInfo.uid.substring(0, 10)}...)`,
+                            );
+                          }
+
+                          if (!authTest.isAuthenticated) {
+                            Alert.alert(
+                              'Authentication Required',
+                              'Please sign in with Google first to test dynamic master password.',
+                              [{ text: 'OK' }],
+                            );
+                            return;
+                          }
+
+                          // Run comprehensive performance comparison
+                          const comparison =
+                            await performanceMonitor.runPerformanceComparison(
+                              3,
+                            );
+
+                          // Show results
+                          const dynamicSummary = comparison.summary.dynamic;
+                          const biometricSummary = comparison.summary.biometric;
+
+                          console.log('📊 Final Results:');
+                          console.log(
+                            `   Dynamic: ${dynamicSummary.avgDuration}ms avg (${dynamicSummary.successRate}% success)`,
+                          );
+                          console.log(
+                            `   Biometric: ${biometricSummary.avgDuration}ms avg (${biometricSummary.successRate}% success)`,
+                          );
+                          console.log(
+                            `   ${comparison.summary.recommendation}`,
+                          );
+
+                          Alert.alert(
+                            'Performance Test Results',
+                            `🔐 DYNAMIC MASTER PASSWORD:\n` +
+                              `   • Average: ${dynamicSummary.avgDuration}ms\n` +
+                              `   • Success Rate: ${dynamicSummary.successRate}%\n` +
+                              `   • Range: ${dynamicSummary.fastestCall}-${dynamicSummary.slowestCall}ms\n\n` +
+                              `👆 BIOMETRIC (Legacy):\n` +
+                              `   • Average: ${biometricSummary.avgDuration}ms\n` +
+                              `   • Success Rate: ${biometricSummary.successRate}%\n` +
+                              `   • Range: ${biometricSummary.fastestCall}-${biometricSummary.slowestCall}ms\n\n` +
+                              `💡 ${comparison.summary.recommendation}\n\n` +
+                              `🔒 SECURITY BENEFITS:\n` +
+                              `   • Dynamic password per session\n` +
+                              `   • Based on UUID + login time\n` +
+                              `   • Impossible to predict\n` +
+                              `   • No static password storage`,
+                            [{ text: 'Great!' }],
+                          );
+                        } catch (testError: any) {
+                          console.error('❌ Test failed:', testError);
+                          Alert.alert(
+                            'Test Failed',
+                            `${testError.message}\n\nCheck console for detailed logs.`,
+                            [{ text: 'OK' }],
+                          );
+                        }
+                      },
+                    },
+                  ],
+                );
+              } catch (error: any) {
+                Alert.alert(
+                  'Error',
+                  `Failed to initialize test: ${error.message}`,
+                  [{ text: 'OK' }],
+                );
+              }
+            }}
+          />
         </View>
 
         {/* Logout */}

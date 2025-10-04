@@ -227,6 +227,8 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
         value={newCategoryName}
         onChangeText={setNewCategoryName}
         placeholderTextColor={theme.textSecondary}
+        autoComplete="off"
+        importantForAutofill="no"
       />
 
       <Text style={styles.createLabel}>Icon</Text>
@@ -334,6 +336,8 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                   placeholderTextColor={theme.textSecondary}
+                  autoComplete="off"
+                  importantForAutofill="no"
                 />
               </View>
 

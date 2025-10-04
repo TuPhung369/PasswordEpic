@@ -14,6 +14,7 @@ import { initializeFirebase } from './src/services/firebase';
 import { initializeGoogleSignIn } from './src/services/googleAuthNative';
 import { ActivityIndicator, View, StyleSheet, AppState } from 'react-native';
 import { NavigationPersistenceService } from './src/services/navigationPersistenceService';
+import { sessionManager } from './src/utils/sessionManager';
 
 // Import polyfills for crypto and URL
 import 'react-native-get-random-values';
@@ -94,6 +95,10 @@ const App: React.FC = () => {
         await new Promise(resolve => setTimeout(resolve, 100));
 
         console.log('🚀 Initializing services...');
+
+        // Initialize session manager for security
+        sessionManager.init();
+        console.log('✅ Session manager initialized');
 
         // Try Firebase initialization
         try {

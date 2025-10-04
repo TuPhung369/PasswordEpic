@@ -112,6 +112,8 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
                 secureTextEntry={!showPassword}
                 autoFocus={true}
                 onSubmitEditing={handleVerify}
+                autoComplete="off"
+                importantForAutofill="no"
               />
               <TouchableOpacity
                 onPress={() => setShowPassword(!showPassword)}

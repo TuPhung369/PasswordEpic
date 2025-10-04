@@ -33,29 +33,64 @@ export const LoginScreen: React.FC = () => {
   const navigation = useNavigation<LoginScreenNavigationProp>();
   const { theme } = useTheme();
   const [isLoading, setIsLoading] = useState(false);
+  const [buttonPressed, setButtonPressed] = useState(false);
   const googleSignInAvailable = isGoogleSignInModuleAvailable();
 
-  const handleGoogleSignIn = async () => {
-    if (!googleSignInAvailable) {
-      Alert.alert(
-        'Google Sign-In Unavailable',
-        'Google Sign-In is not available in this build. Please use a development build that includes the Google Sign-In module.',
-        [{ text: 'OK' }],
-      );
+  // Use ref to track loading state immediately
+  const isLoadingRef = React.useRef(false);
+  const buttonPressedRef = React.useRef(false);
+
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      // Reset all refs when component unmounts
+      isLoadingRef.current = false;
+      buttonPressedRef.current = false;
+      console.log('🔄 LoginScreen unmounted - refs reset');
+    };
+  }, []);
+
+  const handleGoogleSignIn = React.useCallback(async () => {
+    // Triple protection: check state, ref, and button pressed
+    if (
+      isLoading ||
+      isLoadingRef.current ||
+      buttonPressed ||
+      buttonPressedRef.current
+    ) {
+      console.log('Google Sign-In already in progress, ignoring click');
       return;
     }
 
-    if (!isGoogleSignInReady()) {
-      Alert.alert(
-        'Google Sign-In Not Ready',
-        'Google Sign-In is still initializing. Please wait a moment and try again.',
-        [{ text: 'OK' }],
-      );
-      return;
-    }
+    // Set all protection flags immediately
+    buttonPressedRef.current = true;
+    setButtonPressed(true);
+    isLoadingRef.current = true;
+    setIsLoading(true);
+
+    console.log(
+      '🔄 Google Sign-In button disabled - starting authentication...',
+    );
 
     try {
-      setIsLoading(true);
+      if (!googleSignInAvailable) {
+        Alert.alert(
+          'Google Sign-In Unavailable',
+          'Google Sign-In is not available in this build. Please use a development build that includes the Google Sign-In module.',
+          [{ text: 'OK' }],
+        );
+        return;
+      }
+
+      if (!isGoogleSignInReady()) {
+        Alert.alert(
+          'Google Sign-In Not Ready',
+          'Google Sign-In is still initializing. Please wait a moment and try again.',
+          [{ text: 'OK' }],
+        );
+        return;
+      }
+
       dispatch(loginStart());
 
       console.log('Starting Google Sign-In from LoginScreen...');
@@ -63,6 +98,11 @@ export const LoginScreen: React.FC = () => {
 
       if (result.success && result.user) {
         dispatch(loginSuccess(result.user));
+
+        // Don't reset button state - keep it disabled during navigation
+        console.log(
+          '🔄 Authentication successful - keeping button disabled during navigation',
+        );
 
         // Check if master password is configured by querying secure storage directly
         try {
@@ -77,6 +117,9 @@ export const LoginScreen: React.FC = () => {
           // If we can't check, assume it's not set and let user set it
           navigation.navigate('MasterPassword');
         }
+
+        // Don't reset loading states here - let the component unmount naturally
+        return;
       } else {
         dispatch(loginFailure(result.error || 'Failed to sign in with Google'));
         Alert.alert(
@@ -88,10 +131,15 @@ export const LoginScreen: React.FC = () => {
       const errorMessage = error.message || 'An unexpected error occurred';
       dispatch(loginFailure(errorMessage));
       Alert.alert('Error', errorMessage);
-    } finally {
+
+      // Only reset states on error - not on success
+      buttonPressedRef.current = false;
+      setButtonPressed(false);
+      isLoadingRef.current = false;
       setIsLoading(false);
+      console.log('🔄 Google Sign-In failed - button re-enabled');
     }
-  };
+  }, [isLoading, buttonPressed, googleSignInAvailable, dispatch, navigation]);
 
   return (
     <SafeAreaView
@@ -108,15 +156,25 @@ export const LoginScreen: React.FC = () => {
             styles.googleButton,
             {
               backgroundColor: googleSignInAvailable
-                ? theme.primary
+                ? isLoading || buttonPressed
+                  ? theme.textSecondary
+                  : theme.primary
                 : theme.textSecondary,
             },
-            (isLoading || !googleSignInAvailable) && styles.disabledButton,
+            (isLoading || buttonPressed || !googleSignInAvailable) &&
+              styles.disabledButton,
           ]}
-          onPress={handleGoogleSignIn}
-          disabled={isLoading || !googleSignInAvailable}
+          onPress={
+            isLoading || buttonPressed || !googleSignInAvailable
+              ? () => {}
+              : handleGoogleSignIn
+          }
+          disabled={isLoading || buttonPressed || !googleSignInAvailable}
+          activeOpacity={
+            isLoading || buttonPressed || !googleSignInAvailable ? 1 : 0.7
+          }
         >
-          {isLoading ? (
+          {isLoading || buttonPressed ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#ffffff" />
               <Text style={[styles.googleButtonText, styles.loadingText]}>
@@ -199,7 +257,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   disabledButton: {
-    opacity: 0.7,
+    opacity: 0.5,
   },
   loadingContainer: {
     flexDirection: 'row',

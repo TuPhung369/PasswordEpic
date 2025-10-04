@@ -27,6 +27,9 @@ import {
 // import { encryptedDatabase } from '../services/encryptedDatabaseService'; // Will be used in future implementations
 import CategoryService from '../services/categoryService';
 import SyncService from '../services/syncService';
+import { getMasterPasswordFromBiometric } from '../services/secureStorageService';
+import { getEffectiveMasterPassword } from '../services/dynamicMasterPasswordService';
+import { sessionCache } from '../utils/sessionCache';
 
 export const usePasswordManagement = (masterPassword?: string) => {
   const dispatch = useAppDispatch();
@@ -40,6 +43,140 @@ export const usePasswordManagement = (masterPassword?: string) => {
     searchQuery,
     selectedCategory,
   } = useAppSelector((state: RootState) => state.passwords);
+
+  // Cache master password to avoid repeated biometric calls
+  const [cachedMasterPassword, setCachedMasterPassword] = useState<
+    string | null
+  >(null);
+  const [cacheTimestamp, setCacheTimestamp] = useState<number>(0);
+  const CACHE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+
+  // Helper function to get master password when needed
+  const getMasterPassword = useCallback(async (): Promise<string> => {
+    console.log('🔐 getMasterPassword: Starting authentication process...');
+    const authStartTime = Date.now();
+
+    // First priority: provided master password (backwards compatibility)
+    if (masterPassword) {
+      console.log(
+        '✅ getMasterPassword: Using provided master password (compatibility mode)',
+      );
+      return masterPassword;
+    }
+
+    // Second priority: check session cache (fastest - in-memory)
+    const sessionPassword = sessionCache.get<string>('dynamicMasterPassword');
+    if (sessionPassword) {
+      console.log('⚡ getMasterPassword: Using session cache (ultra-fast)');
+      return sessionPassword;
+    }
+
+    // Third priority: check local cache (5-minute timeout)
+    const now = Date.now();
+    if (cachedMasterPassword && now - cacheTimestamp < CACHE_TIMEOUT) {
+      const remainingTime = Math.round(
+        (CACHE_TIMEOUT - (now - cacheTimestamp)) / 1000,
+      );
+      console.log(
+        `🎯 getMasterPassword: Using cached password (${remainingTime}s remaining)`,
+      );
+
+      // Also cache in session for ultra-fast access
+      sessionCache.set(
+        'dynamicMasterPassword',
+        cachedMasterPassword,
+        2 * 60 * 1000,
+      ); // 2 minutes
+      return cachedMasterPassword;
+    }
+
+    // New approach: Use dynamic master password (UUID + login time)
+    console.log('🔐 [Dynamic] Generating dynamic master password...');
+    const dynamicStart = Date.now();
+
+    try {
+      const dynamicResult = await getEffectiveMasterPassword();
+      const dynamicDuration = Date.now() - dynamicStart;
+
+      if (dynamicResult.success && dynamicResult.password) {
+        // Cache the dynamic password in both caches
+        setCachedMasterPassword(dynamicResult.password);
+        setCacheTimestamp(now);
+
+        // Also cache in session for ultra-fast access (2 minutes)
+        sessionCache.set(
+          'dynamicMasterPassword',
+          dynamicResult.password,
+          2 * 60 * 1000,
+        );
+
+        const totalDuration = Date.now() - authStartTime;
+        console.log(
+          `✅ [Dynamic] Dynamic master password generated in ${dynamicDuration}ms (total: ${totalDuration}ms)`,
+        );
+        console.log(
+          `� [Dynamic] Session ID: ${dynamicResult.sessionId?.substring(
+            0,
+            20,
+          )}...`,
+        );
+        return dynamicResult.password;
+      } else {
+        console.log(
+          `❌ [Dynamic] Dynamic password failed after ${dynamicDuration}ms: ${dynamicResult.error}`,
+        );
+      }
+    } catch (dynamicError) {
+      const dynamicDuration = Date.now() - dynamicStart;
+      console.error(
+        `💥 [Dynamic] Dynamic password error after ${dynamicDuration}ms:`,
+        dynamicError,
+      );
+    }
+
+    // Fallback: Try biometric authentication (for migration compatibility)
+    console.log('🔐 [Fallback] Trying biometric authentication...');
+    const biometricStart = Date.now();
+
+    try {
+      const result = await getMasterPasswordFromBiometric();
+      const biometricDuration = Date.now() - biometricStart;
+
+      if (result.success && result.password) {
+        // Cache the password in both caches
+        setCachedMasterPassword(result.password);
+        setCacheTimestamp(now);
+
+        // Also cache in session for ultra-fast access (2 minutes)
+        sessionCache.set(
+          'dynamicMasterPassword',
+          result.password,
+          2 * 60 * 1000,
+        );
+
+        const totalDuration = Date.now() - authStartTime;
+        console.log(
+          `✅ [Fallback] Biometric master password cached after ${biometricDuration}ms (total: ${totalDuration}ms)`,
+        );
+        return result.password;
+      } else {
+        console.log(
+          `❌ [Fallback] Biometric failed after ${biometricDuration}ms: ${result.error}`,
+        );
+      }
+    } catch (biometricError) {
+      const biometricDuration = Date.now() - biometricStart;
+      console.error(
+        `💥 [Fallback] Biometric error after ${biometricDuration}ms:`,
+        biometricError,
+      );
+    }
+
+    // If all methods fail, throw error
+    throw new Error(
+      'Master password required - please authenticate or sign in with Google',
+    );
+  }, [masterPassword, cachedMasterPassword, cacheTimestamp, CACHE_TIMEOUT]);
 
   // Local state for advanced filtering and sorting
   const [localFilters, setLocalFilters] = useState<SearchFilters>({
@@ -106,7 +243,12 @@ export const usePasswordManagement = (masterPassword?: string) => {
   // Create new password entry
   const createPassword = useCallback(
     async (entry: Omit<PasswordEntry, 'id' | 'createdAt' | 'updatedAt'>) => {
-      if (!masterPassword) throw new Error('Master password required');
+      const createPasswordStart = Date.now();
+      console.log('🏁 createPassword: Starting password creation...');
+
+      const masterPasswordStart = Date.now();
+      const currentMasterPassword = await getMasterPassword();
+      const masterPasswordDuration = Date.now() - masterPasswordStart;
 
       const newEntry: PasswordEntry = {
         ...entry,
@@ -118,64 +260,77 @@ export const usePasswordManagement = (masterPassword?: string) => {
       };
 
       try {
+        // Save password (most important operation)
+        const saveStart = Date.now();
         await dispatch(
-          savePassword({ entry: newEntry, masterPassword }),
+          savePassword({
+            entry: newEntry,
+            masterPassword: currentMasterPassword,
+          }),
         ).unwrap();
+        const saveDuration = Date.now() - saveStart;
 
-        // Update category stats
-        if (newEntry.category) {
-          await CategoryService.updateCategoryEntryCount(newEntry.category, 1);
-        }
+        // Run secondary operations in parallel (non-blocking)
+        const backgroundStart = Date.now();
+        Promise.all([
+          // Update category stats in background
+          newEntry.category
+            ? CategoryService.updateCategoryEntryCount(newEntry.category, 1)
+            : Promise.resolve(),
+          // Add to sync queue in background
+          SyncService.addPendingOperation('create', newEntry.id, newEntry),
+        ]).catch(bgError => {
+          console.warn('Background operations failed:', bgError);
+          // Don't throw - these are non-critical
+        });
+        const backgroundDuration = Date.now() - backgroundStart;
 
-        // Add to sync queue
-        await SyncService.addPendingOperation('create', newEntry.id, newEntry);
+        // Log performance breakdown
+        const totalDuration = Date.now() - createPasswordStart;
+        console.log(
+          `✅ createPassword: Password created successfully in ${totalDuration}ms`,
+        );
+        console.log(`   - Get Master Password: ${masterPasswordDuration}ms`);
+        console.log(`   - Redux Save: ${saveDuration}ms`);
+        console.log(`   - Background Tasks: ${backgroundDuration}ms`);
 
         return newEntry;
       } catch (createError) {
-        console.error('Failed to create password:', createError);
+        const totalDuration = Date.now() - createPasswordStart;
+        console.error(
+          `❌ createPassword: Failed after ${totalDuration}ms:`,
+          createError,
+        );
         throw createError;
       }
     },
-    [dispatch, masterPassword],
+    [dispatch, getMasterPassword],
   );
 
   // Update existing password entry
   const updatePassword = useCallback(
-    async (id: string, updates: Partial<PasswordEntry>) => {
-      if (!masterPassword) throw new Error('Master password required');
-
-      const existingEntry = passwords.find(p => p.id === id);
-      if (!existingEntry) throw new Error('Password entry not found');
-
-      const updatedEntry: PasswordEntry = {
-        ...existingEntry,
-        ...updates,
-        updatedAt: new Date(),
-      };
-
+    async (id: string, updatedData: Partial<PasswordEntry>) => {
       try {
-        await dispatch(
-          savePassword({ entry: updatedEntry, masterPassword }),
-        ).unwrap();
+        const currentMasterPassword = await getMasterPassword();
 
-        // Update category stats if category changed
-        if (existingEntry.category !== updatedEntry.category) {
-          if (existingEntry.category) {
-            await CategoryService.updateCategoryEntryCount(
-              existingEntry.category,
-              -1,
-            );
-          }
-          if (updatedEntry.category) {
-            await CategoryService.updateCategoryEntryCount(
-              updatedEntry.category,
-              1,
-            );
-          }
+        const existingPassword = passwords.find(p => p.id === id);
+        if (!existingPassword) {
+          throw new Error('Password not found');
         }
 
-        // Add to sync queue
-        await SyncService.addPendingOperation('update', id, updatedEntry);
+        const updatedEntry: PasswordEntry = {
+          ...existingPassword,
+          ...updatedData,
+          updatedAt: new Date(),
+        };
+
+        // Use the savePassword thunk which handles encryption and storage
+        await dispatch(
+          savePassword({
+            entry: updatedEntry,
+            masterPassword: currentMasterPassword,
+          }),
+        ).unwrap();
 
         return updatedEntry;
       } catch (updateError) {
@@ -183,7 +338,7 @@ export const usePasswordManagement = (masterPassword?: string) => {
         throw updateError;
       }
     },
-    [dispatch, masterPassword, passwords],
+    [dispatch, getMasterPassword, passwords],
   );
 
   // Delete password entry

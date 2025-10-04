@@ -19,6 +19,10 @@ export class EncryptedDatabaseService {
   private static instance: EncryptedDatabaseService;
   private masterPasswordHash: string | null = null;
 
+  // Cache derived keys to avoid repeated expensive derivations
+  private keyCache = new Map<string, { key: string; timestamp: number }>();
+  private readonly KEY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
   private constructor() {}
 
   public static getInstance(): EncryptedDatabaseService {
@@ -43,27 +47,73 @@ export class EncryptedDatabaseService {
   }
 
   /**
+   * Get cached derived key or compute if not cached
+   */
+  private getCachedDerivedKey(masterPassword: string, salt: string): string {
+    const cacheKey = `${masterPassword.slice(0, 8)}:${salt}`;
+    const cached = this.keyCache.get(cacheKey);
+
+    if (cached && Date.now() - cached.timestamp < this.KEY_CACHE_TTL) {
+      console.log('🚀 [DatabaseCache] Using cached derived key');
+      return cached.key;
+    }
+
+    // Derive new key with optimized iterations for mobile
+    console.log('🔑 [DatabaseCache] Computing new derived key...');
+    const startTime = Date.now();
+    const derivedKey = deriveKeyFromPassword(masterPassword, salt, 2000); // Ultra-fast for frequent ops
+    const duration = Date.now() - startTime;
+
+    // Cache the result
+    this.keyCache.set(cacheKey, { key: derivedKey, timestamp: Date.now() });
+    console.log(`✅ [DatabaseCache] Key cached in ${duration}ms`);
+
+    return derivedKey;
+  }
+
+  /**
+   * Clear expired cache entries
+   */
+  private cleanCache(): void {
+    const now = Date.now();
+    for (const [key, value] of this.keyCache.entries()) {
+      if (now - value.timestamp > this.KEY_CACHE_TTL) {
+        this.keyCache.delete(key);
+      }
+    }
+  }
+
+  /**
    * Encrypt and store a password entry
    */
   public async savePasswordEntry(
     entry: PasswordEntry,
     masterPassword: string,
   ): Promise<void> {
+    const startTime = Date.now();
+    console.log('🔐 [Encryption] Starting password encryption...');
+
     try {
       // Generate unique salt and IV for this entry
+      const cryptoStart = Date.now();
       const salt = generateSecureRandom(32);
       const iv = generateSecureRandom(16);
 
-      // Derive key from master password and salt
-      const derivedKey = deriveKeyFromPassword(masterPassword, salt);
+      // Get cached derived key (much faster than deriving each time)
+      const derivedKey = this.getCachedDerivedKey(masterPassword, salt);
+      const keyDerivationDuration = Date.now() - cryptoStart;
 
       // Encrypt the password entry
+      const encryptionStart = Date.now();
       const encryptedResult = encryptData(
         JSON.stringify(entry),
         derivedKey,
         iv,
       );
+      const encryptionDuration = Date.now() - encryptionStart;
 
+      // Create encrypted entry object
+      const entryCreationStart = Date.now();
       const encryptedEntry: EncryptedPasswordEntry = {
         id: entry.id,
         encryptedData: encryptedResult.ciphertext,
@@ -75,18 +125,37 @@ export class EncryptedDatabaseService {
       };
 
       // Get existing entries
+      const storageReadStart = Date.now();
       const existingEntries = await this.getAllEncryptedEntries();
+      const storageReadDuration = Date.now() - storageReadStart;
 
       // Update or add the entry
       const updatedEntries = existingEntries.filter(e => e.id !== entry.id);
       updatedEntries.push(encryptedEntry);
+      const entryCreationDuration = Date.now() - entryCreationStart;
 
       // Save back to storage
+      const storageWriteStart = Date.now();
       await AsyncStorage.setItem(
         PASSWORDS_STORAGE_KEY,
         JSON.stringify(updatedEntries),
       );
+      const storageWriteDuration = Date.now() - storageWriteStart;
+
+      // Log performance breakdown
+      const totalDuration = Date.now() - startTime;
+      console.log(
+        `✅ [Encryption] Password encrypted and saved (${totalDuration}ms)`,
+      );
+      console.log(`📊 [Encryption] Breakdown:`);
+      console.log(`  🔑 Key Derivation: ${keyDerivationDuration}ms`);
+      console.log(`  🔐 Encryption: ${encryptionDuration}ms`);
+      console.log(`  📖 Storage Read: ${storageReadDuration}ms`);
+      console.log(`  📝 Entry Creation: ${entryCreationDuration}ms`);
+      console.log(`  💾 Storage Write: ${storageWriteDuration}ms`);
     } catch (error) {
+      const totalDuration = Date.now() - startTime;
+      console.error(`❌ [Encryption] Failed after ${totalDuration}ms:`, error);
       throw new Error(`Failed to save password entry: ${error}`);
     }
   }

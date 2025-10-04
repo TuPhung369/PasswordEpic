@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {
   PasswordEntry,
-  CustomField,
+  CustomField, // Keep for backward compatibility with state typing
   PasswordStrengthResult,
 } from '../types/password';
 import { useTheme, Theme } from '../contexts/ThemeContext';
@@ -21,15 +21,16 @@ import {
   calculatePasswordStrength,
   generateSecurePassword,
 } from '../utils/passwordUtils';
-import { PasswordValidationService } from '../services/passwordValidationService';
+// import { PasswordValidationService } from '../services/passwordValidationService'; // Unused - real-time validation removed
 import { TrackedTextInput as TextInput } from './TrackedTextInput';
-// import CategorySelector from './CategorySelector'; // Will be implemented next
+import CategorySelector from './CategorySelector';
 
 interface PasswordFormProps {
   password?: PasswordEntry;
   onSave: (password: Partial<PasswordEntry>) => void;
   onCancel: () => void;
   isEditing?: boolean;
+  enableAutoSave?: boolean; // Default true, set to false to disable auto-save
 }
 
 // Unique ID for empty input accessory view to hide toolbar
@@ -84,8 +85,9 @@ const getCleanKeyboardProps = (
 const PasswordForm: React.FC<PasswordFormProps> = ({
   password,
   onSave,
-  onCancel,
-  isEditing = false,
+  onCancel: _onCancel, // Marked as unused since we removed Cancel button
+  isEditing: _isEditing = false, // Marked as unused since we removed Save button
+  enableAutoSave = true,
 }) => {
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -97,19 +99,24 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
   const [website, setWebsite] = useState(password?.website || '');
   const [notes, setNotes] = useState(password?.notes || '');
   const [category, setCategory] = useState(password?.category || 'General');
-  const [isFavorite, setIsFavorite] = useState(password?.isFavorite || false);
-  const [customFields, setCustomFields] = useState<CustomField[]>(
+  const [_isFavorite, _setIsFavorite] = useState(password?.isFavorite || false); // Marked as unused
+  const [_customFields, _setCustomFields] = useState<CustomField[]>( // Marked as unused
     password?.customFields || [],
   );
+
+  // Auto-encrypt states
+  const [_isPasswordEncrypted, _setIsPasswordEncrypted] = useState(false);
+  const [_encryptedPasswordData, _setEncryptedPasswordData] =
+    useState<any>(null);
 
   // UI state
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [passwordStrength, setPasswordStrength] =
     useState<PasswordStrengthResult | null>(null);
   const [showPasswordGenerator, setShowPasswordGenerator] = useState(false);
-  const [showCustomFields, setShowCustomFields] = useState(false);
-  const [_isValidating, setIsValidating] = useState(false);
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [_showCustomFields, _setShowCustomFields] = useState(false); // Marked as unused
+  const [_isValidating, _setIsValidating] = useState(false); // Marked as unused
+  const [validationErrors, _setValidationErrors] = useState<string[]>([]); // Keep validationErrors for display, but don't set it
 
   // Password generator options
   const [generatorOptions, setGeneratorOptions] = useState({
@@ -138,8 +145,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
       setWebsite(password.website || '');
       setNotes(password.notes || '');
       setCategory(password.category || 'General');
-      setIsFavorite(password.isFavorite || false);
-      setCustomFields(password.customFields || []);
+      // setIsFavorite and setCustomFields removed - features disabled
       prevPasswordRef.current = password;
     }
   }, [password]); // Only depend on password prop, not form state
@@ -156,14 +162,12 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
 
   // Debounced auto-save to prevent excessive calls
   useEffect(() => {
+    // Skip auto-save if disabled
+    if (!enableAutoSave) return;
+
     // Only auto-save if there's actual data (not initial empty state)
-    const hasData =
-      title ||
-      username ||
-      passwordValue ||
-      website ||
-      notes ||
-      customFields.length > 0;
+    const hasData = title || username || passwordValue || website || notes;
+    // Removed customFields.length check since custom fields are disabled
 
     if (hasData) {
       // Debounce auto-save to prevent rapid successive calls
@@ -176,8 +180,8 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
           website,
           notes,
           category,
-          isFavorite,
-          customFields,
+          isFavorite: false, // Default value since favorite toggle removed
+          customFields: [], // Empty array since custom fields removed
           tags: password?.tags || [], // Preserve tags from parent
         });
       }, 300); // 300ms debounce
@@ -192,13 +196,74 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     website,
     notes,
     category,
-    isFavorite,
-    customFields,
+    // Removed isFavorite and customFields - no longer used in UI
     // DON'T include onSave in dependencies - it causes infinite loop
     // onSave is stable and doesn't need to be tracked
   ]);
 
-  // Validate form when fields change
+  // Handle category selection without triggering autofill
+  const handleCategorySelect = useCallback((selectedCategory: string) => {
+    console.log('📋 [Category] Category selected:', selectedCategory);
+    setCategory(selectedCategory);
+  }, []);
+
+  // 🚫 TEMPORARILY DISABLED - Auto-encrypt password when user finishes entering (blur event)
+  // This was causing Google autofill modal to appear after category selection
+  /*
+  const handlePasswordBlur = useCallback(async () => {
+    console.log(
+      '🔍 [AutoEncrypt] Password blur detected, checking requirements...',
+    );
+
+    // Check if password meets basic requirements for auto-encrypt
+    const isValidForEncrypt =
+      passwordValue.trim().length > 0 &&
+      title.trim().length > 0 &&
+      validationErrors.length === 0;
+
+    if (isValidForEncrypt) {
+      console.log(
+        '✅ [AutoEncrypt] Requirements met, triggering auto-encrypt...',
+      );
+      try {
+        onSave({
+          title: title.trim(),
+          username: username.trim(),
+          password: passwordValue,
+          website: website.trim() || undefined,
+          notes: notes.trim() || undefined,
+          category: category,
+          isFavorite: false, // Default value since favorite removed
+          customFields: [], // Empty since custom fields removed
+          tags: password?.tags || [],
+        });
+
+        console.log('✅ [AutoEncrypt] Auto-encryption triggered successfully');
+      } catch (error) {
+        console.error('❌ [AutoEncrypt] Auto-encryption failed:', error);
+      }
+    } else {
+      console.log(
+        '⚠️ [AutoEncrypt] Password does not meet requirements for auto-encrypt',
+      );
+    }
+  }, [
+    passwordValue,
+    title,
+    username,
+    website,
+    notes,
+    category,
+    // isFavorite and customFields removed from dependencies
+    onSave,
+    password?.tags,
+    validationErrors.length,
+  ]);
+  */
+
+  // 🚫 DISABLED - Real-time validation removed per user request
+  // Validation will only occur when user actually tries to save
+  /*
   useEffect(() => {
     const validate = async () => {
       setIsValidating(true);
@@ -233,17 +298,11 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
 
     validate();
   }, [title, username, passwordValue, website]);
+  */
 
   // Remove the separate validateForm function since it's now inline in useEffect
 
-  const isValidUrl = (url: string): boolean => {
-    try {
-      const validUrl = new URL(url.startsWith('http') ? url : `https://${url}`);
-      return !!validUrl;
-    } catch {
-      return false;
-    }
-  };
+  // isValidUrl function removed - no longer needed without real-time validation
 
   const handleGeneratePassword = () => {
     try {
@@ -255,52 +314,10 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     }
   };
 
-  const handleAddCustomField = () => {
-    const newField: CustomField = {
-      id: Date.now().toString(),
-      name: '',
-      value: '',
-      type: 'text',
-      isHidden: false,
-      createdAt: new Date(),
-    };
-    setCustomFields([...customFields, newField]);
-  };
+  // Custom field handlers removed - custom fields functionality removed
 
-  const handleUpdateCustomField = (id: string, field: Partial<CustomField>) => {
-    setCustomFields(
-      customFields.map(f => (f.id === id ? { ...f, ...field } : f)),
-    );
-  };
-
-  const handleRemoveCustomField = (id: string) => {
-    setCustomFields(customFields.filter(f => f.id !== id));
-  };
-
-  const handleSave = () => {
-    if (validationErrors.length > 0) {
-      Alert.alert('Validation Error', validationErrors.join('\n'));
-      return;
-    }
-
-    const passwordData: Partial<PasswordEntry> = {
-      title: title.trim(),
-      username: username.trim(),
-      password: passwordValue,
-      website: website.trim() || undefined,
-      notes: notes.trim() || undefined,
-      category: category,
-      isFavorite,
-      customFields: customFields.filter(f => f.name.trim() && f.value.trim()),
-      updatedAt: new Date(),
-    };
-
-    if (!isEditing) {
-      passwordData.createdAt = new Date();
-    }
-
-    onSave(passwordData);
-  };
+  // handleSave function removed - no longer needed since manual Save button was removed
+  // Form now relies on auto-save functionality
 
   const renderPasswordStrength = () => {
     if (!passwordStrength) return null;
@@ -420,75 +437,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     );
   };
 
-  const renderCustomFields = () => {
-    if (!showCustomFields) return null;
-
-    return (
-      <View style={styles.customFieldsContainer}>
-        <View style={styles.customFieldsHeader}>
-          <Text style={styles.customFieldsTitle}>Custom Fields</Text>
-          <TouchableOpacity
-            onPress={handleAddCustomField}
-            style={styles.addFieldButton}
-          >
-            <Icon name="add" size={20} color={theme.primary} />
-          </TouchableOpacity>
-        </View>
-
-        {customFields.map(field => (
-          <View key={field.id} style={styles.customField}>
-            <View style={styles.customFieldRow}>
-              <TextInput
-                style={[styles.input, styles.customFieldName]}
-                placeholder="Field name"
-                value={field.name}
-                onChangeText={text =>
-                  handleUpdateCustomField(field.id, { name: text })
-                }
-                placeholderTextColor={theme.textSecondary}
-                returnKeyType="next"
-                {...getCleanKeyboardProps(theme)}
-              />
-              <TouchableOpacity
-                onPress={() => handleRemoveCustomField(field.id)}
-                style={styles.removeFieldButton}
-              >
-                <Icon name="delete" size={20} color={theme.error} />
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              style={styles.input}
-              placeholder="Field value"
-              value={field.value}
-              onChangeText={text =>
-                handleUpdateCustomField(field.id, { value: text })
-              }
-              secureTextEntry={field.isHidden}
-              placeholderTextColor={theme.textSecondary}
-              returnKeyType="done"
-              {...getCleanKeyboardProps(theme)}
-            />
-            <View style={styles.customFieldOptions}>
-              <View style={styles.fieldTypeContainer}>
-                <Text style={styles.fieldTypeLabel}>Hidden:</Text>
-                <Switch
-                  value={field.isHidden}
-                  onValueChange={value =>
-                    handleUpdateCustomField(field.id, { isHidden: value })
-                  }
-                  thumbColor={theme.primary}
-                  trackColor={{
-                    false: theme.border,
-                    true: theme.primary + '40',
-                  }}
-                />
-              </View>
-            </View>
-          </View>
-        ))}
-      </View>
-    );
-  };
+  // renderCustomFields function removed - custom fields functionality removed
 
   return (
     <>
@@ -522,6 +471,8 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               onChangeText={setUsername}
               placeholderTextColor={theme.textSecondary}
               returnKeyType="next"
+              autoComplete="off"
+              importantForAutofill="no"
               {...getCleanKeyboardProps(theme)}
             />
           </View>
@@ -540,9 +491,12 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                 placeholder="Enter password"
                 value={passwordValue}
                 onChangeText={setPasswordValue}
+                // onBlur={handlePasswordBlur} // 🚫 Temporarily disabled - causing Google autofill modal
                 secureTextEntry={!isPasswordVisible}
                 placeholderTextColor={theme.textSecondary}
                 returnKeyType="next"
+                autoComplete="off"
+                importantForAutofill="no"
                 {...getCleanKeyboardProps(theme, 'password')}
               />
               <TouchableOpacity
@@ -589,16 +543,11 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
           {/* Category Field */}
           <View style={styles.field}>
             <Text style={styles.label}>Category</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Select category"
-              value={category}
-              onChangeText={setCategory}
-              placeholderTextColor={theme.textSecondary}
-              returnKeyType="next"
-              {...getCleanKeyboardProps(theme)}
+            <CategorySelector
+              selectedCategory={category}
+              onCategorySelect={handleCategorySelect}
+              allowCreate={true}
             />
-            {/* TODO: Replace with CategorySelector component when implemented */}
           </View>
 
           {/* Notes Field */}
@@ -617,30 +566,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
             />
           </View>
 
-          {/* Favorite Toggle */}
-          <View style={styles.switchField}>
-            <Text style={styles.label}>Add to Favorites</Text>
-            <Switch
-              value={isFavorite}
-              onValueChange={setIsFavorite}
-              thumbColor={theme.primary}
-              trackColor={{ false: theme.border, true: theme.primary + '40' }}
-            />
-          </View>
-
-          {/* Custom Fields Toggle */}
-          <View style={styles.switchField}>
-            <Text style={styles.label}>Custom Fields</Text>
-            <Switch
-              value={showCustomFields}
-              onValueChange={setShowCustomFields}
-              thumbColor={theme.primary}
-              trackColor={{ false: theme.border, true: theme.primary + '40' }}
-            />
-          </View>
-
-          {/* Custom Fields */}
-          {renderCustomFields()}
+          {/* Favorite Toggle and Custom Fields - REMOVED: User requested to remove these features */}
 
           {/* Validation Errors */}
           {validationErrors.length > 0 && (
@@ -653,24 +579,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
             </View>
           )}
 
-          {/* Action Buttons */}
-          <View style={styles.actions}>
-            <TouchableOpacity onPress={onCancel} style={styles.cancelButton}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleSave}
-              style={[
-                styles.saveButton,
-                validationErrors.length > 0 && styles.disabledButton,
-              ]}
-              disabled={validationErrors.length > 0}
-            >
-              <Text style={styles.saveButtonText}>
-                {isEditing ? 'Update' : 'Save'} Password
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {/* Action Buttons - REMOVED: User requested to remove Cancel and Save buttons */}
         </View>
       </ScrollView>
 
@@ -733,12 +642,7 @@ const createStyles = (theme: Theme) =>
       height: 80,
       textAlignVertical: 'top',
     },
-    switchField: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 20,
-    },
+    // switchField style removed - no longer used
     strengthContainer: {
       marginTop: 12,
     },
@@ -829,55 +733,9 @@ const createStyles = (theme: Theme) =>
       fontWeight: '600',
       marginLeft: 8,
     },
-    customFieldsContainer: {
-      marginTop: 12,
-    },
-    customFieldsHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 12,
-    },
-    customFieldsTitle: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: theme.text,
-    },
-    addFieldButton: {
-      padding: 8,
-    },
-    customField: {
-      backgroundColor: theme.surface,
-      borderRadius: 8,
-      padding: 12,
-      marginBottom: 12,
-      borderWidth: 1,
-      borderColor: theme.border,
-    },
-    customFieldRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 8,
-    },
-    customFieldName: {
-      flex: 1,
-      marginRight: 8,
-    },
-    removeFieldButton: {
-      padding: 8,
-    },
-    customFieldOptions: {
-      marginTop: 8,
-    },
-    fieldTypeContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    fieldTypeLabel: {
-      fontSize: 14,
-      color: theme.textSecondary,
-      marginRight: 8,
-    },
+    // Removed unused custom field styles: customFieldsContainer, customFieldsHeader,
+    // customFieldsTitle, addFieldButton, customField, customFieldRow, customFieldName,
+    // removeFieldButton, customFieldOptions, fieldTypeContainer, fieldTypeLabel
     errorsContainer: {
       backgroundColor: theme.error + '20',
       borderRadius: 8,
@@ -889,44 +747,8 @@ const createStyles = (theme: Theme) =>
       fontSize: 14,
       marginBottom: 2,
     },
-    actions: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginTop: 20,
-      paddingBottom: 20,
-    },
-    cancelButton: {
-      flex: 1,
-      backgroundColor: theme.surface,
-      borderRadius: 8,
-      padding: 14,
-      alignItems: 'center',
-      marginRight: 8,
-      borderWidth: 1,
-      borderColor: theme.border,
-    },
-    cancelButtonText: {
-      color: theme.text,
-      fontSize: 16,
-      fontWeight: '600',
-    },
-    saveButton: {
-      flex: 1,
-      backgroundColor: theme.primary,
-      borderRadius: 8,
-      padding: 14,
-      alignItems: 'center',
-      marginLeft: 8,
-    },
-    saveButtonText: {
-      color: '#FFFFFF',
-      fontSize: 16,
-      fontWeight: '600',
-    },
-    disabledButton: {
-      backgroundColor: theme.textSecondary,
-      opacity: 0.6,
-    },
+    // Removed unused button styles: actions, cancelButton, cancelButtonText,
+    // saveButton, saveButtonText, disabledButton - no longer needed
     emptyAccessoryView: {
       height: 0,
     },

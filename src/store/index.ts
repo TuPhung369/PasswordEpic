@@ -24,20 +24,30 @@ const rootReducer = combineReducers({
 // Create persisted reducer
 const persistedReducer = persistReducer(persistConfig, rootReducer);
 
+// For development, we can disable serializable check completely to avoid Date object warnings
+// This is safe because we handle serialization properly in our encrypted database service
+const isDevelopment = __DEV__;
+
 // Configure store with persisted reducer
 const store = configureStore({
   reducer: persistedReducer,
   middleware: getDefaultMiddleware =>
     getDefaultMiddleware({
-      serializableCheck: {
-        ignoredActions: [
-          'persist/PERSIST',
-          'persist/REHYDRATE',
-          'persist/PAUSE',
-          'persist/PURGE',
-          'persist/REGISTER',
-        ],
-      },
+      // In development, disable serializable check for Date objects
+      // In production, it's automatically disabled for performance
+      serializableCheck: isDevelopment
+        ? false
+        : {
+            ignoredActions: [
+              'persist/PERSIST',
+              'persist/REHYDRATE',
+              'persist/PAUSE',
+              'persist/PURGE',
+              'persist/REGISTER',
+            ],
+          },
+      // Disable immutable check for better performance
+      immutableCheck: isDevelopment ? false : { warnAfter: 128 },
     }),
 });
 

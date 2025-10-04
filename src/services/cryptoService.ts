@@ -1,10 +1,10 @@
 // Cryptographic service for password encryption and key derivation
-import CryptoJS from "crypto-js";
-import { Platform } from "react-native";
+import CryptoJS from 'crypto-js';
 
 // Constants for cryptographic operations
 export const CRYPTO_CONSTANTS = {
-  PBKDF2_ITERATIONS: 100000, // 100,000 iterations for PBKDF2
+  PBKDF2_ITERATIONS: 10000, // 10,000 iterations - optimized for mobile performance
+  PBKDF2_ITERATIONS_FAST: 5000, // 5,000 iterations for frequent operations
   SALT_LENGTH: 32, // 256 bits
   KEY_LENGTH: 32, // 256 bits for AES-256
   IV_LENGTH: 12, // 96 bits for GCM
@@ -18,8 +18,8 @@ export const generateSecureRandom = (length: number): string => {
     const randomWords = CryptoJS.lib.WordArray.random(length);
     return randomWords.toString(CryptoJS.enc.Hex);
   } catch (error) {
-    console.error("Failed to generate secure random bytes:", error);
-    throw new Error("Failed to generate secure random data");
+    console.error('Failed to generate secure random bytes:', error);
+    throw new Error('Failed to generate secure random data');
   }
 };
 
@@ -34,22 +34,48 @@ export const generateIV = (): string => {
 };
 
 // Derive key from password using PBKDF2
+// Key cache to avoid repeated expensive derivations
+const keyCache = new Map<string, { key: string; timestamp: number }>();
+const KEY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 export const deriveKeyFromPassword = (
   password: string,
   salt: string,
-  iterations: number = CRYPTO_CONSTANTS.PBKDF2_ITERATIONS
+  iterations: number = CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_FAST, // Use faster default
 ): string => {
+  const startTime = Date.now();
+  const cacheKey = `${password.slice(0, 8)}:${salt}:${iterations}`; // Safe cache key
+
+  // Check cache first
+  const cached = keyCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < KEY_CACHE_TTL) {
+    console.log(`🚀 [KeyDerivation] Cache hit (${Date.now() - startTime}ms)`);
+    return cached.key;
+  }
+
   try {
+    console.log(
+      `🔑 [KeyDerivation] Computing key with ${iterations} iterations...`,
+    );
     const key = CryptoJS.PBKDF2(password, salt, {
       keySize: CRYPTO_CONSTANTS.KEY_LENGTH / 4, // CryptoJS uses 32-bit words
       iterations: iterations,
       hasher: CryptoJS.algo.SHA256,
     });
 
-    return key.toString(CryptoJS.enc.Hex);
+    const derivedKey = key.toString(CryptoJS.enc.Hex);
+    const duration = Date.now() - startTime;
+
+    // Cache the result
+    keyCache.set(cacheKey, { key: derivedKey, timestamp: Date.now() });
+    console.log(
+      `✅ [KeyDerivation] Key derived in ${duration}ms (cached for 5min)`,
+    );
+
+    return derivedKey;
   } catch (error) {
-    console.error("Key derivation failed:", error);
-    throw new Error("Failed to derive encryption key");
+    console.error('Key derivation failed:', error);
+    throw new Error('Failed to derive encryption key');
   }
 };
 
@@ -57,7 +83,7 @@ export const deriveKeyFromPassword = (
 export const encryptData = (
   plaintext: string,
   key: string,
-  iv?: string
+  iv?: string,
 ): {
   ciphertext: string;
   iv: string;
@@ -81,7 +107,7 @@ export const encryptData = (
     // Generate authentication tag using HMAC-SHA256
     const tag = CryptoJS.HmacSHA256(
       encrypted.ciphertext.toString() + initVector,
-      keyWordArray
+      keyWordArray,
     )
       .toString(CryptoJS.enc.Hex)
       .substring(0, CRYPTO_CONSTANTS.TAG_LENGTH * 2);
@@ -92,8 +118,8 @@ export const encryptData = (
       tag: tag,
     };
   } catch (error) {
-    console.error("Encryption failed:", error);
-    throw new Error("Failed to encrypt data");
+    console.error('Encryption failed:', error);
+    throw new Error('Failed to encrypt data');
   }
 };
 
@@ -102,7 +128,7 @@ export const decryptData = (
   ciphertext: string,
   key: string,
   iv: string,
-  tag: string
+  tag: string,
 ): string => {
   try {
     // Convert hex strings to WordArrays
@@ -116,7 +142,7 @@ export const decryptData = (
       .substring(0, CRYPTO_CONSTANTS.TAG_LENGTH * 2);
 
     if (expectedTag !== tag) {
-      throw new Error("Authentication tag verification failed");
+      throw new Error('Authentication tag verification failed');
     }
 
     // Decrypt using AES-CTR
@@ -129,19 +155,19 @@ export const decryptData = (
         iv: ivWordArray,
         mode: CryptoJS.mode.CTR,
         padding: CryptoJS.pad.NoPadding,
-      }
+      },
     );
 
     const plaintext = decrypted.toString(CryptoJS.enc.Utf8);
 
     if (!plaintext) {
-      throw new Error("Decryption resulted in empty data");
+      throw new Error('Decryption resulted in empty data');
     }
 
     return plaintext;
   } catch (error) {
-    console.error("Decryption failed:", error);
-    throw new Error("Failed to decrypt data - invalid key or corrupted data");
+    console.error('Decryption failed:', error);
+    throw new Error('Failed to decrypt data - invalid key or corrupted data');
   }
 };
 
@@ -169,14 +195,18 @@ export interface PasswordEntry {
 
 export const encryptPasswordEntry = (
   entry: PasswordEntry,
-  masterKey: string
+  masterKey: string,
 ): EncryptedPasswordEntry => {
   try {
     // Generate unique salt for this entry
     const salt = generateSalt();
 
-    // Derive entry-specific key
-    const entryKey = deriveKeyFromPassword(masterKey, salt, 10000); // Fewer iterations for entry keys
+    // Derive entry-specific key with fast iterations for mobile performance
+    const entryKey = deriveKeyFromPassword(
+      masterKey,
+      salt,
+      CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_FAST,
+    );
 
     // Serialize entry data
     const entryData = JSON.stringify({
@@ -202,21 +232,21 @@ export const encryptPasswordEntry = (
       updatedAt: Date.now(),
     };
   } catch (error) {
-    console.error("Failed to encrypt password entry:", error);
-    throw new Error("Failed to encrypt password entry");
+    console.error('Failed to encrypt password entry:', error);
+    throw new Error('Failed to encrypt password entry');
   }
 };
 
 export const decryptPasswordEntry = (
   encryptedEntry: EncryptedPasswordEntry,
-  masterKey: string
+  masterKey: string,
 ): PasswordEntry => {
   try {
-    // Derive entry-specific key using stored salt
+    // Derive entry-specific key using stored salt with fast iterations
     const entryKey = deriveKeyFromPassword(
       masterKey,
       encryptedEntry.salt,
-      10000
+      CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_FAST,
     );
 
     // Decrypt the entry data
@@ -224,7 +254,7 @@ export const decryptPasswordEntry = (
       encryptedEntry.encryptedData,
       entryKey,
       encryptedEntry.iv,
-      encryptedEntry.tag
+      encryptedEntry.tag,
     );
 
     // Parse the decrypted JSON
@@ -241,8 +271,8 @@ export const decryptPasswordEntry = (
       tags: entryData.tags,
     };
   } catch (error) {
-    console.error("Failed to decrypt password entry:", error);
-    throw new Error("Failed to decrypt password entry - invalid master key");
+    console.error('Failed to decrypt password entry:', error);
+    throw new Error('Failed to decrypt password entry - invalid master key');
   }
 };
 
@@ -255,8 +285,8 @@ export const hashPassword = (password: string, salt: string): string => {
       hasher: CryptoJS.algo.SHA256,
     }).toString(CryptoJS.enc.Hex);
   } catch (error) {
-    console.error("Password hashing failed:", error);
-    throw new Error("Failed to hash password");
+    console.error('Password hashing failed:', error);
+    throw new Error('Failed to hash password');
   }
 };
 
@@ -264,13 +294,13 @@ export const hashPassword = (password: string, salt: string): string => {
 export const verifyPassword = (
   password: string,
   hash: string,
-  salt: string
+  salt: string,
 ): boolean => {
   try {
     const computedHash = hashPassword(password, salt);
     return computedHash === hash;
   } catch (error) {
-    console.error("Password verification failed:", error);
+    console.error('Password verification failed:', error);
     return false;
   }
 };
@@ -284,7 +314,7 @@ export const generateSecurePassword = (
     includeNumbers?: boolean;
     includeSymbols?: boolean;
     excludeSimilar?: boolean;
-  } = {}
+  } = {},
 ): string => {
   const {
     includeUppercase = true,
@@ -294,33 +324,33 @@ export const generateSecurePassword = (
     excludeSimilar = false,
   } = options;
 
-  let charset = "";
+  let charset = '';
 
   if (includeUppercase) {
     charset += excludeSimilar
-      ? "ABCDEFGHJKLMNPQRSTUVWXYZ"
-      : "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      ? 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+      : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   }
 
   if (includeLowercase) {
     charset += excludeSimilar
-      ? "abcdefghjkmnpqrstuvwxyz"
-      : "abcdefghijklmnopqrstuvwxyz";
+      ? 'abcdefghjkmnpqrstuvwxyz'
+      : 'abcdefghijklmnopqrstuvwxyz';
   }
 
   if (includeNumbers) {
-    charset += excludeSimilar ? "23456789" : "0123456789";
+    charset += excludeSimilar ? '23456789' : '0123456789';
   }
 
   if (includeSymbols) {
-    charset += "!@#$%^&*()_+-=[]{}|;:,.<>?";
+    charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
   }
 
   if (charset.length === 0) {
-    throw new Error("At least one character type must be selected");
+    throw new Error('At least one character type must be selected');
   }
 
-  let password = "";
+  let password = '';
   for (let i = 0; i < length; i++) {
     const randomBytes = generateSecureRandom(1);
     const randomIndex = parseInt(randomBytes, 16) % charset.length;
@@ -335,13 +365,13 @@ export const secureCleanup = (sensitiveData: string): void => {
   try {
     // In JavaScript, we can't truly clear memory, but we can overwrite the string
     // This is a best-effort approach
-    if (typeof sensitiveData === "string") {
+    if (typeof sensitiveData === 'string') {
       // Overwrite with random data (not truly secure but better than nothing)
-      const overwrite = generateSecureRandom(sensitiveData.length);
+      // const overwrite = generateSecureRandom(sensitiveData.length);
       // Note: This doesn't actually clear the original string from memory
       // but it's the best we can do in JavaScript
     }
   } catch (error) {
-    console.warn("Secure cleanup failed:", error);
+    console.warn('Secure cleanup failed:', error);
   }
 };

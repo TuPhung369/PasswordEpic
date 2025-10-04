@@ -13,6 +13,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordManagement } from '../../hooks/usePasswordManagement';
 import PasswordForm from '../../components/PasswordForm';
+import Toast from '../../components/Toast';
 import { PasswordEntry } from '../../types/password';
 
 type EditPasswordRouteProp = RouteProp<
@@ -35,6 +36,9 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
   const [formData, setFormData] = useState<Partial<PasswordEntry>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
 
   const styles = StyleSheet.create({
     container: {
@@ -244,19 +248,20 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
 
       await updatePassword(password.id, updatedPassword);
 
-      Alert.alert('Success', 'Password entry has been updated successfully.', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      // Show success toast and navigate back automatically
+      setToastType('success');
+      setToastMessage('Password entry has been updated successfully.');
+      setShowToast(true);
+
+      // Navigate back after a short delay
+      setTimeout(() => {
+        navigation.goBack();
+      }, 1500);
     } catch (error) {
       console.error('Error updating password:', error);
-      Alert.alert(
-        'Error',
-        'Failed to update password entry. Please try again.',
-        [{ text: 'OK' }],
-      );
+      setToastType('error');
+      setToastMessage('Failed to update password entry. Please try again.');
+      setShowToast(true);
     } finally {
       setIsSaving(false);
     }
@@ -432,6 +437,15 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Toast notification */}
+      <Toast
+        message={toastMessage}
+        type={toastType}
+        visible={showToast}
+        onHide={() => setShowToast(false)}
+        duration={2000}
+      />
     </SafeAreaView>
   );
 };

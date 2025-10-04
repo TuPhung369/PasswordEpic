@@ -181,6 +181,8 @@ export const MasterPasswordScreen: React.FC = () => {
               secureTextEntry={!showPassword}
               autoCapitalize="none"
               autoCorrect={false}
+              autoComplete="off"
+              importantForAutofill="no"
             />
             <TouchableOpacity
               onPress={() => setShowPassword(!showPassword)}
@@ -235,6 +237,8 @@ export const MasterPasswordScreen: React.FC = () => {
               secureTextEntry={!showConfirmPassword}
               autoCapitalize="none"
               autoCorrect={false}
+              autoComplete="off"
+              importantForAutofill="no"
             />
             <TouchableOpacity
               onPress={() => setShowConfirmPassword(!showConfirmPassword)}

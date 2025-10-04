@@ -78,11 +78,29 @@ try {
     console.log('✅ Using existing Firebase app');
   }
 
-  // Initialize auth immediately after app
+  // Initialize auth with AsyncStorage persistence
   if (app && !auth) {
-    console.log('🔐 Initializing Firebase Auth...');
-    auth = getAuth(app);
-    console.log('✅ Auth initialized');
+    console.log(
+      '🔐 Initializing Firebase Auth with AsyncStorage persistence...',
+    );
+    try {
+      // Try to import the persistence function
+      const {
+        initializeAuth,
+        getReactNativePersistence,
+      } = require('firebase/auth');
+      auth = initializeAuth(app, {
+        persistence: getReactNativePersistence(AsyncStorage),
+      });
+      console.log('✅ Auth initialized with AsyncStorage persistence');
+    } catch (error) {
+      console.warn(
+        '⚠️ Failed to initialize auth with persistence, using default:',
+        error,
+      );
+      auth = getAuth(app);
+      console.log('✅ Auth initialized with default persistence');
+    }
   }
 
   // Initialize firestore immediately after app

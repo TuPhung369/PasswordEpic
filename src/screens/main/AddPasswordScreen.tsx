@@ -16,6 +16,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordManagement } from '../../hooks/usePasswordManagement';
 import PasswordForm from '../../components/PasswordForm';
 import ErrorBoundary from '../../components/ErrorBoundary';
+import Toast from '../../components/Toast';
 import { PasswordEntry } from '../../types/password';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
 import { NavigationPersistenceService } from '../../services/navigationPersistenceService';
@@ -59,6 +60,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     async (data: Partial<PasswordEntry>) => {
       try {
         await navigationPersistence.saveScreenData('AddPassword', data);
+        // console.log('💾 Form data auto-saved to storage');
       } catch (error) {
         console.error('Failed to save form data:', error);
       }
@@ -89,6 +91,9 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 
   const [isSaving, setIsSaving] = useState(false);
   const [_isDataRestored, setIsDataRestored] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
 
   // Use ref to track latest formData without causing re-renders
   const formDataRef = React.useRef(formData);
@@ -125,10 +130,24 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     return hasChanges;
   }, [formData]);
 
-  // Load saved data on component mount
+  // Load saved data only when restoring after unlock
   React.useEffect(() => {
-    loadFormDataFromStorage();
-  }, [loadFormDataFromStorage]);
+    // Only load from storage if this is a restore request after authentication
+    if (route?.params?.restoreData) {
+      console.log('🔄 Loading form data due to restore request');
+      loadFormDataFromStorage();
+    } else {
+      console.log('🆕 Fresh Add Password screen - starting with blank form');
+      // Clear any previously saved data when starting fresh
+      navigationPersistence.clearScreenData('AddPassword').catch(error => {
+        console.error('Failed to clear previous form data:', error);
+      });
+    }
+  }, [
+    loadFormDataFromStorage,
+    route?.params?.restoreData,
+    navigationPersistence,
+  ]);
 
   // Cleanup function to prevent memory leaks
   React.useEffect(() => {
@@ -201,18 +220,21 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     useCallback(() => {
       console.log('AddPasswordScreen: Screen focused');
 
-      // Load saved form data when screen gains focus
-      loadFormDataFromStorage();
-
-      // Check if we should restore data after authentication
+      // Only load saved form data when this is a restore request after authentication
       if (route?.params?.restoreData) {
         console.log(
-          '🔄 Detected data restoration request after authentication',
+          '🔄 Detected data restoration request after authentication - loading saved data',
         );
+        loadFormDataFromStorage();
+
         // Reset navigation params to clear the flag
         setTimeout(() => {
           navigation.setOptions({});
         }, 100);
+      } else {
+        console.log(
+          'AddPasswordScreen: Normal focus - keeping current form state',
+        );
       }
 
       return () => {
@@ -276,6 +298,11 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       console.log('🏗️ AddPasswordScreen unmounting');
       subscription?.remove();
 
+      // Clear any pending save operations
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+
       // DON'T save on unmount - it causes mount/unmount loop
       // Data is already saved by auto-save in PasswordForm
       // Only save navigation flag when app goes to background (handled above)
@@ -285,17 +312,29 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   // Memoize styles to prevent recreation on every render
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  // Memoized callback for form save
+  // Debounced save timeout ref
+  const saveTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Memoized callback for form save with debounce to prevent rapid saves
   const handleFormSave = useCallback(
     (updatedData: Partial<PasswordEntry>) => {
       setFormData(prevFormData => {
         const newData = { ...prevFormData, ...updatedData };
-        // Save to storage to prevent data loss
-        saveFormDataToStorage(newData);
+
+        // Clear existing timeout
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+
+        // Debounce the save operation
+        saveTimeoutRef.current = setTimeout(() => {
+          saveFormDataToStorage(newData);
+        }, 500); // 500ms debounce
+
         return newData;
       });
     },
-    [saveFormDataToStorage], // Remove formData dependency to prevent infinite loop
+    [saveFormDataToStorage],
   );
 
   const handleCancel = async () => {
@@ -395,19 +434,20 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
         console.error('Failed to clear temp form data:', error);
       }
 
-      Alert.alert('Success', 'Password entry has been created successfully.', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      // Show success toast and navigate back automatically
+      setToastType('success');
+      setToastMessage('Password entry has been created successfully.');
+      setShowToast(true);
+
+      // Navigate back after a short delay to let user see the toast
+      setTimeout(() => {
+        navigation.goBack();
+      }, 1500);
     } catch (error) {
       console.error('Error creating password:', error);
-      Alert.alert(
-        'Error',
-        'Failed to create password entry. Please try again.',
-        [{ text: 'OK' }],
-      );
+      setToastType('error');
+      setToastMessage('Failed to create password entry. Please try again.');
+      setShowToast(true);
     } finally {
       setIsSaving(false);
     }
@@ -473,6 +513,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
             onSave={handleFormSave}
             onCancel={handleCancel}
             isEditing={false}
+            enableAutoSave={false}
           />
         </ScrollView>
 
@@ -495,6 +536,15 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Toast notification */}
+      <Toast
+        message={toastMessage}
+        type={toastType}
+        visible={showToast}
+        onHide={() => setShowToast(false)}
+        duration={2000}
+      />
     </SafeAreaView>
   );
 };

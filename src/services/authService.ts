@@ -6,6 +6,11 @@ import {
   getCurrentUser as getFirebaseCurrentUser,
   FirebaseUser,
 } from './firebase';
+import {
+  startNewDynamicMasterPasswordSession,
+  clearDynamicMasterPasswordData,
+  generateDynamicMasterPassword,
+} from './dynamicMasterPasswordService';
 
 // Initialize authentication services
 export const initializeAuth = () => {
@@ -18,9 +23,13 @@ export const initializeAuth = () => {
   }
 };
 
-// Complete Google Sign-In flow with Firebase
+// Complete Google Sign-In flow with Firebase and Dynamic Master Password
 export const signInWithGoogle = async () => {
   try {
+    console.log(
+      '🚀 [Auth] Starting Google Sign-In with Dynamic Master Password...',
+    );
+
     // Use Native Google Sign-In only (no Expo)
     const { signInWithGoogleNative } = require('./googleAuthNative');
 
@@ -57,6 +66,37 @@ export const signInWithGoogle = async () => {
       };
     }
 
+    // Step 3: Initialize Dynamic Master Password Session
+    console.log('🔐 [Auth] Initializing dynamic master password session...');
+    try {
+      // Start new session (clears old session data)
+      await startNewDynamicMasterPasswordSession();
+
+      // Generate dynamic master password for this session
+      const dynamicResult = await generateDynamicMasterPassword();
+
+      if (dynamicResult.success) {
+        console.log(
+          `✅ [Auth] Dynamic master password initialized for session: ${dynamicResult.sessionId?.substring(
+            0,
+            20,
+          )}...`,
+        );
+      } else {
+        console.warn(
+          `⚠️ [Auth] Dynamic master password generation warning: ${dynamicResult.error}`,
+        );
+        // Don't fail the login, just log the warning
+      }
+    } catch (dynamicError) {
+      console.error(
+        '❌ [Auth] Dynamic master password initialization failed:',
+        dynamicError,
+      );
+      // Don't fail the login process for dynamic password issues
+    }
+
+    console.log('✅ [Auth] Google Sign-In completed successfully');
     return {
       success: true,
       user: firebaseResult.user,
@@ -70,13 +110,29 @@ export const signInWithGoogle = async () => {
   }
 };
 
-// Complete sign out flow
+// Complete sign out flow with Dynamic Master Password cleanup
 export const signOut = async () => {
   try {
+    console.log(
+      '🚪 [Auth] Starting sign out with dynamic master password cleanup...',
+    );
+
     // Import Google Sign-In functions
     const { googleSignOut } = require('./googleAuthNative');
 
-    // Sign out from both Google and Firebase
+    // Step 1: Clear dynamic master password data first
+    try {
+      await clearDynamicMasterPasswordData();
+      console.log('🗑️ [Auth] Dynamic master password data cleared');
+    } catch (dynamicError) {
+      console.warn(
+        '⚠️ [Auth] Failed to clear dynamic master password data:',
+        dynamicError,
+      );
+      // Don't fail the sign out process
+    }
+
+    // Step 2: Sign out from both Google and Firebase
     const [googleResult, firebaseResult] = await Promise.all([
       googleSignOut(),
       firebaseSignOut(),
@@ -86,6 +142,7 @@ export const signOut = async () => {
       console.warn('Partial sign out - some services may still be signed in');
     }
 
+    console.log('✅ [Auth] Sign out completed successfully');
     return { success: true };
   } catch (error: any) {
     console.error('Sign out error:', error);

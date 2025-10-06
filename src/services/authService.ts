@@ -69,24 +69,47 @@ export const signInWithGoogle = async () => {
     // Step 3: Initialize Dynamic Master Password Session
     console.log('🔐 [Auth] Initializing dynamic master password session...');
     try {
-      // Start new session (clears old session data)
-      await startNewDynamicMasterPasswordSession();
+      // 🔥 CRITICAL: Check if user already has existing session to preserve data continuity
+      const {
+        verifyDynamicMasterPasswordSession,
+      } = require('./dynamicMasterPasswordService');
+      const sessionCheck = await verifyDynamicMasterPasswordSession();
 
-      // Generate dynamic master password for this session
-      const dynamicResult = await generateDynamicMasterPassword();
-
-      if (dynamicResult.success) {
+      if (sessionCheck.success && sessionCheck.valid) {
         console.log(
-          `✅ [Auth] Dynamic master password initialized for session: ${dynamicResult.sessionId?.substring(
-            0,
-            20,
-          )}...`,
+          '🔄 [Auth] Valid session found - preserving existing session',
         );
+        // Just regenerate password from existing session data (don't clear)
+        const dynamicResult = await generateDynamicMasterPassword();
+        if (dynamicResult.success) {
+          console.log(
+            `✅ [Auth] Existing session preserved: ${dynamicResult.sessionId?.substring(
+              0,
+              20,
+            )}...`,
+          );
+        }
       } else {
-        console.warn(
-          `⚠️ [Auth] Dynamic master password generation warning: ${dynamicResult.error}`,
-        );
-        // Don't fail the login, just log the warning
+        console.log('🆕 [Auth] No valid session - creating new session');
+        // Only clear and create new session if no valid session exists
+        await startNewDynamicMasterPasswordSession();
+
+        // Generate dynamic master password for this NEW session
+        const dynamicResult = await generateDynamicMasterPassword();
+
+        if (dynamicResult.success) {
+          console.log(
+            `✅ [Auth] NEW session created: ${dynamicResult.sessionId?.substring(
+              0,
+              20,
+            )}...`,
+          );
+        } else {
+          console.warn(
+            `⚠️ [Auth] Dynamic master password generation warning: ${dynamicResult.error}`,
+          );
+          // Don't fail the login, just log the warning
+        }
       }
     } catch (dynamicError) {
       console.error(
@@ -111,25 +134,34 @@ export const signInWithGoogle = async () => {
 };
 
 // Complete sign out flow with Dynamic Master Password cleanup
-export const signOut = async () => {
+export const signOut = async (options?: { clearSessionData?: boolean }) => {
   try {
+    const clearSession = options?.clearSessionData ?? false; // Default: DON'T clear session
     console.log(
-      '🚪 [Auth] Starting sign out with dynamic master password cleanup...',
+      `🚪 [Auth] Starting sign out (clearSession: ${clearSession})...`,
     );
 
     // Import Google Sign-In functions
     const { googleSignOut } = require('./googleAuthNative');
 
-    // Step 1: Clear dynamic master password data first
-    try {
-      await clearDynamicMasterPasswordData();
-      console.log('🗑️ [Auth] Dynamic master password data cleared');
-    } catch (dynamicError) {
-      console.warn(
-        '⚠️ [Auth] Failed to clear dynamic master password data:',
-        dynamicError,
+    // Step 1: Optionally clear dynamic master password data
+    // ⚠️ IMPORTANT: Only clear if explicitly requested (e.g., "Delete Account")
+    // For normal logout, preserve session to allow re-login with same passwords
+    if (clearSession) {
+      try {
+        await clearDynamicMasterPasswordData();
+        console.log('🗑️ [Auth] Dynamic master password session cleared');
+      } catch (dynamicError) {
+        console.warn(
+          '⚠️ [Auth] Failed to clear dynamic master password data:',
+          dynamicError,
+        );
+        // Don't fail the sign out process
+      }
+    } else {
+      console.log(
+        '🔒 [Auth] Preserving session data for re-login (passwords will remain accessible)',
       );
-      // Don't fail the sign out process
     }
 
     // Step 2: Sign out from both Google and Firebase

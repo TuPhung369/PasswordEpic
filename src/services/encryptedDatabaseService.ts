@@ -208,10 +208,11 @@ export class EncryptedDatabaseService {
 
       for (const encryptedEntry of encryptedEntries) {
         try {
-          // Derive key from master password and salt
+          // Derive key from master password and salt (must match encryption iterations)
           const derivedKey = deriveKeyFromPassword(
             masterPassword,
             encryptedEntry.salt,
+            2000, // Must match the iteration count used during encryption
           );
 
           const decryptedData = decryptData(
@@ -222,6 +223,12 @@ export class EncryptedDatabaseService {
           );
 
           const entry: PasswordEntry = JSON.parse(decryptedData);
+          // Convert date strings back to Date objects after JSON parsing
+          entry.createdAt = new Date(entry.createdAt);
+          entry.updatedAt = new Date(entry.updatedAt);
+          if (entry.lastUsed) {
+            entry.lastUsed = new Date(entry.lastUsed);
+          }
           decryptedEntries.push(entry);
         } catch (error) {
           console.error(`Failed to decrypt entry ${encryptedEntry.id}:`, error);

@@ -24,11 +24,13 @@ import {
 // import { PasswordValidationService } from '../services/passwordValidationService'; // Unused - real-time validation removed
 import { TrackedTextInput as TextInput } from './TrackedTextInput';
 import CategorySelector from './CategorySelector';
+import { BiometricService } from '../services/biometricService';
 
 interface PasswordFormProps {
   password?: PasswordEntry;
   onSave: (password: Partial<PasswordEntry>) => void;
   onCancel: () => void;
+  onDataChange?: (password: Partial<PasswordEntry>) => void; // Real-time updates for parent
   isEditing?: boolean;
   enableAutoSave?: boolean; // Default true, set to false to disable auto-save
 }
@@ -86,6 +88,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
   password,
   onSave,
   onCancel: _onCancel, // Marked as unused since we removed Cancel button
+  onDataChange,
   isEditing: _isEditing = false, // Marked as unused since we removed Save button
   enableAutoSave = true,
 }) => {
@@ -98,7 +101,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
   const [passwordValue, setPasswordValue] = useState(password?.password || '');
   const [website, setWebsite] = useState(password?.website || '');
   const [notes, setNotes] = useState(password?.notes || '');
-  const [category, setCategory] = useState(password?.category || 'General');
+  const [category, setCategory] = useState(password?.category || 'Other');
   const [_isFavorite, _setIsFavorite] = useState(password?.isFavorite || false); // Marked as unused
   const [_customFields, _setCustomFields] = useState<CustomField[]>( // Marked as unused
     password?.customFields || [],
@@ -128,27 +131,57 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     excludeSimilar: true,
   });
 
-  // Use ref to track previous password prop to avoid infinite loops
-  const prevPasswordRef = React.useRef(password);
+  // Use ref to track if form has been initialized to avoid overwriting user input
+  const isInitializedRef = React.useRef(false);
 
-  // Sync form state with password prop when it changes (for data restoration)
+  // Sync form state with password prop ONLY on initial load (not during editing)
   useEffect(() => {
-    // Only sync if password prop actually changed (not form state changes)
-    if (password && password !== prevPasswordRef.current) {
-      // console.log(
-      //   '🔄 PasswordForm: Syncing with updated password prop:',
-      //   password,
-      // );
+    // Only sync on first load or when password ID changes, not during editing
+    if (password && !isInitializedRef.current) {
+      console.log(
+        '🔄 PasswordForm: Initial sync with password prop:',
+        password,
+      );
       setTitle(password.title || '');
       setUsername(password.username || '');
       setPasswordValue(password.password || '');
       setWebsite(password.website || '');
       setNotes(password.notes || '');
-      setCategory(password.category || 'General');
-      // setIsFavorite and setCustomFields removed - features disabled
-      prevPasswordRef.current = password;
+      setCategory(password.category || 'Other');
+      isInitializedRef.current = true;
     }
-  }, [password]); // Only depend on password prop, not form state
+  }, [password]); // Include password but only sync once
+
+  // Helper function to notify parent of form changes
+  const notifyDataChange = useCallback(
+    (
+      overrides: Partial<{
+        title: string;
+        username: string;
+        passwordValue: string;
+        website: string;
+        notes: string;
+        category: string;
+      }> = {},
+    ) => {
+      if (onDataChange) {
+        const currentFormData = {
+          title: overrides.title ?? title,
+          username: overrides.username ?? username,
+          password: overrides.passwordValue ?? passwordValue,
+          website: overrides.website ?? website,
+          notes: overrides.notes ?? notes,
+          category: overrides.category ?? category,
+          // Include other fields that parent might need
+          isFavorite: false, // Disabled feature
+          customFields: [], // Disabled feature
+          tags: [], // Default empty
+        };
+        onDataChange(currentFormData);
+      }
+    },
+    [title, username, passwordValue, website, notes, category, onDataChange],
+  );
 
   // Calculate password strength when password changes
   useEffect(() => {
@@ -202,10 +235,14 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
   ]);
 
   // Handle category selection without triggering autofill
-  const handleCategorySelect = useCallback((selectedCategory: string) => {
-    console.log('📋 [Category] Category selected:', selectedCategory);
-    setCategory(selectedCategory);
-  }, []);
+  const handleCategorySelect = useCallback(
+    (selectedCategory: string) => {
+      console.log('📋 [Category] Category selected:', selectedCategory);
+      setCategory(selectedCategory);
+      notifyDataChange({ category: selectedCategory });
+    },
+    [notifyDataChange],
+  );
 
   // 🚫 TEMPORARILY DISABLED - Auto-encrypt password when user finishes entering (blur event)
   // This was causing Google autofill modal to appear after category selection
@@ -454,9 +491,14 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               ]}
               placeholder="Enter title"
               value={title}
-              onChangeText={setTitle}
+              onChangeText={text => {
+                setTitle(text);
+                notifyDataChange({ title: text });
+              }}
               placeholderTextColor={theme.textSecondary}
               returnKeyType="next"
+              autoComplete="off"
+              importantForAutofill="no"
               {...getCleanKeyboardProps(theme, 'text')}
             />
           </View>
@@ -468,7 +510,10 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               style={styles.input}
               placeholder="Enter username or email"
               value={username}
-              onChangeText={setUsername}
+              onChangeText={text => {
+                setUsername(text);
+                notifyDataChange({ username: text });
+              }}
               placeholderTextColor={theme.textSecondary}
               returnKeyType="next"
               autoComplete="off"
@@ -490,7 +535,10 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                 ]}
                 placeholder="Enter password"
                 value={passwordValue}
-                onChangeText={setPasswordValue}
+                onChangeText={text => {
+                  setPasswordValue(text);
+                  notifyDataChange({ passwordValue: text });
+                }}
                 // onBlur={handlePasswordBlur} // 🚫 Temporarily disabled - causing Google autofill modal
                 secureTextEntry={!isPasswordVisible}
                 placeholderTextColor={theme.textSecondary}
@@ -500,7 +548,31 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                 {...getCleanKeyboardProps(theme, 'password')}
               />
               <TouchableOpacity
-                onPress={() => setIsPasswordVisible(!isPasswordVisible)}
+                onPress={async () => {
+                  // If trying to show password, require biometric authentication
+                  if (!isPasswordVisible) {
+                    const biometricService = BiometricService.getInstance();
+                    const result =
+                      await biometricService.authenticateWithBiometrics(
+                        'Authenticate to view password',
+                      );
+
+                    if (result.success) {
+                      setIsPasswordVisible(true);
+                    } else if (
+                      result.error &&
+                      !result.error.includes('cancelled')
+                    ) {
+                      Alert.alert(
+                        'Authentication Failed',
+                        result.error || 'Could not verify your identity',
+                      );
+                    }
+                  } else {
+                    // Hiding password doesn't require authentication
+                    setIsPasswordVisible(false);
+                  }
+                }}
                 style={styles.passwordToggle}
               >
                 <Icon
@@ -533,9 +605,14 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               ]}
               placeholder="https://example.com"
               value={website}
-              onChangeText={setWebsite}
+              onChangeText={text => {
+                setWebsite(text);
+                notifyDataChange({ website: text });
+              }}
               placeholderTextColor={theme.textSecondary}
               returnKeyType="next"
+              autoComplete="off"
+              importantForAutofill="no"
               {...getCleanKeyboardProps(theme, 'url')}
             />
           </View>
@@ -557,11 +634,16 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               style={[styles.input, styles.notesInput]}
               placeholder="Additional notes (optional)"
               value={notes}
-              onChangeText={setNotes}
+              onChangeText={text => {
+                setNotes(text);
+                notifyDataChange({ notes: text });
+              }}
               multiline
               numberOfLines={3}
               placeholderTextColor={theme.textSecondary}
               returnKeyType="done"
+              autoComplete="off"
+              importantForAutofill="no"
               {...getCleanKeyboardProps(theme)}
             />
           </View>

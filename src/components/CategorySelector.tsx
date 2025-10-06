@@ -9,7 +9,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { PasswordCategoryExtended } from '../types/password';
 import { useTheme, Theme } from '../contexts/ThemeContext';
 import {
@@ -38,18 +38,34 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
   const styles = createStyles(theme);
 
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [categories, setCategories] = useState<PasswordCategoryExtended[]>([]);
+  const [categories, setCategories] = useState<PasswordCategoryExtended[]>(
+    DEFAULT_CATEGORIES.map(cat => ({
+      ...cat,
+      entryCount: 0,
+      createdAt: new Date(),
+    })),
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [selectedIcon, setSelectedIcon] = useState('folder');
   const [selectedColor, setSelectedColor] = useState('#007AFF');
 
-  // Load categories when modal opens
+  // Load categories function
   const loadCategories = async () => {
     try {
       const allCategories = await CategoryService.getAllCategories();
-      setCategories(allCategories);
+      // Check if categories have proper icons, if not reset to default
+      const hasValidIcons = allCategories.every(
+        cat => cat.icon && cat.icon !== 'undefined',
+      );
+      if (!hasValidIcons) {
+        await CategoryService.resetToDefaultCategories();
+        const resetCategories = await CategoryService.getAllCategories();
+        setCategories(resetCategories);
+      } else {
+        setCategories(allCategories);
+      }
     } catch (error) {
       console.error('Failed to load categories:', error);
       // Fallback to default categories
@@ -62,6 +78,11 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
       setCategories(defaultCategories);
     }
   };
+
+  // Load categories on component mount
+  React.useEffect(() => {
+    loadCategories();
+  }, []);
 
   const handleOpenModal = () => {
     setIsModalVisible(true);
@@ -132,9 +153,9 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
               await CategoryService.deleteCategory(categoryId);
               setCategories(categories.filter(cat => cat.id !== categoryId));
 
-              // If deleted category was selected, reset to General
+              // If deleted category was selected, reset to Other
               if (selectedCategory === categoryName) {
-                onCategorySelect('General');
+                onCategorySelect('Other');
               }
             } catch (error) {
               Alert.alert('Error', 'Failed to delete category');
@@ -151,71 +172,87 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
   );
 
   const getSelectedCategoryDisplay = () => {
-    const category =
-      categories.find(cat => cat.name === selectedCategory) ||
-      DEFAULT_CATEGORIES.find(cat => cat.name === selectedCategory);
+    // First try to find in loaded categories (has Ionicons), then fallback to DEFAULT_CATEGORIES
+    const loadedCategory = categories.find(
+      cat => cat.name === selectedCategory,
+    );
+    const defaultCategory = DEFAULT_CATEGORIES.find(
+      cat => cat.name === selectedCategory,
+    );
+
+    const category = loadedCategory || defaultCategory;
 
     if (category) {
+      // Get icon: prefer loaded category icon, then default category icon, then fallback
+      const iconName =
+        loadedCategory?.icon || defaultCategory?.icon || 'folder-outline';
+
       return {
         name: category.name,
-        icon: CATEGORY_ICONS[category.name] || category.icon || 'folder',
-        color:
-          CATEGORY_COLORS[category.name] || category.color || theme.primary,
+        icon: iconName,
+        color: category.color || theme.primary,
       };
     }
 
     return {
       name: selectedCategory || 'Select Category',
-      icon: 'folder',
+      icon: 'folder-outline',
       color: theme.textSecondary,
     };
   };
 
   const selectedDisplay = getSelectedCategoryDisplay();
 
-  const renderCategoryItem = ({ item }: { item: PasswordCategoryExtended }) => (
-    <View style={styles.categoryItem}>
-      <TouchableOpacity
-        style={styles.categoryButton}
-        onPress={() => handleSelectCategory(item.name)}
-      >
-        <View
-          style={[styles.categoryIcon, { backgroundColor: item.color + '20' }]}
-        >
-          <Icon
-            name={CATEGORY_ICONS[item.name] || item.icon || 'folder'}
-            size={24}
-            color={item.color}
-          />
-        </View>
-        <View style={styles.categoryInfo}>
-          <Text style={styles.categoryName}>{item.name}</Text>
-          {showCounts && (
-            <Text style={styles.categoryCount}>
-              {item.entryCount} {item.entryCount === 1 ? 'entry' : 'entries'}
-            </Text>
-          )}
-          {item.description && (
-            <Text style={styles.categoryDescription} numberOfLines={1}>
-              {item.description}
-            </Text>
-          )}
-        </View>
-        {selectedCategory === item.name && (
-          <Icon name="check" size={20} color={theme.primary} />
-        )}
-      </TouchableOpacity>
+  const renderCategoryItem = ({ item }: { item: PasswordCategoryExtended }) => {
+    // Get icon from DEFAULT_CATEGORIES if item.icon is missing or invalid
+    const defaultCategory = DEFAULT_CATEGORIES.find(
+      cat => cat.name === item.name,
+    );
+    const iconName = item.icon || defaultCategory?.icon || 'folder';
 
-      {item.isCustom && (
+    return (
+      <View style={styles.categoryItem}>
         <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => handleDeleteCategory(item.id, item.name)}
+          style={styles.categoryButton}
+          onPress={() => handleSelectCategory(item.name)}
         >
-          <Icon name="delete" size={20} color={theme.error} />
+          <View
+            style={[
+              styles.categoryIcon,
+              { backgroundColor: item.color + '20' },
+            ]}
+          >
+            <Icon name={iconName} size={24} color={item.color} />
+          </View>
+          <View style={styles.categoryInfo}>
+            <Text style={styles.categoryName}>{item.name}</Text>
+            {showCounts && (
+              <Text style={styles.categoryCount}>
+                {item.entryCount} {item.entryCount === 1 ? 'entry' : 'entries'}
+              </Text>
+            )}
+            {item.description && (
+              <Text style={styles.categoryDescription} numberOfLines={1}>
+                {item.description}
+              </Text>
+            )}
+          </View>
+          {selectedCategory === item.name && (
+            <Icon name="checkmark" size={20} color={theme.primary} />
+          )}
         </TouchableOpacity>
-      )}
-    </View>
-  );
+
+        {item.isCustom && (
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => handleDeleteCategory(item.id, item.name)}
+          >
+            <Icon name="trash" size={20} color={theme.error} />
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
 
   const renderCreateForm = () => (
     <View style={styles.createForm}>
@@ -302,11 +339,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
           />
         </View>
         <Text style={styles.selectedText}>{selectedDisplay.name}</Text>
-        <Icon
-          name="keyboard-arrow-down"
-          size={24}
-          color={theme.textSecondary}
-        />
+        <Icon name="chevron-down" size={24} color={theme.textSecondary} />
       </TouchableOpacity>
 
       <Modal
@@ -350,13 +383,59 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
               />
 
               {allowCreate && (
-                <TouchableOpacity
-                  style={styles.createNewButton}
-                  onPress={() => setIsCreating(true)}
-                >
-                  <Icon name="add" size={24} color={theme.primary} />
-                  <Text style={styles.createNewText}>Create New Category</Text>
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity
+                    style={styles.createNewButton}
+                    onPress={() => setIsCreating(true)}
+                  >
+                    <Icon name="add" size={24} color={theme.primary} />
+                    <Text style={styles.createNewText}>
+                      Create New Category
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.createNewButton,
+                      { borderColor: theme.warning },
+                    ]}
+                    onPress={async () => {
+                      Alert.alert(
+                        'Reset Categories',
+                        'This will reset all categories to default with updated icons. Custom categories will be lost.',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Reset',
+                            style: 'destructive',
+                            onPress: async () => {
+                              try {
+                                await CategoryService.resetToDefaultCategories();
+                                await loadCategories();
+                                Alert.alert(
+                                  'Success',
+                                  'Categories have been reset with updated icons',
+                                );
+                              } catch (error) {
+                                Alert.alert(
+                                  'Error',
+                                  'Failed to reset categories',
+                                );
+                              }
+                            },
+                          },
+                        ],
+                      );
+                    }}
+                  >
+                    <Icon name="refresh" size={24} color={theme.warning} />
+                    <Text
+                      style={[styles.createNewText, { color: theme.warning }]}
+                    >
+                      Reset to Default
+                    </Text>
+                  </TouchableOpacity>
+                </>
               )}
             </>
           ) : (

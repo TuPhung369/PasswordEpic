@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Text, StyleSheet, Animated } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
@@ -20,23 +20,6 @@ const Toast: React.FC<ToastProps> = ({
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(-100));
 
-  const hideToast = useCallback(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: -100,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      onHide();
-    });
-  }, [fadeAnim, slideAnim, onHide]);
-
   useEffect(() => {
     if (visible) {
       // Show animation
@@ -55,12 +38,25 @@ const Toast: React.FC<ToastProps> = ({
 
       // Auto hide after duration
       const timer = setTimeout(() => {
-        hideToast();
+        Animated.parallel([
+          Animated.timing(fadeAnim, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(slideAnim, {
+            toValue: -100,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          onHide();
+        });
       }, duration);
 
       return () => clearTimeout(timer);
     }
-  }, [visible, fadeAnim, slideAnim, hideToast, duration]);
+  }, [visible, fadeAnim, slideAnim, onHide, duration]);
 
   const getToastColor = () => {
     switch (type) {

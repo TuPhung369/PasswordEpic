@@ -8,13 +8,20 @@ import {
   Clipboard,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { PasswordEntry as Password } from '../types/password';
+import { PasswordEntry } from '../types/password';
 import { useTheme, Theme } from '../contexts/ThemeContext';
-import { getPasswordStrengthColor } from '../utils/passwordUtils';
-import { CATEGORY_ICONS } from '../constants/categories';
+import {
+  getCategoryById,
+  getCategoryByName,
+  CATEGORY_ICONS,
+} from '../constants/categories';
+import { BiometricPrompt } from './BiometricPrompt';
+import { MasterPasswordPrompt } from './MasterPasswordPrompt';
+import { useBiometric } from '../hooks/useBiometric';
+import Toast from './Toast';
 
 interface PasswordEntryComponentProps {
-  password: Password;
+  password: PasswordEntry;
   onPress?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
@@ -31,7 +38,60 @@ interface PasswordEntryComponentProps {
 // Helper function to get category icon
 const getCategoryIcon = (category?: string): string => {
   if (!category) return 'folder';
-  return CATEGORY_ICONS[category] || 'folder';
+
+  // Quick mapping for common categories (as fallback)
+  const quickIconMap: Record<string, string> = {
+    Other: 'more-horiz',
+    Banking: 'account-balance',
+    'Social Media': 'people',
+    Work: 'work',
+    Entertainment: 'movie',
+    Shopping: 'shopping-cart',
+    Health: 'local-hospital',
+    Travel: 'flight',
+    Education: 'school',
+    Gaming: 'games',
+    Finance: 'attach-money',
+    Security: 'security',
+  };
+
+  // Try quick mapping first
+  if (quickIconMap[category]) {
+    console.log(
+      '✅ Found icon by quick map:',
+      category,
+      '->',
+      quickIconMap[category],
+    );
+    return quickIconMap[category];
+  }
+
+  // Try by name lookup
+  const categoryByName = getCategoryByName(category);
+  if (categoryByName) {
+    console.log('✅ Found icon by name:', category, '->', categoryByName.icon);
+    return categoryByName.icon;
+  }
+
+  // Try by id lookup
+  const categoryById = getCategoryById(category);
+  if (categoryById) {
+    console.log('✅ Found icon by id:', category, '->', categoryById.icon);
+    return categoryById.icon;
+  }
+
+  // Try direct CATEGORY_ICONS lookup (for lowercase keys)
+  const lowerCategory = category.toLowerCase();
+  const directIcon =
+    CATEGORY_ICONS[lowerCategory as keyof typeof CATEGORY_ICONS];
+  if (directIcon) {
+    console.log('✅ Found icon by direct lookup:', category, '->', directIcon);
+    return directIcon;
+  }
+
+  // Default fallback
+  console.log('❌ No icon found for category:', category, 'using folder');
+  return 'folder';
 };
 
 const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
@@ -39,16 +99,23 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   onPress,
   onEdit,
   onDelete,
-  onShare,
-  showActions = true,
+  onShare: _onShare,
+  showActions: _showActions = true,
   selectable = false,
   selected = false,
   onSelect,
   showPassword = false,
 }) => {
   const { theme } = useTheme();
+  const { isAvailable: isBiometricAvailable } = useBiometric();
   const [isPasswordVisible, setIsPasswordVisible] = useState(showPassword);
-  const [actionsVisible, setActionsVisible] = useState(false);
+  const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
+  const [showPinPrompt, setShowPinPrompt] = useState(false);
+  const [toast, setToast] = useState({
+    visible: false,
+    message: '',
+    type: 'success' as 'success' | 'error' | 'info',
+  });
 
   const styles = createStyles(theme);
 
@@ -60,8 +127,22 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   };
 
   const handleCopyPassword = async () => {
+    // Only allow copy if password is visible
+    if (!isPasswordVisible) {
+      setToast({
+        visible: true,
+        message: 'Please reveal password first to copy',
+        type: 'error',
+      });
+      return;
+    }
+
     await Clipboard.setString(password.password);
-    Alert.alert('Copied', 'Password copied to clipboard');
+    setToast({
+      visible: true,
+      message: 'Password copied to clipboard',
+      type: 'success',
+    });
   };
 
   const handleCopyUrl = async () => {
@@ -71,108 +152,109 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
     }
   };
 
+  const handleCopyNotes = async () => {
+    if (password.notes) {
+      await Clipboard.setString(password.notes);
+      Alert.alert('Copied', 'Notes copied to clipboard');
+    }
+  };
+
+  const handleEdit = () => {
+    onEdit?.();
+  };
+
   const handleDelete = () => {
-    Alert.alert(
-      'Delete Password',
-      `Are you sure you want to delete "${password.title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => onDelete?.(),
-        },
-      ],
-    );
+    // Call onDelete directly - parent component will handle confirmation
+    onDelete?.();
   };
 
   const togglePasswordVisibility = () => {
-    setIsPasswordVisible(!isPasswordVisible);
+    // If trying to show password, require authentication
+    if (!isPasswordVisible) {
+      // Try biometric first if available
+      if (isBiometricAvailable) {
+        setShowBiometricPrompt(true);
+      } else {
+        // Fallback to PIN/Master Password
+        setShowPinPrompt(true);
+      }
+    } else {
+      // Hide password - no authentication needed
+      setIsPasswordVisible(false);
+    }
   };
 
-  const toggleActions = () => {
-    setActionsVisible(!actionsVisible);
+  const handleBiometricSuccess = () => {
+    setShowBiometricPrompt(false);
+    setIsPasswordVisible(true);
+    setToast({
+      visible: true,
+      message: 'Authentication successful',
+      type: 'success',
+    });
   };
 
-  const getStrengthIndicator = () => {
-    if (!password.auditData?.passwordStrength) return null;
+  const handleBiometricError = (error: string) => {
+    setShowBiometricPrompt(false);
+    setToast({
+      visible: true,
+      message: error || 'Authentication failed',
+      type: 'error',
+    });
 
-    const strength = password.auditData.passwordStrength;
-    const color = getPasswordStrengthColor(strength.score);
-
-    return (
-      <View style={[styles.strengthIndicator, { backgroundColor: color }]}>
-        <Text style={styles.strengthText}>{strength.label}</Text>
-      </View>
-    );
+    // Fallback to PIN if biometric fails
+    setTimeout(() => {
+      setShowPinPrompt(true);
+    }, 500);
   };
 
-  const getFavoriteIcon = () => {
-    if (password.isFavorite) {
-      return (
-        <Icon
-          name="star"
-          size={16}
-          color={theme.warning}
-          style={styles.favoriteIcon}
-        />
-      );
-    }
-    return null;
+  const handleBiometricClose = () => {
+    setShowBiometricPrompt(false);
   };
 
-  const getSecurityWarning = () => {
-    const warnings = [];
+  const handlePinSuccess = () => {
+    setShowPinPrompt(false);
+    setIsPasswordVisible(true);
+    setToast({
+      visible: true,
+      message: 'Authentication successful',
+      type: 'success',
+    });
+  };
 
-    if (password.breachStatus?.isBreached) {
-      warnings.push(
-        <Icon
-          key="compromised"
-          name="security"
-          size={16}
-          color={theme.error}
-          style={styles.warningIcon}
-        />,
-      );
+  const handlePinCancel = () => {
+    setShowPinPrompt(false);
+  };
+
+  const getCategoryData = () => {
+    console.log('🔍 Password category debug:', {
+      passwordId: password.id,
+      rawCategory: password.category,
+      categoryType: typeof password.category,
+    });
+
+    if (!password.category) {
+      return {
+        name: 'Uncategorized',
+        color: theme.textSecondary,
+      };
     }
 
-    if (
-      password.auditData?.duplicateCount &&
-      password.auditData.duplicateCount > 0
-    ) {
-      warnings.push(
-        <Icon
-          key="duplicate"
-          name="content-copy"
-          size={16}
-          color={theme.warning}
-          style={styles.warningIcon}
-        />,
-      );
-    }
+    // First try by name, then by id
+    const category =
+      getCategoryByName(password.category) ||
+      getCategoryById(password.category);
 
-    // Check if password is old (more than 90 days)
-    const isOld =
-      password.auditData?.lastPasswordChange &&
-      new Date().getTime() -
-        new Date(password.auditData.lastPasswordChange).getTime() >
-        90 * 24 * 60 * 60 * 1000;
+    console.log('📋 Category display result:', {
+      passwordId: password.id,
+      foundCategory: category?.name,
+      finalResult: category ? category.name : password.category,
+    });
 
-    if (isOld) {
-      warnings.push(
-        <Icon
-          key="old"
-          name="schedule"
-          size={16}
-          color={theme.error}
-          style={styles.warningIcon}
-        />,
-      );
-    }
-
-    return warnings.length > 0 ? (
-      <View style={styles.warningContainer}>{warnings}</View>
-    ) : null;
+    return {
+      name: category ? category.name : password.category,
+      color: category ? category.color : theme.primary,
+    };
   };
 
   const getLastUsedText = () => {
@@ -194,136 +276,203 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
     return `${diffInMonths}mo ago`;
   };
 
+  const handleMainPress = () => {
+    onPress?.();
+  };
+
+  const categoryData = getCategoryData();
+
   return (
-    <TouchableOpacity
-      style={[styles.container, selected && styles.selectedContainer]}
-      onPress={onPress}
-      onLongPress={showActions ? toggleActions : undefined}
-      activeOpacity={0.7}
-    >
-      {/* Selection Checkbox */}
-      {selectable && (
-        <TouchableOpacity
-          style={styles.checkbox}
-          onPress={() => onSelect?.(!selected)}
-        >
-          <Icon
-            name={selected ? 'check-box' : 'check-box-outline-blank'}
-            size={24}
-            color={selected ? theme.primary : theme.textSecondary}
-          />
-        </TouchableOpacity>
-      )}
-
-      {/* Category Icon */}
-      <View style={styles.iconContainer}>
-        <Icon
-          name={getCategoryIcon(password.category)}
-          size={28}
-          color={theme.primary}
-        />
-      </View>
-
-      {/* Main Content */}
-      <View style={styles.content}>
-        {/* Header Row */}
-        <View style={styles.headerRow}>
-          <Text style={styles.title} numberOfLines={1}>
-            {password.title}
-          </Text>
-          <View style={styles.headerIcons}>
-            {getFavoriteIcon()}
-            {getSecurityWarning()}
-            {getStrengthIndicator()}
-          </View>
-        </View>
-
-        {/* Username Row */}
-        {password.username && (
-          <View style={styles.detailRow}>
-            <Icon name="person" size={16} color={theme.textSecondary} />
-            <Text style={styles.detailText} numberOfLines={1}>
-              {password.username}
-            </Text>
-            <TouchableOpacity
-              onPress={handleCopyUsername}
-              style={styles.copyButton}
-            >
-              <Icon name="content-copy" size={16} color={theme.textSecondary} />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Password Row */}
-        <View style={styles.detailRow}>
-          <Icon name="lock" size={16} color={theme.textSecondary} />
-          <Text style={styles.detailText} numberOfLines={1}>
-            {isPasswordVisible ? password.password : '••••••••'}
-          </Text>
+    <>
+      <TouchableOpacity
+        style={[styles.container, selected && styles.selectedContainer]}
+        onPress={handleMainPress}
+        activeOpacity={0.7}
+      >
+        {/* Selection Checkbox */}
+        {selectable && (
           <TouchableOpacity
-            onPress={togglePasswordVisibility}
-            style={styles.actionButton}
+            style={styles.checkbox}
+            onPress={() => onSelect?.(!selected)}
           >
             <Icon
-              name={isPasswordVisible ? 'visibility-off' : 'visibility'}
-              size={16}
-              color={theme.textSecondary}
+              name={selected ? 'check-box' : 'check-box-outline-blank'}
+              size={24}
+              color={selected ? theme.primary : theme.textSecondary}
             />
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleCopyPassword}
-            style={styles.copyButton}
-          >
-            <Icon name="content-copy" size={16} color={theme.textSecondary} />
-          </TouchableOpacity>
-        </View>
-
-        {/* URL Row */}
-        {password.website && (
-          <View style={styles.detailRow}>
-            <Icon name="language" size={16} color={theme.textSecondary} />
-            <Text style={styles.detailText} numberOfLines={1}>
-              {password.website}
-            </Text>
-            <TouchableOpacity onPress={handleCopyUrl} style={styles.copyButton}>
-              <Icon name="content-copy" size={16} color={theme.textSecondary} />
-            </TouchableOpacity>
-          </View>
         )}
 
-        {/* Footer Row */}
-        <View style={styles.footerRow}>
-          <Text style={styles.lastUsedText}>{getLastUsedText()}</Text>
-          <Text style={styles.categoryText}>{password.category}</Text>
+        {/* Category Icon */}
+        <View
+          style={[
+            styles.iconContainer,
+            { backgroundColor: categoryData.color + '20' },
+          ]}
+        >
+          <Icon
+            name={getCategoryIcon(password.category)}
+            size={28}
+            color={categoryData.color}
+          />
         </View>
-      </View>
 
-      {/* Quick Actions */}
-      {showActions && actionsVisible && (
-        <View style={styles.actionsContainer}>
-          {onEdit && (
-            <TouchableOpacity onPress={onEdit} style={styles.actionItem}>
-              <Icon name="edit" size={20} color={theme.primary} />
-              <Text style={styles.actionText}>Edit</Text>
-            </TouchableOpacity>
-          )}
-          {onShare && (
-            <TouchableOpacity onPress={onShare} style={styles.actionItem}>
-              <Icon name="share" size={20} color={theme.primary} />
-              <Text style={styles.actionText}>Share</Text>
-            </TouchableOpacity>
-          )}
-          {onDelete && (
-            <TouchableOpacity onPress={handleDelete} style={styles.actionItem}>
-              <Icon name="delete" size={20} color={theme.error} />
-              <Text style={[styles.actionText, { color: theme.error }]}>
-                Delete
+        {/* Main Content */}
+        <View style={styles.content}>
+          {/* Header Row - Icon + Title + Group Name */}
+          <View style={styles.headerRow}>
+            <Text style={styles.title} numberOfLines={1}>
+              {password.title}
+            </Text>
+            <Text style={[styles.categoryText, { color: categoryData.color }]}>
+              {categoryData.name}
+            </Text>
+          </View>
+
+          {/* Username Row */}
+          {password.username && (
+            <View style={styles.detailRow}>
+              <Icon name="person" size={16} color={theme.textSecondary} />
+              <Text style={styles.detailText} numberOfLines={1}>
+                {password.username}
               </Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleCopyUsername}
+                style={styles.copyButton}
+              >
+                <Icon
+                  name="content-copy"
+                  size={16}
+                  color={theme.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
           )}
+
+          {/* Password Row */}
+          <View style={styles.detailRow}>
+            <Icon name="lock" size={16} color={theme.textSecondary} />
+            <Text style={styles.detailText} numberOfLines={1}>
+              {isPasswordVisible ? password.password : '••••••••'}
+            </Text>
+            <TouchableOpacity
+              onPress={togglePasswordVisibility}
+              style={styles.actionButton}
+            >
+              <Icon
+                name={isPasswordVisible ? 'visibility-off' : 'visibility'}
+                size={16}
+                color={theme.textSecondary}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleCopyPassword}
+              style={[
+                styles.copyButton,
+                !isPasswordVisible && styles.disabledButton,
+              ]}
+              disabled={!isPasswordVisible}
+            >
+              <Icon
+                name="content-copy"
+                size={16}
+                color={isPasswordVisible ? theme.textSecondary : theme.border}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* URL Row */}
+          {password.website && (
+            <View style={styles.detailRow}>
+              <Icon name="language" size={16} color={theme.textSecondary} />
+              <Text style={styles.detailText} numberOfLines={1}>
+                {password.website}
+              </Text>
+              <TouchableOpacity
+                onPress={handleCopyUrl}
+                style={styles.copyButton}
+              >
+                <Icon
+                  name="content-copy"
+                  size={16}
+                  color={theme.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Notes Row */}
+          {password.notes && (
+            <View style={styles.detailRow}>
+              <Icon name="note" size={16} color={theme.textSecondary} />
+              <Text style={styles.detailText} numberOfLines={2}>
+                {password.notes}
+              </Text>
+              <TouchableOpacity
+                onPress={handleCopyNotes}
+                style={styles.copyButton}
+              >
+                <Icon
+                  name="content-copy"
+                  size={16}
+                  color={theme.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Footer Row - Last Used + Action Icons */}
+          <View style={styles.footerRow}>
+            <Text style={styles.lastUsedText}>{getLastUsedText()}</Text>
+            <View style={styles.actionIconsRow}>
+              {onEdit && (
+                <TouchableOpacity
+                  onPress={handleEdit}
+                  style={styles.footerActionButton}
+                >
+                  <Icon name="edit" size={18} color={theme.primary} />
+                </TouchableOpacity>
+              )}
+              {onDelete && (
+                <TouchableOpacity
+                  onPress={handleDelete}
+                  style={styles.footerActionButton}
+                >
+                  <Icon name="delete" size={18} color={theme.error} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
         </View>
-      )}
-    </TouchableOpacity>
+      </TouchableOpacity>
+
+      {/* Biometric Prompt */}
+      <BiometricPrompt
+        visible={showBiometricPrompt}
+        onClose={handleBiometricClose}
+        onSuccess={handleBiometricSuccess}
+        onError={handleBiometricError}
+        title="Authenticate to view password"
+        subtitle="Use biometric authentication to reveal password"
+      />
+
+      {/* Master Password Prompt (Fallback) */}
+      <MasterPasswordPrompt
+        visible={showPinPrompt}
+        onSuccess={handlePinSuccess}
+        onCancel={handlePinCancel}
+        title="Master Password Required"
+        subtitle="Enter your master password to reveal password"
+      />
+
+      {/* Toast Notification */}
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={() => setToast({ ...toast, visible: false })}
+      />
+    </>
   );
 };
 
@@ -354,7 +503,6 @@ const createStyles = (theme: Theme) =>
       width: 40,
       height: 40,
       borderRadius: 20,
-      backgroundColor: theme.primary + '20', // Add opacity
       justifyContent: 'center',
       alignItems: 'center',
       marginRight: 12,
@@ -375,31 +523,7 @@ const createStyles = (theme: Theme) =>
       flex: 1,
       marginRight: 8,
     },
-    headerIcons: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    favoriteIcon: {
-      marginLeft: 4,
-    },
-    warningContainer: {
-      flexDirection: 'row',
-      marginLeft: 4,
-    },
-    warningIcon: {
-      marginLeft: 2,
-    },
-    strengthIndicator: {
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: 8,
-      marginLeft: 8,
-    },
-    strengthText: {
-      fontSize: 10,
-      fontWeight: '600',
-      color: '#FFFFFF',
-    },
+
     detailRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -419,6 +543,9 @@ const createStyles = (theme: Theme) =>
       padding: 4,
       marginLeft: 4,
     },
+    disabledButton: {
+      opacity: 0.4,
+    },
     footerRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -431,34 +558,22 @@ const createStyles = (theme: Theme) =>
     },
     categoryText: {
       fontSize: 12,
-      color: theme.primary,
       fontWeight: '500',
     },
-    actionsContainer: {
-      position: 'absolute',
-      top: 0,
-      right: 0,
-      backgroundColor: theme.surface,
-      borderRadius: 8,
-      padding: 8,
-      elevation: 4,
-      shadowColor: theme.text,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
-      zIndex: 1000,
-    },
-    actionItem: {
+    actionIconsRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: 8,
-      paddingHorizontal: 12,
-      minWidth: 80,
+      gap: 8,
     },
-    actionText: {
-      fontSize: 14,
-      color: theme.text,
-      marginLeft: 8,
+    footerActionButton: {
+      padding: 6,
+      borderRadius: 6,
+      backgroundColor: theme.surface,
+      elevation: 1,
+      shadowColor: theme.text,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 1,
     },
   });
 

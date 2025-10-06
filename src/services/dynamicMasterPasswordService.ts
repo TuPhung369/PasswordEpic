@@ -54,18 +54,23 @@ export const generateDynamicMasterPassword =
         };
       }
 
-      // Step 2: Get or create login timestamp
+      // Step 2: Get or create PERSISTENT login timestamp
+      // 🔥 CRITICAL: This timestamp must persist across app restarts for data continuity
       let loginTimestamp = await AsyncStorage.getItem(
         DYNAMIC_MP_KEYS.LOGIN_TIMESTAMP,
       );
       if (!loginTimestamp) {
-        // First time login, create new timestamp
+        // ⚠️ ONLY create new timestamp on FRESH LOGIN (not app restart)
         loginTimestamp = Date.now().toString();
         await AsyncStorage.setItem(
           DYNAMIC_MP_KEYS.LOGIN_TIMESTAMP,
           loginTimestamp,
         );
-        console.log('🆕 [DynamicMP] New login session created');
+        console.log('🆕 [DynamicMP] New PERSISTENT login session created');
+        console.log(`🕐 [DynamicMP] Session timestamp: ${loginTimestamp}`);
+      } else {
+        console.log('🔄 [DynamicMP] Restored existing session timestamp');
+        console.log(`🕐 [DynamicMP] Session timestamp: ${loginTimestamp}`);
       }
 
       // Step 3: Store user UUID for consistency
@@ -73,6 +78,16 @@ export const generateDynamicMasterPassword =
 
       // Step 4: Create session ID from UUID + timestamp
       const sessionId = `${currentUser.uid}_${loginTimestamp}`;
+
+      // 🔍 Log session info for debugging
+      console.log(`🔍 [DynamicMP] Session Info:`);
+      console.log(`   User ID: ${currentUser.uid.substring(0, 8)}...`);
+      console.log(
+        `   Login Time: ${new Date(
+          parseInt(loginTimestamp, 10),
+        ).toISOString()}`,
+      );
+      console.log(`   Session ID: ${sessionId.substring(0, 20)}...`);
 
       // Step 5: Check cache first
       if (
@@ -355,6 +370,81 @@ export const isUsingStaticMasterPassword = async (): Promise<boolean> => {
       error,
     );
     return false;
+  }
+};
+
+/**
+ * Restore dynamic master password session on app startup
+ * This ensures continuity of encrypted data between app restarts
+ */
+export const restoreDynamicMasterPasswordSession = async (): Promise<{
+  success: boolean;
+  restored?: boolean;
+  sessionId?: string;
+  error?: string;
+}> => {
+  try {
+    console.log('🔄 [DynamicMP] Restoring session on app startup...');
+
+    // Check if user is authenticated
+    const currentUser = getCurrentUser();
+    if (!currentUser) {
+      console.log(
+        '📭 [DynamicMP] No authenticated user - skipping session restore',
+      );
+      return {
+        success: true,
+        restored: false,
+        error: 'No authenticated user',
+      };
+    }
+
+    // Check if existing session is valid
+    const sessionCheck = await verifyDynamicMasterPasswordSession();
+    if (sessionCheck.success && sessionCheck.valid) {
+      console.log(
+        '✅ [DynamicMP] Valid session found - attempting to restore...',
+      );
+
+      // Try to regenerate the dynamic master password from existing session data
+      const restoreResult = await generateDynamicMasterPassword();
+
+      if (restoreResult.success) {
+        console.log(
+          `🔐 [DynamicMP] Session restored successfully: ${restoreResult.sessionId?.substring(
+            0,
+            20,
+          )}...`,
+        );
+        return {
+          success: true,
+          restored: true,
+          sessionId: restoreResult.sessionId,
+        };
+      } else {
+        console.warn(
+          `⚠️ [DynamicMP] Session restore failed: ${restoreResult.error}`,
+        );
+        return {
+          success: true,
+          restored: false,
+          error: restoreResult.error,
+        };
+      }
+    } else {
+      console.log('📭 [DynamicMP] No valid session found to restore');
+      return {
+        success: true,
+        restored: false,
+        error: 'No valid session to restore',
+      };
+    }
+  } catch (error: any) {
+    console.error('❌ [DynamicMP] Session restoration failed:', error);
+    return {
+      success: false,
+      error: error.message || 'Session restoration failed',
+    };
   }
 };
 

@@ -1435,6 +1435,17 @@ kotlinOptions {
 - 🔄 **AddPasswordScreen.tsx** - New password creation screen (IN PROGRESS)
 - 📋 **EditPasswordScreen.tsx** - Password editing screen (NEXT)
 
+**✅ UI/UX Improvements Completed:**
+
+- ✅ **Settings Screen Auto-Lock UI Redesign** (January 2025)
+  - Redesigned Auto-Lock section to match visual consistency with other settings
+  - Converted from custom container to standard `settingItem` layout pattern
+  - Added `lock-clock` icon with title "Auto-Lock" and subtitle "Automatically lock app after inactivity"
+  - Simplified AutoLockSelector component: removed internal icon/labels, minimal right-aligned trigger
+  - Fixed spacing with `marginRight: 12` on `settingContent` to prevent text crowding
+  - Established consistent design pattern: Icon (left) → Title + Subtitle (center) → Control (right)
+  - Files modified: `SettingsScreen.tsx` (lines 385-418, 852-855), `AutoLockSelector.tsx` (lines 169-195, 333-349)
+
 ### 📊 Overall Project Status
 
 **Total Progress**: 37.6% (6.4/17 weeks completed)

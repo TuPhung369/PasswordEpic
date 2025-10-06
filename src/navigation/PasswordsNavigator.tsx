@@ -5,7 +5,7 @@ import { AddPasswordScreen } from '../screens/main/AddPasswordScreen';
 import { EditPasswordScreen } from '../screens/main/EditPasswordScreen';
 
 export type PasswordsStackParamList = {
-  PasswordsList: undefined;
+  PasswordsList: { successMessage?: string } | undefined;
   AddPassword: { restoreData?: boolean } | undefined;
   EditPassword: { passwordId: string };
 };

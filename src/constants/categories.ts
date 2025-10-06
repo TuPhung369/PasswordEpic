@@ -1,73 +1,73 @@
 import { PasswordCategoryExtended } from '../types/password';
 
-// Default category icons (using common icon names)
+// Default category icons (using Ionicons names)
 export const CATEGORY_ICONS = {
   // Social & Communication
-  social: 'people-outline',
-  communication: 'chatbubbles-outline',
-  messaging: 'chatbox-outline',
+  social: 'people',
+  communication: 'chat',
+  messaging: 'message',
 
   // Work & Business
-  work: 'briefcase-outline',
-  business: 'business-outline',
-  professional: 'document-text-outline',
+  work: 'people',
+  business: 'movie',
+  professional: 'person',
 
   // Financial
-  banking: 'card-outline',
-  finance: 'analytics-outline',
-  investment: 'trending-up-outline',
-  cryptocurrency: 'logo-bitcoin',
+  banking: 'account-balance',
+  finance: 'attach-money',
+  investment: 'trending-up',
+  cryptocurrency: 'monetization-on',
 
   // Entertainment
-  entertainment: 'play-circle-outline',
-  gaming: 'game-controller-outline',
-  streaming: 'tv-outline',
-  music: 'musical-notes-outline',
+  entertainment: 'movie',
+  gaming: 'games',
+  streaming: 'tv',
+  music: 'music-note',
 
   // Shopping & Commerce
-  shopping: 'bag-outline',
-  ecommerce: 'storefront-outline',
-  retail: 'pricetag-outline',
+  shopping: 'shopping-cart',
+  ecommerce: 'store',
+  retail: 'local-offer',
 
   // Education & Learning
-  education: 'school-outline',
-  learning: 'library-outline',
-  research: 'search-outline',
+  education: 'school',
+  learning: 'library-books',
+  research: 'search',
 
   // Health & Medical
-  health: 'medical-outline',
-  fitness: 'fitness-outline',
-  wellness: 'heart-outline',
+  health: 'local-hospital',
+  fitness: 'fitness-center',
+  wellness: 'favorite',
 
   // Travel & Transportation
-  travel: 'airplane-outline',
-  transportation: 'car-outline',
-  hotel: 'bed-outline',
+  travel: 'flight',
+  transportation: 'directions-car',
+  hotel: 'hotel',
 
   // Technology & Development
-  development: 'code-slash-outline',
-  technology: 'hardware-chip-outline',
-  cloud: 'cloud-outline',
-  server: 'server-outline',
+  development: 'code',
+  technology: 'computer',
+  cloud: 'cloud',
+  server: 'storage',
 
   // Utilities & Services
-  utilities: 'construct-outline',
-  services: 'cog-outline',
-  subscription: 'calendar-outline',
+  utilities: 'build',
+  services: 'settings',
+  subscription: 'event',
 
   // Personal
-  personal: 'person-outline',
-  family: 'home-outline',
-  hobby: 'color-palette-outline',
+  personal: 'person',
+  family: 'home',
+  hobby: 'palette',
 
   // Security & Privacy
-  security: 'shield-checkmark-outline',
-  privacy: 'eye-off-outline',
-  vpn: 'lock-closed-outline',
+  security: 'security',
+  privacy: 'visibility-off',
+  vpn: 'vpn-key',
 
   // Default
-  default: 'folder-outline',
-  other: 'ellipsis-horizontal-outline',
+  default: 'folder',
+  other: 'more-horiz',
 } as const;
 
 // Default category colors

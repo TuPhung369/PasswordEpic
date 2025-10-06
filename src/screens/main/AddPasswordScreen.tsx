@@ -19,7 +19,9 @@ import ErrorBoundary from '../../components/ErrorBoundary';
 import Toast from '../../components/Toast';
 import { PasswordEntry } from '../../types/password';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
+import { PasswordValidationService } from '../../services/passwordValidationService';
 import { NavigationPersistenceService } from '../../services/navigationPersistenceService';
+import { calculateSecurityScore } from '../../utils/passwordUtils';
 
 type AddPasswordScreenNavigationProp = NativeStackNavigationProp<
   PasswordsStackParamList,
@@ -47,7 +49,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     password: '',
     website: '',
     notes: '',
-    category: 'General', // Match default value in PasswordForm
+    category: 'Other', // Match default value in PasswordForm
     tags: [],
     customFields: [],
     isFavorite: false,
@@ -110,7 +112,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       formData.website ||
       formData.notes ||
       // Don't count default category value as unsaved change
-      (formData.category && formData.category !== 'General') ||
+      (formData.category && formData.category !== 'Other') ||
       (formData.tags && formData.tags.length > 0) ||
       (formData.customFields && formData.customFields.length > 0)
     );
@@ -172,8 +174,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
           currentFormData.password ||
           currentFormData.website ||
           currentFormData.notes ||
-          (currentFormData.category &&
-            currentFormData.category !== 'General') ||
+          (currentFormData.category && currentFormData.category !== 'Other') ||
           (currentFormData.tags && currentFormData.tags.length > 0) ||
           (currentFormData.customFields &&
             currentFormData.customFields.length > 0)
@@ -275,8 +276,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
           currentFormData.password ||
           currentFormData.website ||
           currentFormData.notes ||
-          (currentFormData.category &&
-            currentFormData.category !== 'General') ||
+          (currentFormData.category && currentFormData.category !== 'Other') ||
           (currentFormData.tags && currentFormData.tags.length > 0) ||
           (currentFormData.customFields &&
             currentFormData.customFields.length > 0)
@@ -376,8 +376,15 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   };
 
   const isFormValid = useCallback((): boolean => {
-    return !!(formData.title && formData.title.trim().length > 0);
-  }, [formData.title]);
+    console.log('🔍 isFormValid check:', {
+      formData,
+      hasFormData: !!formData,
+      title: formData?.title,
+      titleLength: formData?.title?.trim()?.length,
+      isValid: !!(formData?.title && formData.title.trim().length > 0),
+    });
+    return !!(formData?.title && formData.title.trim().length > 0);
+  }, [formData]);
 
   const handleSave = async () => {
     if (!isFormValid()) {
@@ -391,6 +398,25 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     setIsSaving(true);
 
     try {
+      // Create temporary password entry for security score calculation
+      const tempPasswordEntry: PasswordEntry = {
+        id: 'temp',
+        title: formData.title!.trim(),
+        username: formData.username || '',
+        password: formData.password || '',
+        website: formData.website || '',
+        notes: formData.notes || '',
+        category: formData.category || '',
+        tags: formData.tags || [],
+        customFields: formData.customFields || [],
+        isFavorite: formData.isFavorite || false,
+        accessCount: 0,
+        frequencyScore: 0,
+        passwordHistory: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
       const newPasswordEntry: Omit<
         PasswordEntry,
         'id' | 'createdAt' | 'updatedAt'
@@ -407,20 +433,25 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
         // Initialize tracking fields
         accessCount: 0,
         frequencyScore: 0,
+        // Initialize password history (empty for new entries)
+        passwordHistory: [],
         // Initialize audit data if password is provided
         auditData: formData.password
           ? {
-              passwordStrength: {
-                score: 0,
-                label: 'Unknown',
-                color: theme.textSecondary,
-                feedback: [],
-                crackTime: 'Unknown',
-              },
+              passwordStrength:
+                PasswordValidationService.analyzePasswordStrength(
+                  formData.password,
+                ),
               duplicateCount: 0,
               compromisedCount: 0,
               lastPasswordChange: new Date(),
-              securityScore: 0,
+              securityScore: calculateSecurityScore(tempPasswordEntry),
+              recommendedAction:
+                PasswordValidationService.analyzePasswordStrength(
+                  formData.password,
+                ).score < 2
+                  ? 'change_password'
+                  : 'none',
             }
           : undefined,
       };
@@ -434,22 +465,23 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
         console.error('Failed to clear temp form data:', error);
       }
 
-      // Show success toast and navigate back automatically
-      setToastType('success');
-      setToastMessage('Password entry has been created successfully.');
-      setShowToast(true);
-
-      // Navigate back after a short delay to let user see the toast
-      setTimeout(() => {
-        navigation.goBack();
-      }, 1500);
+      // Reset navigation stack to PasswordsList with success message
+      // Don't set isSaving(false) here as navigation.reset will unmount the component
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: 'PasswordsList',
+            params: { successMessage: 'Password created successfully!' },
+          },
+        ],
+      });
     } catch (error) {
       console.error('Error creating password:', error);
       setToastType('error');
       setToastMessage('Failed to create password entry. Please try again.');
       setShowToast(true);
-    } finally {
-      setIsSaving(false);
+      setIsSaving(false); // Only reset loading state on error
     }
   };
 
@@ -512,6 +544,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
             password={formData as PasswordEntry}
             onSave={handleFormSave}
             onCancel={handleCancel}
+            onDataChange={handleFormSave}
             isEditing={false}
             enableAutoSave={false}
           />

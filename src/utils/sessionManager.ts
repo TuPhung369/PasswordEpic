@@ -37,11 +37,12 @@ class SessionManager {
       }
       this.lastActiveTime = now;
     } else if (nextAppState === 'background' || nextAppState === 'inactive') {
-      // Clear sensitive data when app goes to background
+      // 🔒 MODIFIED: Don't clear cache immediately on background
+      // Only clear after extended inactivity for better UX
       console.log(
-        '🔒 SessionManager: App backgrounded, clearing sensitive session data',
+        '🔒 SessionManager: App backgrounded - cache will clear after timeout',
       );
-      this.clearSensitiveData();
+      // Remove immediate cache clear: this.clearSensitiveData();
       this.lastActiveTime = now;
     }
   };

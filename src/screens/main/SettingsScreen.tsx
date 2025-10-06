@@ -31,6 +31,8 @@ import { signOut } from '../../services/authService';
 import { useBiometric } from '../../hooks/useBiometric';
 import { useSecurity } from '../../hooks/useSecurity';
 import SecurityWarningModal from '../../components/SecurityWarningModal';
+import { clearCorruptedPasswords } from '../../utils/clearCorruptedPasswords';
+import { CategoryService } from '../../services/categoryService';
 
 // Memoized SettingItem để tránh re-render
 const SettingItem = React.memo<{
@@ -235,6 +237,75 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
+  const handleClearCorruptedData = async () => {
+    Alert.alert(
+      '⚠️ Clear Corrupted Data',
+      'This will delete all encrypted passwords that cannot be decrypted. This action cannot be undone.\n\nUse this if you see decryption errors after reinstalling the app.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear Data',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('🗑️ User requested to clear corrupted data');
+              const result = await clearCorruptedPasswords();
+
+              if (result.success) {
+                Alert.alert(
+                  '✅ Success',
+                  'All encrypted data has been cleared. You can now create new passwords.',
+                  [{ text: 'OK' }],
+                );
+              } else {
+                Alert.alert(
+                  '❌ Error',
+                  `Failed to clear data: ${result.error}`,
+                  [{ text: 'OK' }],
+                );
+              }
+            } catch (error: any) {
+              console.error('Failed to clear corrupted data:', error);
+              Alert.alert('❌ Error', `An error occurred: ${error.message}`, [
+                { text: 'OK' },
+              ]);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleResetCategories = async () => {
+    Alert.alert(
+      '🔄 Reset Categories',
+      'This will reset all categories to default settings with updated icons. Custom categories will be removed.\n\nYour passwords will NOT be affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('🔄 User requested to reset categories');
+              await CategoryService.resetToDefaultCategories();
+              Alert.alert(
+                '✅ Success',
+                'Categories have been reset to default with updated icons.',
+                [{ text: 'OK' }],
+              );
+            } catch (error: any) {
+              console.error('Failed to reset categories:', error);
+              Alert.alert('❌ Error', `An error occurred: ${error.message}`, [
+                { text: 'OK' },
+              ]);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleLogout = async () => {
     try {
       // Sign out from Firebase and Google
@@ -314,22 +385,29 @@ export const SettingsScreen: React.FC = () => {
           {/* Auto Lock Selector */}
           <View
             style={[
-              styles.autoLockContainer,
-              { backgroundColor: theme.surface },
+              styles.settingItem,
+              { backgroundColor: theme.card, borderColor: theme.border },
             ]}
           >
-            <Text style={[styles.settingLabel, { color: theme.text }]}>
-              Auto-Lock
-            </Text>
-            <Text
-              style={[
-                styles.settingDescription,
-                { color: theme.textSecondary },
-              ]}
+            <View
+              style={[styles.settingIcon, { backgroundColor: theme.surface }]}
             >
-              Automatically lock app with biometric authentication after
-              inactivity
-            </Text>
+              <MaterialIcons
+                name="lock-clock"
+                size={24}
+                color={theme.primary}
+              />
+            </View>
+            <View style={styles.settingContent}>
+              <Text style={[styles.settingTitle, { color: theme.text }]}>
+                Auto-Lock
+              </Text>
+              <Text
+                style={[styles.settingSubtitle, { color: theme.textSecondary }]}
+              >
+                Automatically lock app after inactivity
+              </Text>
+            </View>
             <AutoLockSelector
               currentValue={security.autoLockTimeout}
               onValueChange={value => {
@@ -623,6 +701,35 @@ export const SettingsScreen: React.FC = () => {
           />
         </View>
 
+        {/* Danger Zone */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.error }]}>
+            Danger Zone
+          </Text>
+
+          <SettingItem
+            icon="refresh"
+            title="Reset Categories"
+            subtitle="Reset all categories to default with updated icons"
+            theme={theme}
+            onPress={handleResetCategories}
+            rightElement={
+              <MaterialIcons name="info" size={24} color={theme.primary} />
+            }
+          />
+
+          <SettingItem
+            icon="delete-sweep"
+            title="Clear Corrupted Data"
+            subtitle="Delete all encrypted passwords (use if decryption fails)"
+            theme={theme}
+            onPress={handleClearCorruptedData}
+            rightElement={
+              <MaterialIcons name="warning" size={24} color={theme.warning} />
+            }
+          />
+        </View>
+
         {/* Logout */}
         <TouchableOpacity
           style={[
@@ -744,6 +851,7 @@ const styles = StyleSheet.create({
   },
   settingContent: {
     flex: 1,
+    marginRight: 12,
   },
   settingTitle: {
     fontSize: 16,
@@ -754,22 +862,6 @@ const styles = StyleSheet.create({
   settingSubtitle: {
     fontSize: 14,
     color: '#8E8E93',
-  },
-  autoLockContainer: {
-    padding: 16,
-    marginHorizontal: 20,
-    marginBottom: 8,
-    borderRadius: 12,
-  },
-  settingLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  settingDescription: {
-    fontSize: 14,
-    marginBottom: 12,
-    lineHeight: 20,
   },
   logoutButton: {
     flexDirection: 'row',

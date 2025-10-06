@@ -213,6 +213,23 @@ export class CategoryService {
   }
 
   /**
+   * Reset categories to default (useful after icon updates)
+   */
+  public static async resetToDefaultCategories(): Promise<void> {
+    try {
+      console.log('🔄 Resetting categories to default...');
+      this.categories = this.createDefaultCategories();
+      await this.saveCategories();
+      this.statsCache.clear();
+      await this.saveCategoryStats();
+      console.log('✅ Categories reset to default successfully');
+    } catch (error) {
+      console.error('❌ Failed to reset categories:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Update category usage statistics
    */
   public static async updateCategoryUsage(

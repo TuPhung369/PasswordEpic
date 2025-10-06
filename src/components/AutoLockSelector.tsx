@@ -166,41 +166,26 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
     }, 300);
   };
 
+  const currentOption = AUTO_LOCK_OPTIONS.find(
+    opt => opt.value === currentValue,
+  );
+
   return (
     <>
       {/* Dropdown Trigger */}
       <TouchableOpacity
-        style={[
-          styles.dropdownTrigger,
-          {
-            backgroundColor: theme.surface,
-            borderColor: theme.border,
-          },
-          disabled && styles.disabled,
-        ]}
+        style={[styles.dropdownTrigger, disabled && styles.disabled]}
         onPress={() => !disabled && handleModalOpen()}
         activeOpacity={0.7}
       >
         <View style={styles.triggerContent}>
-          <View style={styles.triggerLeft}>
-            <MaterialIcons name="timer" size={24} color={theme.primary} />
-            <View style={styles.triggerTextContainer}>
-              <Text
-                style={[styles.triggerTitle, { color: theme.text }]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                Auto-Lock
-              </Text>
-              <Text
-                style={[styles.triggerSubtitle, { color: theme.textSecondary }]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                Biometric lock timeout
-              </Text>
-            </View>
-          </View>
+          <Text
+            style={[styles.triggerValue, { color: theme.text }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {currentOption?.label || 'Select timeout'}
+          </Text>
           <MaterialIcons
             name="keyboard-arrow-down"
             size={24}
@@ -347,11 +332,7 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
 
 const styles = StyleSheet.create({
   dropdownTrigger: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    minHeight: 70, // Increase height to accommodate text better
+    // No border, no background - clean like a Switch
   },
   disabled: {
     opacity: 0.6,
@@ -359,29 +340,12 @@ const styles = StyleSheet.create({
   triggerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 46, // Ensure minimum height for content
+    justifyContent: 'flex-end',
+    gap: 8,
   },
-  triggerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    overflow: 'hidden', // Prevent overflow
-  },
-  triggerTextContainer: {
-    marginLeft: 12,
-    flex: 1,
-    marginRight: 8, // Add margin to prevent overlap with arrow
-  },
-  triggerTitle: {
+  triggerValue: {
     fontSize: 16,
-    fontWeight: '600',
-    flexShrink: 1, // Allow text to shrink if needed
-  },
-  triggerSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-    flexShrink: 1, // Allow text to shrink if needed
+    fontWeight: '500',
   },
   modalOverlay: {
     flex: 1,

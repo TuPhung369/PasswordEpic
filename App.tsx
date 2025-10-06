@@ -12,6 +12,7 @@ import { ThemeProvider } from './src/contexts/ThemeContext';
 import { initializeAuth } from './src/services/authService';
 import { initializeFirebase } from './src/services/firebase';
 import { initializeGoogleSignIn } from './src/services/googleAuthNative';
+import { restoreDynamicMasterPasswordSession } from './src/services/dynamicMasterPasswordService';
 import { ActivityIndicator, View, StyleSheet, AppState } from 'react-native';
 import { NavigationPersistenceService } from './src/services/navigationPersistenceService';
 import { sessionManager } from './src/utils/sessionManager';
@@ -99,6 +100,29 @@ const App: React.FC = () => {
         // Initialize session manager for security
         sessionManager.init();
         console.log('✅ Session manager initialized');
+
+        // Restore dynamic master password session if exists
+        const restoreResult = await restoreDynamicMasterPasswordSession();
+        if (restoreResult.success && restoreResult.restored) {
+          console.log(
+            `✅ Dynamic master password session restored: ${restoreResult.sessionId?.substring(
+              0,
+              20,
+            )}...`,
+          );
+        } else {
+          console.log(
+            `📭 Session restore result: ${
+              restoreResult.error || 'No session to restore'
+            }`,
+          );
+        }
+
+        // Debug session info for troubleshooting
+        if (__DEV__) {
+          const { debugSessionInfo } = require('./src/utils/debugSessionInfo');
+          await debugSessionInfo();
+        }
 
         // Try Firebase initialization
         try {

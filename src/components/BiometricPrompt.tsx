@@ -1,4 +1,6 @@
 import React from 'react';
+import { View, StyleSheet, Modal, TouchableOpacity } from 'react-native';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useBiometric } from '../hooks/useBiometric';
 
 interface BiometricPromptProps {
@@ -102,7 +104,70 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
     }
   }, [visible]);
 
-  // This component doesn't render any UI - it only triggers native biometric prompt
-  // All UI is handled by the native biometric system (fingerprint/face/pattern)
-  return null;
+  // Render a simple overlay with close button (native biometric prompt will show on top)
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="none"
+      onRequestClose={onClose}
+    >
+      <View style={styles.overlay}>
+        {/* Spacer to push content to bottom */}
+        <View style={styles.topSpacer} />
+
+        {/* Close button positioned ABOVE the bottom sheet area */}
+        <View style={styles.closeButtonContainer}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={onClose}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons name="close" size={28} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Bottom sheet area (where native biometric prompt appears) */}
+        <View style={styles.bottomSheetArea} />
+      </View>
+    </Modal>
+  );
 };
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end', // Align to bottom
+  },
+  topSpacer: {
+    flex: 1, // Takes up remaining space (top 65% of screen)
+  },
+  closeButtonContainer: {
+    width: '100%',
+    alignItems: 'flex-end', // Align button to right
+    paddingRight: 20,
+    paddingBottom: 10, // Small gap between button and modal
+  },
+  bottomSheetArea: {
+    width: '100%',
+    height: '35%', // Bottom 1/3 of screen where biometric prompt appears
+  },
+  closeButton: {
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 24,
+    backgroundColor: '#007AFF', // iOS blue background
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+    zIndex: 10000, // Ensure it's on top
+  },
+});

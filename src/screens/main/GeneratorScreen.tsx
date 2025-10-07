@@ -16,32 +16,74 @@ import { RootState } from '../../store';
 import { updateGeneratorSettings } from '../../store/slices/settingsSlice';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useTheme } from '../../contexts/ThemeContext';
+import { usePasswordGenerator } from '../../hooks/usePasswordGenerator';
+import { PasswordStrengthMeter } from '../../components/PasswordStrengthMeter';
+import { GeneratorPresets } from '../../components/GeneratorPresets';
+import {
+  PasswordTemplates,
+  PasswordTemplate,
+} from '../../components/PasswordTemplates';
+import { GeneratorPreset } from '../../services/passwordGeneratorService';
 
 export const GeneratorScreen: React.FC = () => {
   const dispatch = useAppDispatch();
   const { generator } = useAppSelector((state: RootState) => state.settings);
   const { theme } = useTheme();
-  const [generatedPassword, setGeneratedPassword] = useState('');
+  const {
+    currentPassword: generatedPassword,
+    generatePassword: generatePasswordAsync,
+    usePreset: applyPreset,
+    copyToClipboard,
+  } = usePasswordGenerator();
+
   const [length, setLength] = useState(generator.defaultLength);
+  const [selectedPreset, setSelectedPreset] = useState<GeneratorPreset | null>(
+    null,
+  );
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<PasswordTemplate | null>(null);
 
-  const generatePassword = () => {
-    let chars = '';
-
-    if (generator.includeUppercase) chars += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    if (generator.includeLowercase) chars += 'abcdefghijklmnopqrstuvwxyz';
-    if (generator.includeNumbers) chars += '0123456789';
-    if (generator.includeSymbols) chars += '!@#$%^&*()_+-=[]{}|;:,.<>?';
-
-    // chars should never be empty now due to validation
-    let result = '';
-    for (let i = 0; i < length; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    setGeneratedPassword(result);
+  const handleSelectPreset = async (preset: GeneratorPreset) => {
+    setSelectedPreset(preset);
+    await applyPreset(preset.id);
   };
-  const copyToClipboard = () => {
-    // TODO: Implement clipboard functionality
-    console.log('Copied to clipboard:', generatedPassword);
+
+  const handleSelectTemplate = async (template: PasswordTemplate) => {
+    setSelectedTemplate(template);
+    // Apply template settings to generator
+    dispatch(
+      updateGeneratorSettings({
+        defaultLength: template.settings.length,
+        includeUppercase: template.settings.includeUppercase,
+        includeLowercase: template.settings.includeLowercase,
+        includeNumbers: template.settings.includeNumbers,
+        includeSymbols: template.settings.includeSymbols,
+      }),
+    );
+    setLength(template.settings.length);
+  };
+
+  const handleGeneratePassword = async () => {
+    try {
+      await generatePasswordAsync({
+        length,
+        includeUppercase: generator.includeUppercase,
+        includeLowercase: generator.includeLowercase,
+        includeNumbers: generator.includeNumbers,
+        includeSymbols: generator.includeSymbols,
+        excludeSimilar: true,
+        excludeAmbiguous: false,
+      });
+    } catch (error) {
+      console.error('Error generating password:', error);
+    }
+  };
+
+  const handleCopyToClipboard = async () => {
+    if (generatedPassword) {
+      await copyToClipboard(generatedPassword);
+    }
   };
 
   const updateLength = (newLength: number) => {
@@ -169,7 +211,7 @@ export const GeneratorScreen: React.FC = () => {
                       styles.copyButton,
                       { backgroundColor: theme.surface },
                     ]}
-                    onPress={copyToClipboard}
+                    onPress={handleCopyToClipboard}
                   >
                     <MaterialIcons
                       name="content-copy"
@@ -181,13 +223,20 @@ export const GeneratorScreen: React.FC = () => {
               </View>
             </View>
 
+            {generatedPassword && (
+              <PasswordStrengthMeter
+                password={generatedPassword}
+                compact={true}
+              />
+            )}
+
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={[
                   styles.generateButton,
                   { backgroundColor: theme.primary },
                 ]}
-                onPress={generatePassword}
+                onPress={handleGeneratePassword}
               >
                 <MaterialIcons name="refresh" size={20} color="#ffffff" />
                 <Text style={styles.generateButtonText}>
@@ -210,6 +259,41 @@ export const GeneratorScreen: React.FC = () => {
                 </TouchableOpacity>
               )}
             </View>
+
+            <GeneratorPresets
+              onSelectPreset={handleSelectPreset}
+              currentPreset={selectedPreset}
+              grid={true}
+            />
+
+            {/* Templates Button */}
+            <TouchableOpacity
+              style={[
+                styles.templatesButton,
+                { backgroundColor: theme.card, borderColor: theme.border },
+              ]}
+              onPress={() => setShowTemplates(true)}
+            >
+              <MaterialIcons name="category" size={20} color={theme.primary} />
+              <Text style={[styles.templatesButtonText, { color: theme.text }]}>
+                Choose Template
+              </Text>
+              <Text
+                style={[
+                  styles.templatesButtonSubtitle,
+                  { color: theme.textSecondary },
+                ]}
+              >
+                {selectedTemplate
+                  ? selectedTemplate.name
+                  : 'Banking, Social, Email, etc.'}
+              </Text>
+              <MaterialIcons
+                name="chevron-right"
+                size={20}
+                color={theme.textSecondary}
+              />
+            </TouchableOpacity>
 
             <View style={styles.settings}>
               <Text style={[styles.settingsTitle, { color: theme.text }]}>
@@ -386,6 +470,14 @@ export const GeneratorScreen: React.FC = () => {
           </View>
         </TouchableWithoutFeedback>
       </ScrollView>
+
+      {/* Password Templates Modal */}
+      <PasswordTemplates
+        visible={showTemplates}
+        onClose={() => setShowTemplates(false)}
+        onSelectTemplate={handleSelectTemplate}
+        currentTemplate={selectedTemplate}
+      />
     </SafeAreaView>
   );
 };
@@ -556,5 +648,28 @@ const styles = StyleSheet.create({
   },
   disabledSetting: {
     opacity: 0.6,
+  },
+  templatesButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1C1C1E',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginBottom: 24,
+    borderWidth: 0.5,
+    borderColor: '#38383A',
+    gap: 12,
+  },
+  templatesButtonText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  templatesButtonSubtitle: {
+    fontSize: 12,
+    color: '#8E8E93',
+    marginRight: 8,
   },
 });

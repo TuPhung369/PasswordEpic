@@ -59,14 +59,14 @@ export class EncryptedDatabaseService {
     }
 
     // Derive new key with optimized iterations for mobile
-    console.log('🔑 [DatabaseCache] Computing new derived key...');
-    const startTime = Date.now();
+    // console.log('🔑 [DatabaseCache] Computing new derived key...');
+    // const startTime = Date.now();
     const derivedKey = deriveKeyFromPassword(masterPassword, salt, 2000); // Ultra-fast for frequent ops
-    const duration = Date.now() - startTime;
+    // const duration = Date.now() - startTime;
 
     // Cache the result
     this.keyCache.set(cacheKey, { key: derivedKey, timestamp: Date.now() });
-    console.log(`✅ [DatabaseCache] Key cached in ${duration}ms`);
+    // console.log(`✅ [DatabaseCache] Key cached in ${duration}ms`);
 
     return derivedKey;
   }
@@ -91,7 +91,7 @@ export class EncryptedDatabaseService {
     masterPassword: string,
   ): Promise<void> {
     const startTime = Date.now();
-    console.log('🔐 [Encryption] Starting password encryption...');
+    // console.log('🔐 [Encryption] Starting password encryption...');
 
     try {
       // Generate unique salt and IV for this entry

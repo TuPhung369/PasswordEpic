@@ -51,7 +51,7 @@ export const MainNavigator: React.FC = () => {
   const getTabBarStyle = (route: any) => {
     // Lấy tên route con đang active trong PasswordsNavigator
     const routeName = getFocusedRouteNameFromRoute(route) ?? 'PasswordsList';
-    console.log('🔍 getTabBarStyle - routeName:', routeName); // Debug log
+    // console.log('🔍 getTabBarStyle - routeName:', routeName); // Debug log
     const baseStyle = {
       ...styles.tabBar,
       backgroundColor: theme.card,
@@ -63,7 +63,7 @@ export const MainNavigator: React.FC = () => {
       routeName === 'AddPassword' || routeName === 'EditPassword';
 
     if (shouldHide) {
-      console.log('🚫 Hiding tab bar for route:', routeName); // Debug log
+      // console.log('🚫 Hiding tab bar for route:', routeName); // Debug log
       return {
         ...baseStyle,
         height: 0,
@@ -73,7 +73,7 @@ export const MainNavigator: React.FC = () => {
         overflow: 'hidden' as 'hidden',
       };
     }
-    console.log('✅ Showing tab bar for route:', routeName); // Debug log
+    // console.log('✅ Showing tab bar for route:', routeName); // Debug log
     return baseStyle;
   };
 

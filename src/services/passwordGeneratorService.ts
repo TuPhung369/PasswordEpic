@@ -19,6 +19,7 @@ export interface GeneratorPreset {
   id: string;
   name: string;
   description: string;
+  icon: string;
   options: PasswordGeneratorOptions;
   color: string;
 }
@@ -202,73 +203,26 @@ export class PasswordGeneratorService {
 
   // Quick presets for common scenarios
   public getPresets(): GeneratorPreset[] {
-    return [
-      {
-        id: 'quick-strong',
-        name: 'Strong',
-        description: 'Balanced security and usability',
-        color: '#34C759',
-        options: {
-          length: 12,
-          includeUppercase: true,
-          includeLowercase: true,
-          includeNumbers: true,
-          includeSymbols: true,
-          excludeSimilar: true,
-          excludeAmbiguous: false,
-          minNumbers: 2,
-          minSymbols: 1,
-        },
+    // Import presets from component to avoid duplication
+    const { DEFAULT_PRESETS } = require('../components/GeneratorPresets');
+
+    // Convert component presets to service format (add missing properties)
+    return DEFAULT_PRESETS.map((preset: any) => ({
+      ...preset,
+      options: {
+        ...preset.options,
+        excludeSimilar:
+          preset.options.excludeSimilar !== undefined
+            ? preset.options.excludeSimilar
+            : true,
+        excludeAmbiguous:
+          preset.options.excludeAmbiguous !== undefined
+            ? preset.options.excludeAmbiguous
+            : false,
+        minNumbers: preset.options.minNumbers || 0,
+        minSymbols: preset.options.minSymbols || 0,
       },
-      {
-        id: 'quick-secure',
-        name: 'Ultra Secure',
-        description: 'Maximum security protection',
-        color: '#FF3B30',
-        options: {
-          length: 16,
-          includeUppercase: true,
-          includeLowercase: true,
-          includeNumbers: true,
-          includeSymbols: true,
-          excludeSimilar: true,
-          excludeAmbiguous: true,
-          minNumbers: 3,
-          minSymbols: 2,
-        },
-      },
-      {
-        id: 'quick-simple',
-        name: 'Simple',
-        description: 'Easy to type and remember',
-        color: '#007AFF',
-        options: {
-          length: 10,
-          includeUppercase: true,
-          includeLowercase: true,
-          includeNumbers: true,
-          includeSymbols: false,
-          excludeSimilar: true,
-          excludeAmbiguous: true,
-          minNumbers: 2,
-        },
-      },
-      {
-        id: 'quick-pin',
-        name: 'PIN Code',
-        description: 'Numeric PIN for quick access',
-        color: '#FF9500',
-        options: {
-          length: 6,
-          includeUppercase: false,
-          includeLowercase: false,
-          includeNumbers: true,
-          includeSymbols: false,
-          excludeSimilar: false,
-          excludeAmbiguous: false,
-        },
-      },
-    ];
+    }));
   }
 
   // Generate password using specified options
@@ -277,8 +231,18 @@ export class PasswordGeneratorService {
     templateId?: string,
   ): Promise<{ password: string; strength: PasswordStrengthResult }> {
     try {
+      console.log(
+        '🔧 Service: Generating secure password with options:',
+        options,
+      );
+
       const password = generateSecurePassword(options);
       const strength = calculatePasswordStrength(password);
+
+      console.log(
+        '🔧 Service: Generated password with strength score:',
+        strength.score,
+      );
 
       // Add to history
       const historyEntry: GenerationHistory = {
@@ -320,62 +284,380 @@ export class PasswordGeneratorService {
 
   // Generate pronounceable passwords
   public generatePronounceablePassword(length: number = 12): string {
-    const consonants = 'bcdfghjklmnpqrstvwxyz';
-    const vowels = 'aeiou';
-    const numbers = '0123456789';
-    const symbols = '!@#$%^&*';
+    console.log(
+      `🔧 Service: Generating pronounceable password with length ${length}`,
+    );
 
+    // Common syllables that are easy to pronounce
+    const syllables = [
+      'ba',
+      'be',
+      'bi',
+      'bo',
+      'bu',
+      'by',
+      'ca',
+      'ce',
+      'ci',
+      'co',
+      'cu',
+      'cy',
+      'da',
+      'de',
+      'di',
+      'do',
+      'du',
+      'dy',
+      'fa',
+      'fe',
+      'fi',
+      'fo',
+      'fu',
+      'fy',
+      'ga',
+      'ge',
+      'gi',
+      'go',
+      'gu',
+      'gy',
+      'ha',
+      'he',
+      'hi',
+      'ho',
+      'hu',
+      'hy',
+      'ka',
+      'ke',
+      'ki',
+      'ko',
+      'ku',
+      'ky',
+      'la',
+      'le',
+      'li',
+      'lo',
+      'lu',
+      'ly',
+      'ma',
+      'me',
+      'mi',
+      'mo',
+      'mu',
+      'my',
+      'na',
+      'ne',
+      'ni',
+      'no',
+      'nu',
+      'ny',
+      'pa',
+      'pe',
+      'pi',
+      'po',
+      'pu',
+      'py',
+      'ra',
+      're',
+      'ri',
+      'ro',
+      'ru',
+      'ry',
+      'sa',
+      'se',
+      'si',
+      'so',
+      'su',
+      'sy',
+      'ta',
+      'te',
+      'ti',
+      'to',
+      'tu',
+      'ty',
+      'va',
+      've',
+      'vi',
+      'vo',
+      'vu',
+      'vy',
+      'wa',
+      'we',
+      'wi',
+      'wo',
+      'wu',
+      'wy',
+      'za',
+      'ze',
+      'zi',
+      'zo',
+      'zu',
+      'zy',
+    ];
+
+    const numbers = '23456789'; // Exclude confusing 0 and 1
     let password = '';
-    let useConsonant = Math.random() > 0.5;
+    let targetLength = length;
 
-    for (let i = 0; i < length; i++) {
-      if (i > 0 && i % 4 === 0) {
-        // Add number or symbol occasionally
-        if (Math.random() > 0.7) {
-          password +=
-            Math.random() > 0.5
-              ? numbers.charAt(Math.floor(Math.random() * numbers.length))
-              : symbols.charAt(Math.floor(Math.random() * symbols.length));
-          continue;
-        }
-      }
+    // Start with capital letter
+    let firstSyllable = syllables[Math.floor(Math.random() * syllables.length)];
+    firstSyllable =
+      firstSyllable.charAt(0).toUpperCase() + firstSyllable.slice(1);
+    password += firstSyllable;
+    targetLength -= firstSyllable.length;
 
-      if (useConsonant) {
-        let char = consonants.charAt(
-          Math.floor(Math.random() * consonants.length),
-        );
-        if (i === 0 || Math.random() > 0.7) {
-          char = char.toUpperCase();
-        }
-        password += char;
-      } else {
-        password += vowels.charAt(Math.floor(Math.random() * vowels.length));
-      }
-
-      useConsonant = !useConsonant;
+    // Add syllables until we reach close to target length
+    while (targetLength > 3) {
+      const syllable = syllables[Math.floor(Math.random() * syllables.length)];
+      password += syllable;
+      targetLength -= syllable.length;
     }
 
+    // Add numbers to reach exact length and improve security
+    while (password.length < length) {
+      if (targetLength <= 2 && Math.random() > 0.3) {
+        // Add number
+        password += numbers.charAt(Math.floor(Math.random() * numbers.length));
+      } else {
+        // Add vowel
+        password += 'aeiou'.charAt(Math.floor(Math.random() * 5));
+      }
+      targetLength--;
+    }
+
+    // Ensure we don't exceed length
+    const finalPassword = password.substring(0, length);
+    console.log(
+      `🔧 Service: Generated pronounceable password "${finalPassword}" (${finalPassword.length} chars)`,
+    );
+    return finalPassword;
+  }
+
+  // Generate memorable passwords using real words + numbers (easier to remember)
+  public generateMemorablePassword(length: number = 12): string {
+    console.log(
+      `🔧 Service: Generating memorable password with length ${length}`,
+    );
+
+    // Simple, common words that are easy to remember
+    const memorableWords = [
+      'Sun',
+      'Moon',
+      'Star',
+      'Sky',
+      'Sea',
+      'Tree',
+      'Cat',
+      'Dog',
+      'Bird',
+      'Fish',
+      'Red',
+      'Blue',
+      'Gold',
+      'Pink',
+      'Green',
+      'White',
+      'Black',
+      'Gray',
+      'Big',
+      'Small',
+      'Fast',
+      'Slow',
+      'Hot',
+      'Cold',
+      'New',
+      'Old',
+      'Good',
+      'Nice',
+      'Cool',
+      'Warm',
+      'Safe',
+      'Happy',
+      'Lucky',
+      'Smart',
+      'Home',
+      'Work',
+      'Play',
+      'Game',
+      'Book',
+      'Key',
+      'Door',
+      'Car',
+      'Love',
+      'Hope',
+      'Dream',
+      'Life',
+      'Time',
+      'Day',
+      'Year',
+      'Way',
+    ];
+
+    const adjectives = [
+      'Bright',
+      'Quick',
+      'Strong',
+      'Sweet',
+      'Gentle',
+      'Brave',
+      'Calm',
+      'Wild',
+      'Soft',
+      'Sharp',
+      'Smooth',
+      'Fresh',
+      'Clean',
+      'Pure',
+      'Rich',
+      'Deep',
+    ];
+
+    let password = '';
+
+    // Strategy: Adjective + Noun + Year/Number
+    if (length >= 10) {
+      // Long password: Adjective + Noun + 4-digit year
+      const adjective =
+        adjectives[Math.floor(Math.random() * adjectives.length)];
+      const noun =
+        memorableWords[Math.floor(Math.random() * memorableWords.length)];
+      const currentYear = new Date().getFullYear();
+      const years = [
+        currentYear - 1,
+        currentYear,
+        currentYear + 1,
+        currentYear + 2,
+      ];
+      const year = years[Math.floor(Math.random() * years.length)];
+
+      password = `${adjective}${noun}${year}`;
+    } else if (length >= 8) {
+      // Medium password: Noun + 3-digit number
+      const noun =
+        memorableWords[Math.floor(Math.random() * memorableWords.length)];
+      const number = Math.floor(Math.random() * 900) + 100; // 100-999
+      password = `${noun}${number}`;
+    } else {
+      // Short password: Noun + 2-digit number
+      const noun =
+        memorableWords[Math.floor(Math.random() * memorableWords.length)];
+      const number = Math.floor(Math.random() * 90) + 10; // 10-99
+      password = `${noun}${number}`;
+    }
+
+    // Adjust length if needed
+    if (password.length > length) {
+      password = password.substring(0, length);
+    } else if (password.length < length) {
+      // Add additional numbers to reach target length
+      while (password.length < length) {
+        password += Math.floor(Math.random() * 10);
+      }
+    }
+
+    console.log(
+      `🔧 Service: Generated memorable password "${password}" (${password.length} chars)`,
+    );
     return password;
   }
 
   // Generate pattern-based passwords (e.g., Word-Number-Symbol-Word)
   public generatePatternPassword(pattern: string): string {
+    console.log(
+      `🔧 Service: Generating pattern password with pattern "${pattern}"`,
+    );
+
     const words = [
+      'Blue',
+      'Red',
+      'Green',
+      'Gold',
+      'Silver',
+      'Bright',
+      'Dark',
+      'Light',
+      'Fast',
+      'Quick',
+      'Strong',
+      'Smart',
+      'Cool',
+      'Hot',
+      'Big',
+      'Small',
       'Sun',
       'Moon',
       'Star',
       'Ocean',
-      'Mountain',
       'River',
+      'Mountain',
       'Forest',
       'Sky',
       'Wind',
       'Fire',
+      'Earth',
+      'Water',
+      'Cloud',
+      'Snow',
+      'Rain',
+      'Storm',
+      'Home',
+      'House',
+      'City',
+      'Town',
+      'Road',
+      'Path',
+      'Bridge',
+      'Garden',
+      'Tree',
+      'Flower',
+      'Bird',
+      'Cat',
+      'Dog',
+      'Lion',
+      'Eagle',
+      'Wolf',
+      'Book',
+      'Key',
+      'Door',
+      'Window',
+      'Phone',
+      'Car',
+      'Bike',
+      'Train',
+      'Music',
+      'Song',
+      'Dance',
+      'Game',
+      'Play',
+      'Fun',
+      'Joy',
+      'Love',
     ];
+
+    const networkWords = [
+      'Net',
+      'Web',
+      'Link',
+      'Connect',
+      'WiFi',
+      'Signal',
+      'Network',
+      'Online',
+      'Data',
+      'Speed',
+      'Fast',
+      'Secure',
+      'Safe',
+      'Access',
+      'Guest',
+      'Home',
+    ];
+
     const numbers = '123456789';
     const symbols = '!@#$%^&*';
+    const currentYear = new Date().getFullYear();
+    const years = [currentYear - 1, currentYear, currentYear + 1];
 
-    return pattern
+    const result = pattern
       .replace(/W/g, () => words[Math.floor(Math.random() * words.length)])
       .replace(/w/g, () =>
         words[Math.floor(Math.random() * words.length)].toLowerCase(),
@@ -386,7 +668,19 @@ export class PasswordGeneratorService {
       .replace(/S/g, () =>
         symbols.charAt(Math.floor(Math.random() * symbols.length)),
       )
-      .replace(/D/g, () => Math.floor(Math.random() * 100).toString());
+      .replace(/D/g, () => Math.floor(Math.random() * 100).toString())
+      .replace(/Y/g, () =>
+        years[Math.floor(Math.random() * years.length)].toString(),
+      )
+      .replace(
+        /Z/g,
+        () => networkWords[Math.floor(Math.random() * networkWords.length)],
+      );
+
+    console.log(
+      `🔧 Service: Generated pattern password "${result}" (${result.length} chars)`,
+    );
+    return result;
   }
 
   // History management

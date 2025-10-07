@@ -16,16 +16,28 @@ export const calculatePasswordStrength = (
 };
 
 /**
- * Generate a secure password with specified options
+ * Enhanced password generation interface
  */
-export const generateSecurePassword = (options: {
+export interface PasswordGenerationOptions {
   length?: number;
   includeUppercase?: boolean;
   includeLowercase?: boolean;
   includeNumbers?: boolean;
   includeSymbols?: boolean;
   excludeSimilar?: boolean;
-}): string => {
+  pronounceable?: boolean;
+  pattern?: string;
+  minNumbers?: number;
+  minSymbols?: number;
+  customCharacters?: string;
+}
+
+/**
+ * Generate a secure password with enhanced options
+ */
+export const generateSecurePassword = (
+  options: PasswordGenerationOptions,
+): string => {
   const {
     length = 16,
     includeUppercase = true,
@@ -33,8 +45,22 @@ export const generateSecurePassword = (options: {
     includeNumbers = true,
     includeSymbols = false,
     excludeSimilar = true,
+    pronounceable = false,
+    pattern,
+    customCharacters,
   } = options;
 
+  // Use pattern-based generation if pattern is provided
+  if (pattern) {
+    return generatePasswordFromPattern(pattern, options);
+  }
+
+  // Use pronounceable generation if requested
+  if (pronounceable) {
+    return generatePronounceablePassword(length, options);
+  }
+
+  // Standard random generation
   let charset = '';
 
   if (includeLowercase) {
@@ -57,6 +83,10 @@ export const generateSecurePassword = (options: {
     charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
   }
 
+  if (customCharacters) {
+    charset += customCharacters;
+  }
+
   if (charset === '') {
     throw new Error('At least one character type must be selected');
   }
@@ -64,6 +94,7 @@ export const generateSecurePassword = (options: {
   let password = '';
   const randomBytes = CryptoJS.lib.WordArray.random(length * 4);
 
+  // Generate base password
   for (let i = 0; i < length; i++) {
     const randomIndex =
       Math.abs(randomBytes.words[i % randomBytes.words.length]) %
@@ -71,7 +102,211 @@ export const generateSecurePassword = (options: {
     password += charset[randomIndex];
   }
 
+  // Ensure minimum requirements are met
+  password = ensureMinimumRequirements(password, options);
+
   return password;
+};
+
+/**
+ * Generate password from pattern (e.g., "Llll-nnnn-LLLL")
+ * L = uppercase letter, l = lowercase letter, n = number, s = symbol
+ */
+export const generatePasswordFromPattern = (
+  pattern: string,
+  options: PasswordGenerationOptions,
+): string => {
+  const { excludeSimilar = true, customCharacters } = options;
+
+  const charSets = {
+    L: excludeSimilar
+      ? 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+      : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+    l: excludeSimilar
+      ? 'abcdefghijkmnopqrstuvwxyz'
+      : 'abcdefghijklmnopqrstuvwxyz',
+    n: excludeSimilar ? '23456789' : '0123456789',
+    s: '!@#$%^&*()_+-=[]{}|;:,.<>?',
+    c: customCharacters || '',
+  };
+
+  let password = '';
+  const randomBytes = CryptoJS.lib.WordArray.random(pattern.length * 4);
+
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i];
+    if (charSets[char as keyof typeof charSets]) {
+      const charset = charSets[char as keyof typeof charSets];
+      if (charset) {
+        const randomIndex =
+          Math.abs(randomBytes.words[i % randomBytes.words.length]) %
+          charset.length;
+        password += charset[randomIndex];
+      }
+    } else {
+      // Literal character (like dash, dot, etc.)
+      password += char;
+    }
+  }
+
+  return password;
+};
+
+/**
+ * Generate pronounceable password using syllable patterns
+ */
+export const generatePronounceablePassword = (
+  length: number,
+  options: PasswordGenerationOptions,
+): string => {
+  const consonants = options.excludeSimilar
+    ? 'bcdfghjkmnpqrstvwxyz'
+    : 'bcdfghjklmnpqrstvwxyz';
+  const vowels = 'aeiou';
+  const numbers = options.excludeSimilar ? '23456789' : '0123456789';
+  const symbols = '!@#$%^&*';
+
+  let password = '';
+  let remaining = length;
+  const randomBytes = CryptoJS.lib.WordArray.random(length * 4);
+  let byteIndex = 0;
+
+  while (remaining > 0) {
+    // Generate syllable pattern (consonant-vowel or vowel-consonant)
+    const useCV =
+      Math.abs(randomBytes.words[byteIndex % randomBytes.words.length]) % 2 ===
+      0;
+    byteIndex++;
+
+    if (useCV && remaining >= 2) {
+      // Consonant-Vowel
+      const consonant =
+        consonants[
+          Math.abs(randomBytes.words[byteIndex % randomBytes.words.length]) %
+            consonants.length
+        ];
+      byteIndex++;
+      const vowel =
+        vowels[
+          Math.abs(randomBytes.words[byteIndex % randomBytes.words.length]) %
+            vowels.length
+        ];
+      byteIndex++;
+
+      password += consonant + vowel;
+      remaining -= 2;
+    } else if (remaining >= 1) {
+      // Single vowel
+      const vowel =
+        vowels[
+          Math.abs(randomBytes.words[byteIndex % randomBytes.words.length]) %
+            vowels.length
+        ];
+      byteIndex++;
+      password += vowel;
+      remaining -= 1;
+    }
+  }
+
+  // Add numbers and symbols if required
+  if (options.includeNumbers && numbers) {
+    const numCount = Math.min(2, Math.floor(length * 0.2));
+    for (let i = 0; i < numCount; i++) {
+      const pos =
+        Math.abs(randomBytes.words[byteIndex % randomBytes.words.length]) %
+        password.length;
+      byteIndex++;
+      const num =
+        numbers[
+          Math.abs(randomBytes.words[byteIndex % randomBytes.words.length]) %
+            numbers.length
+        ];
+      byteIndex++;
+      password = password.slice(0, pos) + num + password.slice(pos + 1);
+    }
+  }
+
+  if (options.includeSymbols && symbols) {
+    const symCount = Math.min(1, Math.floor(length * 0.1));
+    for (let i = 0; i < symCount; i++) {
+      const pos =
+        Math.abs(randomBytes.words[byteIndex % randomBytes.words.length]) %
+        password.length;
+      byteIndex++;
+      const sym =
+        symbols[
+          Math.abs(randomBytes.words[byteIndex % randomBytes.words.length]) %
+            symbols.length
+        ];
+      byteIndex++;
+      password = password.slice(0, pos) + sym + password.slice(pos + 1);
+    }
+  }
+
+  // Capitalize first letter if uppercase is enabled
+  if (options.includeUppercase && password.length > 0) {
+    password = password[0].toUpperCase() + password.slice(1);
+  }
+
+  return password.slice(0, length);
+};
+
+/**
+ * Ensure password meets minimum requirements
+ */
+export const ensureMinimumRequirements = (
+  password: string,
+  options: PasswordGenerationOptions,
+): string => {
+  const { minNumbers = 0, minSymbols = 0 } = options;
+  let result = password;
+
+  // Count current characters
+  const numberCount = (result.match(/\d/g) || []).length;
+  const symbolCount = (result.match(/[!@#$%^&*()_+=[\]{}|;:,.<>?-]/g) || [])
+    .length;
+
+  // Add missing numbers
+  if (numberCount < minNumbers) {
+    const numbersToAdd = minNumbers - numberCount;
+    const numbers = options.excludeSimilar ? '23456789' : '0123456789';
+    const randomBytes = CryptoJS.lib.WordArray.random(numbersToAdd * 4);
+
+    for (let i = 0; i < numbersToAdd && result.length > i; i++) {
+      const randomIndex =
+        Math.abs(randomBytes.words[i % randomBytes.words.length]) %
+        numbers.length;
+      const randomPos =
+        Math.abs(randomBytes.words[(i + 1) % randomBytes.words.length]) %
+        result.length;
+      result =
+        result.slice(0, randomPos) +
+        numbers[randomIndex] +
+        result.slice(randomPos + 1);
+    }
+  }
+
+  // Add missing symbols
+  if (symbolCount < minSymbols) {
+    const symbolsToAdd = minSymbols - symbolCount;
+    const symbols = '!@#$%^&*()_+-=[]{}|;:,.<>?';
+    const randomBytes = CryptoJS.lib.WordArray.random(symbolsToAdd * 4);
+
+    for (let i = 0; i < symbolsToAdd && result.length > i; i++) {
+      const randomIndex =
+        Math.abs(randomBytes.words[i % randomBytes.words.length]) %
+        symbols.length;
+      const randomPos =
+        Math.abs(randomBytes.words[(i + 1) % randomBytes.words.length]) %
+        result.length;
+      result =
+        result.slice(0, randomPos) +
+        symbols[randomIndex] +
+        result.slice(randomPos + 1);
+    }
+  }
+
+  return result;
 };
 
 /**

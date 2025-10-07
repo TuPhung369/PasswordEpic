@@ -74,6 +74,10 @@ export const generateDynamicMasterPassword =
       }
 
       // Step 3: Store user UUID for consistency
+      if (!currentUser.uid || typeof currentUser.uid !== 'string') {
+        throw new Error('Invalid user UID - cannot generate dynamic password');
+      }
+      
       await AsyncStorage.setItem(DYNAMIC_MP_KEYS.USER_UUID, currentUser.uid);
 
       // Step 4: Create session ID from UUID + timestamp
@@ -87,7 +91,7 @@ export const generateDynamicMasterPassword =
           parseInt(loginTimestamp, 10),
         ).toISOString()}`,
       );
-      console.log(`   Session ID: ${sessionId.substring(0, 20)}...`);
+      console.log(`   Session ID: ${sessionId ? sessionId.substring(0, 20) : 'undefined'}...`);
 
       // Step 5: Check cache first
       if (
@@ -116,6 +120,10 @@ export const generateDynamicMasterPassword =
 
       // Step 7: Create dynamic master password
       // Combine: UUID + LoginTimestamp + UserEmail (if available) + SessionSalt
+      if (!sessionSalt || typeof sessionSalt !== 'string') {
+        throw new Error('Invalid session salt - cannot generate dynamic password');
+      }
+
       const passwordComponents = [
         currentUser.uid, // User UUID (unique per user)
         loginTimestamp, // Login timestamp (unique per session)
@@ -132,6 +140,10 @@ export const generateDynamicMasterPassword =
         sessionSalt,
         CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_FAST, // Use fast iterations for mobile
       );
+
+      if (!derivedKey || typeof derivedKey !== 'string') {
+        throw new Error('Failed to derive cryptographic key - invalid result');
+      }
 
       // Step 9: Store session hash for verification
       const sessionHash = derivedKey.substring(0, 32); // First 32 chars as session identifier
@@ -153,7 +165,7 @@ export const generateDynamicMasterPassword =
         `✅ [DynamicMP] Dynamic master password generated (${duration}ms)`,
       );
       console.log(
-        `🔒 [DynamicMP] Session ID: ${sessionId.substring(0, 20)}...`,
+        `🔒 [DynamicMP] Session ID: ${sessionId ? sessionId.substring(0, 20) : 'undefined'}...`,
       );
 
       return {

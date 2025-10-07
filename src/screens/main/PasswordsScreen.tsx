@@ -106,7 +106,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       const loadPasswordsData = async () => {
         try {
           setIsLoadingPasswords(true);
-          console.log('🔐 PasswordsScreen: Loading passwords...');
+          // console.log('🔐 PasswordsScreen: Loading passwords...');
 
           // Add small delay to ensure Firebase auth is ready
           await new Promise(resolve => setTimeout(resolve, 100));
@@ -115,26 +115,26 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           const result = await getEffectiveMasterPassword();
 
           if (result.success && result.password) {
-            console.log(
-              '✅ PasswordsScreen: Master password obtained, loading passwords...',
-            );
+            // console.log(
+            //   '✅ PasswordsScreen: Master password obtained, loading passwords...',
+            // );
             await dispatch(loadPasswords(result.password)).unwrap();
-            console.log('✅ PasswordsScreen: Passwords loaded successfully');
+            // console.log('✅ PasswordsScreen: Passwords loaded successfully');
           } else {
             console.warn(
               '⚠️ PasswordsScreen: Failed to get master password:',
               result.error,
             );
             // If failed, try again after a short delay (auth might not be ready)
-            console.log('🔄 PasswordsScreen: Retrying after 500ms...');
+            // console.log('🔄 PasswordsScreen: Retrying after 500ms...');
             await new Promise(resolve => setTimeout(resolve, 500));
             const retryResult = await getEffectiveMasterPassword();
             if (retryResult.success && retryResult.password) {
-              console.log(
-                '✅ PasswordsScreen: Master password obtained on retry, loading passwords...',
-              );
+              // console.log(
+              //   '✅ PasswordsScreen: Master password obtained on retry, loading passwords...',
+              // );
               await dispatch(loadPasswords(retryResult.password)).unwrap();
-              console.log('✅ PasswordsScreen: Passwords loaded successfully');
+              // console.log('✅ PasswordsScreen: Passwords loaded successfully');
             } else {
               console.error(
                 '❌ PasswordsScreen: Failed to get master password after retry:',
@@ -166,9 +166,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       );
 
       if (passwordsNeedingUpdate.length > 0) {
-        console.log(
-          `🔄 PasswordsScreen: Recalculating strength for ${passwordsNeedingUpdate.length} passwords...`,
-        );
+        // console.log(
+        //   `🔄 PasswordsScreen: Recalculating strength for ${passwordsNeedingUpdate.length} passwords...`,
+        // );
 
         // Mark these passwords as being recalculated
         passwordsNeedingUpdate.forEach(p =>
@@ -183,7 +183,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         for (const updatedPassword of updatedPasswords) {
           await updatePassword(updatedPassword.id, updatedPassword);
         }
-        console.log('✅ PasswordsScreen: Password strengths recalculated');
+        // console.log('✅ PasswordsScreen: Password strengths recalculated');
       }
     };
 
@@ -318,28 +318,28 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
   // Calculate statistics
   const statistics = useMemo(() => {
-    console.log('🔍 Password Statistics Debug:');
+    // console.log('🔍 Password Statistics Debug:');
 
-    const passwordsWithAudit = filteredPasswords.filter(
-      p => p.auditData?.passwordStrength,
-    );
-    const passwordsWithoutAudit = filteredPasswords.filter(
-      p => !p.auditData?.passwordStrength,
-    );
+    // const passwordsWithAudit = filteredPasswords.filter(
+    //   p => p.auditData?.passwordStrength,
+    // );
+    // const passwordsWithoutAudit = filteredPasswords.filter(
+    //   p => !p.auditData?.passwordStrength,
+    // );
 
-    console.log('📊 Total passwords:', filteredPasswords.length);
-    console.log('✅ With audit data:', passwordsWithAudit.length);
-    console.log('❌ Without audit data:', passwordsWithoutAudit.length);
+    // console.log('📊 Total passwords:', filteredPasswords.length);
+    // console.log('✅ With audit data:', passwordsWithAudit.length);
+    // console.log('❌ Without audit data:', passwordsWithoutAudit.length);
 
     // Log each password's strength
-    filteredPasswords.forEach((p, index) => {
-      console.log(`Password ${index + 1}:`, {
-        title: p.title,
-        hasAuditData: !!p.auditData?.passwordStrength,
-        score: p.auditData?.passwordStrength?.score || 'N/A',
-        label: p.auditData?.passwordStrength?.label || 'N/A',
-      });
-    });
+    // filteredPasswords.forEach((p, index) => {
+    //   console.log(`Password ${index + 1}:`, {
+    //     title: p.title,
+    //     hasAuditData: !!p.auditData?.passwordStrength,
+    //     score: p.auditData?.passwordStrength?.score || 'N/A',
+    //     label: p.auditData?.passwordStrength?.label || 'N/A',
+    //   });
+    // });
 
     const weakPasswords = filteredPasswords.filter(
       p =>
@@ -354,11 +354,11 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       p => p.auditData?.duplicateCount && p.auditData.duplicateCount > 0,
     ).length;
 
-    console.log('📈 Final stats:', {
-      weakPasswords,
-      compromisedPasswords,
-      duplicatePasswords,
-    });
+    // console.log('📈 Final stats:', {
+    //   weakPasswords,
+    //   compromisedPasswords,
+    //   duplicatePasswords,
+    // });
 
     return {
       weakPasswords,
@@ -392,9 +392,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('Delete password:', password.id);
+              // console.log('Delete password:', password.id);
               await deletePassword(password.id);
-              console.log('✅ Password deleted successfully:', password.id);
+              // console.log('✅ Password deleted successfully:', password.id);
             } catch (error) {
               console.error('❌ Failed to delete password:', error);
               Alert.alert('Error', 'Failed to delete password');
@@ -445,7 +445,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('🗑️ Bulk deleting passwords:', selectedPasswords);
+              // console.log('🗑️ Bulk deleting passwords:', selectedPasswords);
 
               // Delete all selected passwords
               const deletePromises = selectedPasswords.map(passwordId =>
@@ -454,7 +454,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
               await Promise.all(deletePromises);
 
-              console.log('✅ Bulk delete completed successfully');
+              // console.log('✅ Bulk delete completed successfully');
 
               // Show success toast
               setToastMessage(

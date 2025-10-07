@@ -101,11 +101,11 @@ export const useSession = (): UseSessionReturn => {
         // Clear any existing session warnings
         dispatch(clearSession());
 
-        console.log(
-          '🔐 Session started with 7-day timeout:',
-          finalConfig.timeout,
-          'minutes',
-        );
+        // console.log(
+        //   '🔐 Session started with 7-day timeout:',
+        //   finalConfig.timeout,
+        //   'minutes',
+        // );
       } catch (error) {
         console.error('Failed to start session:', error);
         throw error;

@@ -43,20 +43,20 @@ export const deriveKeyFromPassword = (
   salt: string,
   iterations: number = CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_FAST, // Use faster default
 ): string => {
-  const startTime = Date.now();
+  // const startTime = Date.now();
   const cacheKey = `${password.slice(0, 8)}:${salt}:${iterations}`; // Safe cache key
 
   // Check cache first
   const cached = keyCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < KEY_CACHE_TTL) {
-    console.log(`🚀 [KeyDerivation] Cache hit (${Date.now() - startTime}ms)`);
+    // console.log(`🚀 [KeyDerivation] Cache hit`);
     return cached.key;
   }
 
   try {
-    console.log(
-      `🔑 [KeyDerivation] Computing key with ${iterations} iterations...`,
-    );
+    // console.log(
+    //   `🔑 [KeyDerivation] Computing key with ${iterations} iterations...`,
+    // );
     const key = CryptoJS.PBKDF2(password, salt, {
       keySize: CRYPTO_CONSTANTS.KEY_LENGTH / 4, // CryptoJS uses 32-bit words
       iterations: iterations,
@@ -64,13 +64,13 @@ export const deriveKeyFromPassword = (
     });
 
     const derivedKey = key.toString(CryptoJS.enc.Hex);
-    const duration = Date.now() - startTime;
+    // const duration = Date.now() - startTime;
 
     // Cache the result
     keyCache.set(cacheKey, { key: derivedKey, timestamp: Date.now() });
-    console.log(
-      `✅ [KeyDerivation] Key derived in ${duration}ms (cached for 5min)`,
-    );
+    // console.log(
+    //   `✅ [KeyDerivation] Key derived in ${endTime - startTime}ms (cached for 5min)`,
+    // );
 
     return derivedKey;
   } catch (error) {

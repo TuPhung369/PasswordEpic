@@ -57,26 +57,26 @@ const getCategoryIcon = (category?: string): string => {
 
   // Try quick mapping first
   if (quickIconMap[category]) {
-    console.log(
-      '✅ Found icon by quick map:',
-      category,
-      '->',
-      quickIconMap[category],
-    );
+    // console.log(
+    //   '✅ Found icon by quick map:',
+    //   category,
+    //   '->',
+    //   quickIconMap[category],
+    // );
     return quickIconMap[category];
   }
 
   // Try by name lookup
   const categoryByName = getCategoryByName(category);
   if (categoryByName) {
-    console.log('✅ Found icon by name:', category, '->', categoryByName.icon);
+    // console.log('✅ Found icon by name:', category, '->', categoryByName.icon);
     return categoryByName.icon;
   }
 
   // Try by id lookup
   const categoryById = getCategoryById(category);
   if (categoryById) {
-    console.log('✅ Found icon by id:', category, '->', categoryById.icon);
+    // console.log('✅ Found icon by id:', category, '->', categoryById.icon);
     return categoryById.icon;
   }
 
@@ -85,12 +85,12 @@ const getCategoryIcon = (category?: string): string => {
   const directIcon =
     CATEGORY_ICONS[lowerCategory as keyof typeof CATEGORY_ICONS];
   if (directIcon) {
-    console.log('✅ Found icon by direct lookup:', category, '->', directIcon);
+    // console.log('✅ Found icon by direct lookup:', category, '->', directIcon);
     return directIcon;
   }
 
   // Default fallback
-  console.log('❌ No icon found for category:', category, 'using folder');
+  // console.log('❌ No icon found for category:', category, 'using folder');
   return 'folder';
 };
 
@@ -227,11 +227,11 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   };
 
   const getCategoryData = () => {
-    console.log('🔍 Password category debug:', {
-      passwordId: password.id,
-      rawCategory: password.category,
-      categoryType: typeof password.category,
-    });
+    // console.log('🔍 Password category debug:', {
+    //   passwordId: password.id,
+    //   rawCategory: password.category,
+    //   categoryType: typeof password.category,
+    // });
 
     if (!password.category) {
       return {
@@ -245,11 +245,11 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       getCategoryByName(password.category) ||
       getCategoryById(password.category);
 
-    console.log('📋 Category display result:', {
-      passwordId: password.id,
-      foundCategory: category?.name,
-      finalResult: category ? category.name : password.category,
-    });
+    // console.log('📋 Category display result:', {
+    //   passwordId: password.id,
+    //   foundCategory: category?.name,
+    //   finalResult: category ? category.name : password.category,
+    // });
 
     return {
       name: category ? category.name : password.category,

@@ -7,7 +7,6 @@ import {
   Modal,
   FlatList,
   TextInput,
-  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { PasswordCategoryExtended } from '../types/password';
@@ -18,6 +17,8 @@ import {
   CATEGORY_COLORS,
 } from '../constants/categories';
 import { CategoryService } from '../services/categoryService';
+import ConfirmDialog from './ConfirmDialog';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 interface CategorySelectorProps {
   selectedCategory: string;
@@ -36,6 +37,10 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
 }) => {
   const { theme } = useTheme();
   const styles = createStyles(theme);
+
+  // Confirm dialog hook
+  const { confirmDialog, showAlert, showDestructive, hideConfirm } =
+    useConfirmDialog();
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [categories, setCategories] = useState<PasswordCategoryExtended[]>(
@@ -103,7 +108,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
 
   const handleCreateCategory = async () => {
     if (!newCategoryName.trim()) {
-      Alert.alert('Error', 'Please enter a category name');
+      showAlert('Error', 'Please enter a category name');
       return;
     }
 
@@ -129,9 +134,9 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
       // Select the new category
       handleSelectCategory(newCategory.name);
 
-      Alert.alert('Success', 'Category created successfully');
+      showAlert('Success', 'Category created successfully');
     } catch (error) {
-      Alert.alert('Error', 'Failed to create category');
+      showAlert('Error', 'Failed to create category');
       console.error('Failed to create category:', error);
     }
   };
@@ -140,36 +145,61 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
     categoryId: string,
     categoryName: string,
   ) => {
-    Alert.alert(
+    showDestructive(
       'Delete Category',
       `Are you sure you want to delete "${categoryName}"? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await CategoryService.deleteCategory(categoryId);
-              setCategories(categories.filter(cat => cat.id !== categoryId));
+      async () => {
+        try {
+          await CategoryService.deleteCategory(categoryId);
+          setCategories(categories.filter(cat => cat.id !== categoryId));
 
-              // If deleted category was selected, reset to Other
-              if (selectedCategory === categoryName) {
-                onCategorySelect('Other');
-              }
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete category');
-              console.error('Failed to delete category:', error);
-            }
-          },
-        },
-      ],
+          // If deleted category was selected, reset to Other
+          if (selectedCategory === categoryName) {
+            onCategorySelect('Other');
+          }
+        } catch (error) {
+          showAlert('Error', 'Failed to delete category');
+          console.error('Failed to delete category:', error);
+        }
+      },
+      'Delete',
     );
   };
 
   const filteredCategories = categories.filter(category =>
     category.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
+
+  // Helper function to validate and fix icon names
+  const getValidIconName = (iconName: string | undefined): string => {
+    if (!iconName) return 'folder-outline';
+
+    // Common invalid icon mappings to valid Ionicons
+    const iconMapping: { [key: string]: string } = {
+      people: 'people-outline',
+      work: 'briefcase-outline',
+      movie: 'film-outline',
+      'account-balance': 'card-outline',
+      'shopping-cart': 'bag-outline',
+      'attach-money': 'cash-outline',
+      games: 'game-controller-outline',
+      tv: 'tv-outline',
+      'music-note': 'musical-notes-outline',
+      store: 'storefront-outline',
+      school: 'school-outline',
+      'local-hospital': 'medical-outline',
+      flight: 'airplane-outline',
+      code: 'code-slash-outline',
+      computer: 'laptop-outline',
+      build: 'build-outline',
+      person: 'person-outline',
+      security: 'shield-checkmark-outline',
+      folder: 'folder-outline',
+      'more-horiz': 'ellipsis-horizontal-outline',
+    };
+
+    return iconMapping[iconName] || iconName;
+  };
 
   const getSelectedCategoryDisplay = () => {
     // First try to find in loaded categories (has Ionicons), then fallback to DEFAULT_CATEGORIES
@@ -184,8 +214,9 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
 
     if (category) {
       // Get icon: prefer loaded category icon, then default category icon, then fallback
-      const iconName =
+      const rawIconName =
         loadedCategory?.icon || defaultCategory?.icon || 'folder-outline';
+      const iconName = getValidIconName(rawIconName);
 
       return {
         name: category.name,
@@ -208,7 +239,8 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
     const defaultCategory = DEFAULT_CATEGORIES.find(
       cat => cat.name === item.name,
     );
-    const iconName = item.icon || defaultCategory?.icon || 'folder';
+    const rawIconName = item.icon || defaultCategory?.icon || 'folder-outline';
+    const iconName = getValidIconName(rawIconName);
 
     return (
       <View style={styles.categoryItem}>
@@ -400,31 +432,22 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
                       { borderColor: theme.warning },
                     ]}
                     onPress={async () => {
-                      Alert.alert(
+                      showDestructive(
                         'Reset Categories',
                         'This will reset all categories to default with updated icons. Custom categories will be lost.',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Reset',
-                            style: 'destructive',
-                            onPress: async () => {
-                              try {
-                                await CategoryService.resetToDefaultCategories();
-                                await loadCategories();
-                                Alert.alert(
-                                  'Success',
-                                  'Categories have been reset with updated icons',
-                                );
-                              } catch (error) {
-                                Alert.alert(
-                                  'Error',
-                                  'Failed to reset categories',
-                                );
-                              }
-                            },
-                          },
-                        ],
+                        async () => {
+                          try {
+                            await CategoryService.resetToDefaultCategories();
+                            await loadCategories();
+                            showAlert(
+                              'Success',
+                              'Categories have been reset with updated icons',
+                            );
+                          } catch (error) {
+                            showAlert('Error', 'Failed to reset categories');
+                          }
+                        },
+                        'Reset',
                       );
                     }}
                   >

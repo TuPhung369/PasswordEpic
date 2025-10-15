@@ -24,7 +24,7 @@ const STORAGE_KEYS = {
   MASTER_PASSWORD_SALT: 'master_password_salt',
   MASTER_PASSWORD_LAST_VERIFIED: 'master_password_last_verified',
   USER_SETTINGS: 'user_settings',
-  ENCRYPTED_PASSWORDS: 'encrypted_passwords',
+  ENCRYPTED_PASSWORDS: 'optimized_passwords_v2',
   BIOMETRIC_ENABLED: 'biometric_enabled',
   LAST_BACKUP: 'last_backup',
 };

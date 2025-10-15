@@ -4,10 +4,10 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   Clipboard,
+  ActivityIndicator,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { PasswordEntry } from '../types/password';
 import { useTheme, Theme } from '../contexts/ThemeContext';
 import {
@@ -19,6 +19,9 @@ import { BiometricPrompt } from './BiometricPrompt';
 import { MasterPasswordPrompt } from './MasterPasswordPrompt';
 import { useBiometric } from '../hooks/useBiometric';
 import Toast from './Toast';
+import { useAppDispatch } from '../hooks/redux';
+import { decryptPasswordField } from '../store/slices/passwordsSlice';
+import { getEffectiveMasterPassword } from '../services/staticMasterPasswordService';
 
 interface PasswordEntryComponentProps {
   password: PasswordEntry;
@@ -26,6 +29,7 @@ interface PasswordEntryComponentProps {
   onEdit?: () => void;
   onDelete?: () => void;
   onShare?: () => void;
+  onToggleFavorite?: () => void;
   showActions?: boolean;
   selectable?: boolean;
   selected?: boolean;
@@ -35,48 +39,52 @@ interface PasswordEntryComponentProps {
 
 // const { width } = Dimensions.get('window'); // Not used yet
 
-// Helper function to get category icon
+// Helper function to get category icon with Ionicons support
 const getCategoryIcon = (category?: string): string => {
-  if (!category) return 'folder';
+  if (!category) return 'folder-outline';
 
-  // Quick mapping for common categories (as fallback)
+  // Updated quick mapping for common categories using Ionicons names
   const quickIconMap: Record<string, string> = {
-    Other: 'more-horiz',
-    Banking: 'account-balance',
-    'Social Media': 'people',
-    Work: 'work',
-    Entertainment: 'movie',
-    Shopping: 'shopping-cart',
-    Health: 'local-hospital',
-    Travel: 'flight',
-    Education: 'school',
-    Gaming: 'games',
-    Finance: 'attach-money',
-    Security: 'security',
+    Other: 'ellipsis-horizontal-outline',
+    Banking: 'card-outline',
+    'Social Media': 'people-outline',
+    Work: 'briefcase-outline',
+    Entertainment: 'film-outline',
+    Shopping: 'bag-outline',
+    Health: 'medical-outline',
+    Travel: 'airplane-outline',
+    Education: 'school-outline',
+    Gaming: 'game-controller-outline',
+    Finance: 'cash-outline',
+    Security: 'shield-checkmark-outline',
+    Business: 'business-outline',
+    'Cloud Services': 'cloud-outline',
+    Development: 'code-slash-outline',
+    Streaming: 'tv-outline',
+    Cryptocurrency: 'logo-bitcoin',
+    'E-commerce': 'storefront-outline',
+    Utilities: 'build-outline',
+    Subscriptions: 'calendar-outline',
+    Personal: 'person-outline',
+    Communication: 'chatbubble-outline',
+    Messaging: 'mail-outline',
+    Email: 'mail-outline',
   };
 
   // Try quick mapping first
   if (quickIconMap[category]) {
-    // console.log(
-    //   '✅ Found icon by quick map:',
-    //   category,
-    //   '->',
-    //   quickIconMap[category],
-    // );
     return quickIconMap[category];
   }
 
-  // Try by name lookup
+  // Try by name lookup from DEFAULT_CATEGORIES
   const categoryByName = getCategoryByName(category);
   if (categoryByName) {
-    // console.log('✅ Found icon by name:', category, '->', categoryByName.icon);
     return categoryByName.icon;
   }
 
-  // Try by id lookup
+  // Try by id lookup from DEFAULT_CATEGORIES
   const categoryById = getCategoryById(category);
   if (categoryById) {
-    // console.log('✅ Found icon by id:', category, '->', categoryById.icon);
     return categoryById.icon;
   }
 
@@ -85,13 +93,41 @@ const getCategoryIcon = (category?: string): string => {
   const directIcon =
     CATEGORY_ICONS[lowerCategory as keyof typeof CATEGORY_ICONS];
   if (directIcon) {
-    // console.log('✅ Found icon by direct lookup:', category, '->', directIcon);
     return directIcon;
   }
 
+  // Material Icons to Ionicons fallback mapping for old data
+  const materialToIoniconsMap: Record<string, string> = {
+    people: 'people-outline',
+    work: 'briefcase-outline',
+    movie: 'film-outline',
+    'account-balance': 'card-outline',
+    'shopping-cart': 'bag-outline',
+    'attach-money': 'cash-outline',
+    games: 'game-controller-outline',
+    tv: 'tv-outline',
+    'music-note': 'musical-notes-outline',
+    store: 'storefront-outline',
+    school: 'school-outline',
+    'local-hospital': 'medical-outline',
+    flight: 'airplane-outline',
+    code: 'code-slash-outline',
+    computer: 'laptop-outline',
+    build: 'build-outline',
+    person: 'person-outline',
+    security: 'shield-checkmark-outline',
+    folder: 'folder-outline',
+    'more-horiz': 'ellipsis-horizontal-outline',
+    email: 'mail-outline',
+  };
+
+  // Check if it's an old Material Icons name and convert it
+  if (materialToIoniconsMap[category]) {
+    return materialToIoniconsMap[category];
+  }
+
   // Default fallback
-  // console.log('❌ No icon found for category:', category, 'using folder');
-  return 'folder';
+  return 'folder-outline';
 };
 
 const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
@@ -100,6 +136,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   onEdit,
   onDelete,
   onShare: _onShare,
+  onToggleFavorite,
   showActions: _showActions = true,
   selectable = false,
   selected = false,
@@ -107,10 +144,15 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   showPassword = false,
 }) => {
   const { theme } = useTheme();
+  const dispatch = useAppDispatch();
   const { isAvailable: isBiometricAvailable } = useBiometric();
   const [isPasswordVisible, setIsPasswordVisible] = useState(showPassword);
   const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
   const [showPinPrompt, setShowPinPrompt] = useState(false);
+  const [isDecrypting, setIsDecrypting] = useState(false);
+  const [decryptedPassword, setDecryptedPassword] = useState<string | null>(
+    null,
+  );
   const [toast, setToast] = useState({
     visible: false,
     message: '',
@@ -119,10 +161,17 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
 
   const styles = createStyles(theme);
 
+  // Check if password is encrypted (lazy loaded)
+  const isPasswordEncrypted = !password.isDecrypted;
+
   const handleCopyUsername = async () => {
     if (password.username) {
       await Clipboard.setString(password.username);
-      Alert.alert('Copied', 'Username copied to clipboard');
+      setToast({
+        visible: true,
+        message: 'Username copied to clipboard',
+        type: 'success',
+      });
     }
   };
 
@@ -137,7 +186,9 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       return;
     }
 
-    await Clipboard.setString(password.password);
+    // Use decrypted password if available, otherwise use the password from props
+    const passwordToCopy = decryptedPassword || password.password;
+    await Clipboard.setString(passwordToCopy);
     setToast({
       visible: true,
       message: 'Password copied to clipboard',
@@ -148,14 +199,22 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   const handleCopyUrl = async () => {
     if (password.website) {
       await Clipboard.setString(password.website);
-      Alert.alert('Copied', 'URL copied to clipboard');
+      setToast({
+        visible: true,
+        message: 'URL copied to clipboard',
+        type: 'success',
+      });
     }
   };
 
   const handleCopyNotes = async () => {
     if (password.notes) {
       await Clipboard.setString(password.notes);
-      Alert.alert('Copied', 'Notes copied to clipboard');
+      setToast({
+        visible: true,
+        message: 'Notes copied to clipboard',
+        type: 'success',
+      });
     }
   };
 
@@ -184,8 +243,14 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
     }
   };
 
-  const handleBiometricSuccess = () => {
+  const handleBiometricSuccess = async () => {
     setShowBiometricPrompt(false);
+
+    // If password is encrypted, decrypt it first
+    if (isPasswordEncrypted && !decryptedPassword) {
+      await decryptPassword();
+    }
+
     setIsPasswordVisible(true);
     setToast({
       visible: true,
@@ -212,8 +277,14 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
     setShowBiometricPrompt(false);
   };
 
-  const handlePinSuccess = () => {
+  const handlePinSuccess = async () => {
     setShowPinPrompt(false);
+
+    // If password is encrypted, decrypt it first
+    if (isPasswordEncrypted && !decryptedPassword) {
+      await decryptPassword();
+    }
+
     setIsPasswordVisible(true);
     setToast({
       visible: true,
@@ -224,6 +295,40 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
 
   const handlePinCancel = () => {
     setShowPinPrompt(false);
+  };
+
+  // Decrypt password on-demand
+  const decryptPassword = async () => {
+    try {
+      setIsDecrypting(true);
+
+      // Get master password
+      const result = await getEffectiveMasterPassword();
+      if (!result.success || !result.password) {
+        throw new Error('Failed to get master password');
+      }
+
+      // Decrypt password field
+      const decryptResult = await dispatch(
+        decryptPasswordField({
+          id: password.id,
+          masterPassword: result.password,
+        }),
+      ).unwrap();
+
+      if (decryptResult.password) {
+        setDecryptedPassword(decryptResult.password);
+      }
+    } catch (error) {
+      console.error('Failed to decrypt password:', error);
+      setToast({
+        visible: true,
+        message: 'Failed to decrypt password',
+        type: 'error',
+      });
+    } finally {
+      setIsDecrypting(false);
+    }
   };
 
   const getCategoryData = () => {
@@ -296,7 +401,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
             onPress={() => onSelect?.(!selected)}
           >
             <Icon
-              name={selected ? 'check-box' : 'check-box-outline-blank'}
+              name={selected ? 'checkbox' : 'checkbox-outline'}
               size={24}
               color={selected ? theme.primary : theme.textSecondary}
             />
@@ -319,20 +424,38 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
 
         {/* Main Content */}
         <View style={styles.content}>
-          {/* Header Row - Icon + Title + Group Name */}
+          {/* Header Row - Icon + Title + Category + Favorite */}
           <View style={styles.headerRow}>
             <Text style={styles.title} numberOfLines={1}>
               {password.title}
             </Text>
-            <Text style={[styles.categoryText, { color: categoryData.color }]}>
-              {categoryData.name}
-            </Text>
+            <View style={styles.categoryAndFavorite}>
+              <Text
+                style={[styles.categoryText, { color: categoryData.color }]}
+              >
+                {categoryData.name}
+              </Text>
+              <TouchableOpacity
+                onPress={onToggleFavorite}
+                style={styles.favoriteButton}
+              >
+                <Icon
+                  name={password.isFavorite ? 'heart' : 'heart-outline'}
+                  size={16}
+                  color={password.isFavorite ? '#FF6B6B' : theme.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Username Row */}
           {password.username && (
             <View style={styles.detailRow}>
-              <Icon name="person" size={16} color={theme.textSecondary} />
+              <Icon
+                name="person-outline"
+                size={16}
+                color={theme.textSecondary}
+              />
               <Text style={styles.detailText} numberOfLines={1}>
                 {password.username}
               </Text>
@@ -341,7 +464,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
                 style={styles.copyButton}
               >
                 <Icon
-                  name="content-copy"
+                  name="copy-outline"
                   size={16}
                   color={theme.textSecondary}
                 />
@@ -351,20 +474,34 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
 
           {/* Password Row */}
           <View style={styles.detailRow}>
-            <Icon name="lock" size={16} color={theme.textSecondary} />
+            <Icon
+              name="lock-closed-outline"
+              size={16}
+              color={theme.textSecondary}
+            />
             <Text style={styles.detailText} numberOfLines={1}>
-              {isPasswordVisible ? password.password : '••••••••'}
+              {isPasswordVisible
+                ? decryptedPassword || password.password
+                : '••••••••'}
             </Text>
-            <TouchableOpacity
-              onPress={togglePasswordVisibility}
-              style={styles.actionButton}
-            >
-              <Icon
-                name={isPasswordVisible ? 'visibility-off' : 'visibility'}
-                size={16}
-                color={theme.textSecondary}
+            {isDecrypting ? (
+              <ActivityIndicator
+                size="small"
+                color={theme.primary}
+                style={styles.actionButton}
               />
-            </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={togglePasswordVisibility}
+                style={styles.actionButton}
+              >
+                <Icon
+                  name={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'}
+                  size={16}
+                  color={theme.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               onPress={handleCopyPassword}
               style={[
@@ -374,7 +511,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
               disabled={!isPasswordVisible}
             >
               <Icon
-                name="content-copy"
+                name="copy-outline"
                 size={16}
                 color={isPasswordVisible ? theme.textSecondary : theme.border}
               />
@@ -384,7 +521,11 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
           {/* URL Row */}
           {password.website && (
             <View style={styles.detailRow}>
-              <Icon name="language" size={16} color={theme.textSecondary} />
+              <Icon
+                name="globe-outline"
+                size={16}
+                color={theme.textSecondary}
+              />
               <Text style={styles.detailText} numberOfLines={1}>
                 {password.website}
               </Text>
@@ -393,7 +534,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
                 style={styles.copyButton}
               >
                 <Icon
-                  name="content-copy"
+                  name="copy-outline"
                   size={16}
                   color={theme.textSecondary}
                 />
@@ -404,7 +545,11 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
           {/* Notes Row */}
           {password.notes && (
             <View style={styles.detailRow}>
-              <Icon name="note" size={16} color={theme.textSecondary} />
+              <Icon
+                name="document-text-outline"
+                size={16}
+                color={theme.textSecondary}
+              />
               <Text style={styles.detailText} numberOfLines={2}>
                 {password.notes}
               </Text>
@@ -413,7 +558,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
                 style={styles.copyButton}
               >
                 <Icon
-                  name="content-copy"
+                  name="copy-outline"
                   size={16}
                   color={theme.textSecondary}
                 />
@@ -430,7 +575,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
                   onPress={handleEdit}
                   style={styles.footerActionButton}
                 >
-                  <Icon name="edit" size={18} color={theme.primary} />
+                  <Icon name="create-outline" size={18} color={theme.primary} />
                 </TouchableOpacity>
               )}
               {onDelete && (
@@ -438,7 +583,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
                   onPress={handleDelete}
                   style={styles.footerActionButton}
                 >
-                  <Icon name="delete" size={18} color={theme.error} />
+                  <Icon name="trash-outline" size={18} color={theme.error} />
                 </TouchableOpacity>
               )}
             </View>
@@ -522,6 +667,14 @@ const createStyles = (theme: Theme) =>
       color: theme.text,
       flex: 1,
       marginRight: 8,
+    },
+    categoryAndFavorite: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    favoriteButton: {
+      padding: 4,
     },
 
     detailRow: {

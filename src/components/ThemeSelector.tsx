@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface ThemeSelectorProps {
@@ -26,13 +26,13 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({ onPress }) => {
   const getThemeIcon = () => {
     switch (themeMode) {
       case 'light':
-        return 'wb-sunny';
+        return 'sunny-outline';
       case 'dark':
-        return 'brightness-2';
+        return 'moon-outline';
       case 'system':
-        return 'settings-brightness';
+        return 'phone-portrait-outline';
       default:
-        return 'settings-brightness';
+        return 'phone-portrait-outline';
     }
   };
 
@@ -48,11 +48,7 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({ onPress }) => {
         <View
           style={[styles.iconBackground, { backgroundColor: theme.surface }]}
         >
-          <MaterialIcons
-            name={getThemeIcon()}
-            size={24}
-            color={theme.primary}
-          />
+          <Ionicons name={getThemeIcon()} size={24} color={theme.primary} />
         </View>
         <View style={styles.textContent}>
           <Text style={[styles.label, { color: theme.text }]}>Theme</Text>
@@ -62,8 +58,8 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({ onPress }) => {
         <Text style={[styles.value, { color: theme.textSecondary }]}>
           {getThemeDisplayName()}
         </Text>
-        <MaterialIcons
-          name="chevron-right"
+        <Ionicons
+          name="chevron-forward"
           size={24}
           color={theme.textSecondary}
         />

@@ -29,6 +29,42 @@ export const loadPasswords = createAsyncThunk(
   },
 );
 
+// Load passwords with lazy decryption (password field not decrypted until needed)
+export const loadPasswordsLazy = createAsyncThunk(
+  'passwords/loadPasswordsLazy',
+  async (masterPassword: string, { rejectWithValue }) => {
+    try {
+      console.log('📖 [Redux] Loading passwords (optimized format)');
+      const passwords =
+        await encryptedDatabase.getAllPasswordEntriesOptimized();
+      return passwords;
+    } catch (error: any) {
+      return rejectWithValue(error.message);
+    }
+  },
+);
+
+// Decrypt a single password field on-demand
+export const decryptPasswordField = createAsyncThunk(
+  'passwords/decryptPasswordField',
+  async (
+    { id, masterPassword }: { id: string; masterPassword: string },
+    { rejectWithValue },
+  ) => {
+    try {
+      console.log(`🔓 [Redux] Decrypting password for ${id}`);
+      const password = await encryptedDatabase.decryptPasswordFieldOptimized(
+        id,
+        masterPassword,
+      );
+
+      return { id, password };
+    } catch (error: any) {
+      return rejectWithValue(error.message);
+    }
+  },
+);
+
 export const savePassword = createAsyncThunk(
   'passwords/savePassword',
   async (
@@ -36,7 +72,9 @@ export const savePassword = createAsyncThunk(
     { rejectWithValue },
   ) => {
     try {
-      await encryptedDatabase.savePasswordEntry(entry, masterPassword);
+      console.log('💾 [Redux] Saving password');
+      await encryptedDatabase.savePasswordEntryOptimized(entry, masterPassword);
+
       return entry;
     } catch (error: any) {
       return rejectWithValue(error.message);
@@ -48,7 +86,9 @@ export const removePassword = createAsyncThunk(
   'passwords/removePassword',
   async (id: string, { rejectWithValue }) => {
     try {
-      await encryptedDatabase.deletePasswordEntry(id);
+      console.log(`🗑️ [Redux] Deleting password ${id}`);
+      await encryptedDatabase.deletePasswordEntryOptimized(id);
+
       return id;
     } catch (error: any) {
       return rejectWithValue(error.message);
@@ -161,6 +201,32 @@ const passwordsSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
       });
+
+    // Load passwords lazy (password field not decrypted)
+    builder
+      .addCase(loadPasswordsLazy.pending, state => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(loadPasswordsLazy.fulfilled, (state, action) => {
+        state.isLoading = false;
+        // Migrate passwords to include passwordHistory and auditData
+        state.passwords = migratePasswordEntries(action.payload);
+      })
+      .addCase(loadPasswordsLazy.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
+
+    // Decrypt password field on-demand
+    builder.addCase(decryptPasswordField.fulfilled, (state, action) => {
+      const { id, password } = action.payload;
+      const passwordEntry = state.passwords.find(p => p.id === id);
+      if (passwordEntry && password) {
+        passwordEntry.password = password;
+        passwordEntry.isDecrypted = true; // Mark as decrypted
+      }
+    });
 
     // Save password
     builder

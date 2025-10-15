@@ -5,22 +5,27 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordManagement } from '../../hooks/usePasswordManagement';
 import PasswordForm from '../../components/PasswordForm';
-import PasswordHistoryViewer from '../../components/PasswordHistoryViewer';
+import PasswordHistoryViewer, {
+  PasswordHistoryItem,
+} from '../../components/PasswordHistoryViewer';
 import SecurityAuditPanel from '../../components/SecurityAuditPanel';
 import Toast from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { PasswordEntry, PasswordHistoryEntry } from '../../types/password';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
 import { PasswordValidationService } from '../../services/passwordValidationService';
 import { calculateSecurityScore } from '../../utils/passwordUtils';
+import { useAppDispatch } from '../../hooks/redux';
+import { decryptPasswordField } from '../../store/slices/passwordsSlice';
+import { getEffectiveMasterPassword } from '../../services/staticMasterPasswordService';
 
 type EditPasswordRouteProp = RouteProp<PasswordsStackParamList, 'EditPassword'>;
 
@@ -36,6 +41,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
   const navigation = useNavigation<EditPasswordNavigationProp>();
   const route = useRoute<EditPasswordRouteProp>();
   const { passwordId } = route.params;
+  const dispatch = useAppDispatch();
 
   const { passwords, updatePassword, deletePassword, isLoading } =
     usePasswordManagement();
@@ -48,6 +54,25 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [isDeleteDialogShowing, setIsDeleteDialogShowing] = useState(false);
+
+  // Confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    confirmStyle?: 'default' | 'destructive';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  // Track if password has been decrypted
+  const [isPasswordDecrypted, setIsPasswordDecrypted] = useState(false);
+  const [decryptedPassword, setDecryptedPassword] = useState<string>('');
 
   // Memoize toast hide callback to prevent re-renders from resetting the timer
   const handleHideToast = useCallback(() => {
@@ -136,6 +161,22 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
       fontSize: 16,
       fontWeight: '600',
     },
+    deleteButtonTextDisabled: {
+      color: theme.error,
+      fontSize: 16,
+      fontWeight: '600',
+      opacity: 0.5,
+    },
+    deleteButtonDisabled: {
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.error,
+      alignItems: 'center',
+      justifyContent: 'center',
+      opacity: 0.5,
+    },
     loadingContainer: {
       flex: 1,
       justifyContent: 'center',
@@ -178,33 +219,116 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
     const foundPassword = passwords.find(p => p.id === passwordId);
     if (foundPassword && !isPasswordLoaded) {
       console.log(
-        '🔍 EditPasswordScreen: Initial loading password:',
-        foundPassword,
+        '🔍 EditPasswordScreen: Initial loading password (metadata only):',
+        { ...foundPassword, password: '[ENCRYPTED]' },
       );
       setPassword(foundPassword);
-      setFormData(foundPassword);
+
+      // Load formData with encrypted password (will be decrypted on-demand)
+      setFormData({
+        ...foundPassword,
+        password: foundPassword.password, // Keep encrypted password
+        isDecrypted: false, // ✅ Mark as encrypted initially
+      });
+
       setIsPasswordLoaded(true);
-      console.log('🔍 EditPasswordScreen: FormData set to:', foundPassword);
+      console.log(
+        '🔍 EditPasswordScreen: FormData set with encrypted password',
+      );
     }
   }, [passwords, passwordId, isPasswordLoaded]);
 
+  // Sync password state with Redux when isDecrypted flag changes
+  useEffect(() => {
+    const foundPassword = passwords.find(p => p.id === passwordId);
+    if (foundPassword && isPasswordLoaded) {
+      // Update password state to reflect Redux changes (e.g., after decrypt)
+      setPassword(foundPassword);
+
+      // If password was decrypted in Redux, update formData
+      if (foundPassword.isDecrypted && !isPasswordDecrypted) {
+        console.log(
+          '🔄 EditPasswordScreen: Syncing decrypted password from Redux',
+        );
+        setFormData(prev => ({
+          ...prev,
+          password: foundPassword.password,
+          isDecrypted: true, // ✅ Set isDecrypted flag so PasswordForm knows it's plaintext
+        }));
+        setDecryptedPassword(foundPassword.password);
+        setIsPasswordDecrypted(true);
+      }
+    }
+  }, [passwords, passwordId, isPasswordLoaded, isPasswordDecrypted]);
+
+  // Decrypt password on-demand when user wants to view it
+  const handleDecryptPassword = useCallback(async () => {
+    if (isPasswordDecrypted || !password) {
+      return decryptedPassword;
+    }
+
+    try {
+      console.log('🔓 EditPasswordScreen: Decrypting password on-demand...');
+      const masterPasswordResult = await getEffectiveMasterPassword();
+
+      if (!masterPasswordResult.success || !masterPasswordResult.password) {
+        throw new Error('Failed to get master password');
+      }
+
+      const result = await dispatch(
+        decryptPasswordField({
+          id: password.id,
+          masterPassword: masterPasswordResult.password,
+        }),
+      ).unwrap();
+
+      if (result.password) {
+        setDecryptedPassword(result.password);
+        setIsPasswordDecrypted(true);
+        // Update formData with decrypted password so PasswordForm can display it
+        setFormData(prev => {
+          const updated = { ...prev, password: result.password };
+          console.log(
+            '✅ EditPasswordScreen: Password decrypted, updating formData:',
+            {
+              before: '[ENCRYPTED]',
+              after: '[DECRYPTED]',
+              actualPassword: updated.password.substring(0, 3) + '***',
+            },
+          );
+          return updated;
+        });
+        console.log('✅ EditPasswordScreen: Password decrypted successfully');
+        return result.password;
+      }
+
+      throw new Error('Failed to decrypt password');
+    } catch (error) {
+      console.error(
+        '❌ EditPasswordScreen: Failed to decrypt password:',
+        error,
+      );
+      setToastType('error');
+      setToastMessage('Failed to decrypt password');
+      setShowToast(true);
+      return '';
+    }
+  }, [password, isPasswordDecrypted, decryptedPassword, dispatch]);
+
   const handleCancel = () => {
     if (hasUnsavedChanges()) {
-      Alert.alert(
-        'Discard Changes?',
-        'You have unsaved changes. Are you sure you want to discard them?',
-        [
-          {
-            text: 'Keep Editing',
-            style: 'cancel',
-          },
-          {
-            text: 'Discard',
-            style: 'destructive',
-            onPress: () => navigation.goBack(),
-          },
-        ],
-      );
+      setConfirmDialog({
+        visible: true,
+        title: 'Discard Changes?',
+        message:
+          'You have unsaved changes. Are you sure you want to discard them?',
+        confirmText: 'Discard',
+        confirmStyle: 'destructive',
+        onConfirm: () => {
+          setConfirmDialog(prev => ({ ...prev, visible: false }));
+          navigation.goBack();
+        },
+      });
     } else {
       navigation.goBack();
     }
@@ -213,52 +337,91 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
   const hasUnsavedChanges = (): boolean => {
     if (!password) return false;
 
-    return (
+    // Check metadata changes
+    const metadataChanged =
       formData.title !== password.title ||
       formData.username !== password.username ||
-      formData.password !== password.password ||
       formData.website !== password.website ||
       formData.notes !== password.notes ||
       formData.category !== password.category ||
       JSON.stringify(formData.tags) !== JSON.stringify(password.tags) ||
-      formData.isFavorite !== password.isFavorite
-    );
+      formData.isFavorite !== password.isFavorite;
+
+    // Check password changes:
+    // 1. If password hasn't been decrypted -> no change (still encrypted)
+    // 2. If password has been decrypted and modified -> has change
+    const passwordChanged =
+      isPasswordDecrypted && formData.password !== decryptedPassword;
+
+    return metadataChanged || passwordChanged;
   };
 
   const isFormValid = (): boolean => {
     return !!(formData.title && formData.title.trim().length > 0);
   };
 
-  const handleRestorePassword = (restoredPassword: string) => {
-    setFormData(prev => ({ ...prev, password: restoredPassword }));
+  const handleRestorePassword = (historyItem: PasswordHistoryItem) => {
+    setFormData(prev => ({ ...prev, password: historyItem.password }));
   };
 
   const handleSave = async () => {
     if (!password || !isFormValid()) {
-      Alert.alert(
-        'Validation Error',
-        'Please enter at least a title for the password entry.',
-      );
+      setConfirmDialog({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please enter at least a title for the password entry.',
+        confirmText: 'OK',
+        onConfirm: () =>
+          setConfirmDialog(prev => ({ ...prev, visible: false })),
+      });
       return;
     }
 
     setIsSaving(true);
 
     try {
-      // Check if password changed to update history
-      const passwordChanged = formData.password !== password.password;
+      // Determine the final password value to save
+      let finalPassword: string;
+      let passwordChanged = false;
+
+      if (isPasswordDecrypted && formData.password) {
+        // User has viewed and possibly modified the password
+        finalPassword = formData.password;
+        passwordChanged = formData.password !== decryptedPassword;
+        console.log(
+          '💾 EditPasswordScreen: Password was decrypted and modified:',
+          passwordChanged,
+        );
+      } else if (isPasswordDecrypted && !formData.password) {
+        // User decrypted but cleared the password field
+        // In this case, keep the original password
+        console.log(
+          '💾 EditPasswordScreen: Password field cleared, keeping original',
+        );
+        const originalPassword = await handleDecryptPassword();
+        finalPassword = originalPassword;
+        passwordChanged = false;
+      } else {
+        // Password was never decrypted, keep the original encrypted value
+        // No need to decrypt - just pass encrypted password to save
+        console.log(
+          '💾 EditPasswordScreen: Password not modified, keeping encrypted',
+        );
+        finalPassword = password.password; // Keep encrypted password
+        passwordChanged = false;
+      }
 
       // Create new password history entry if password changed
       let updatedPasswordHistory = password.passwordHistory || [];
-      if (passwordChanged && password.password) {
+      if (passwordChanged && decryptedPassword) {
         const historyEntry: PasswordHistoryEntry = {
           id: `history_${Date.now()}`,
-          password: password.password,
+          password: decryptedPassword, // Save the OLD password to history
           createdAt: password.updatedAt || password.createdAt,
           strength:
             password.auditData?.passwordStrength ||
             PasswordValidationService.analyzePasswordStrength(
-              password.password,
+              decryptedPassword,
             ),
         };
         updatedPasswordHistory = [
@@ -273,7 +436,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
         ...formData,
         title: formData.title!.trim(),
         username: formData.username || '',
-        password: formData.password || '',
+        password: finalPassword,
         website: formData.website || '',
         notes: formData.notes || '',
         category: formData.category || '',
@@ -286,20 +449,20 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
         ...tempPassword,
         // Update audit data if password changed
         auditData:
-          passwordChanged && formData.password
+          passwordChanged && finalPassword
             ? {
                 ...password.auditData,
                 lastPasswordChange: new Date(),
                 passwordStrength:
                   PasswordValidationService.analyzePasswordStrength(
-                    formData.password,
+                    finalPassword,
                   ),
                 duplicateCount: password.auditData?.duplicateCount || 0,
                 compromisedCount: password.auditData?.compromisedCount || 0,
                 securityScore: calculateSecurityScore(tempPassword),
                 recommendedAction:
                   PasswordValidationService.analyzePasswordStrength(
-                    formData.password,
+                    finalPassword,
                   ).score < 2
                     ? 'change_password'
                     : 'none',
@@ -307,6 +470,9 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
             : password.auditData,
       };
 
+      console.log(
+        '💾 EditPasswordScreen: Saving password entry (password will be encrypted by updatePassword)',
+      );
       await updatePassword(password.id, updatedPassword);
 
       // Reset navigation stack to PasswordsList with success message
@@ -334,79 +500,63 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
 
     setIsDeleteDialogShowing(true);
 
-    Alert.alert(
-      'Delete Password',
-      `Are you sure you want to delete "${password.title}"? This action cannot be undone.`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-          onPress: () => {
-            setIsDeleteDialogShowing(false);
-          },
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setIsDeleting(true);
-            try {
-              await deletePassword(password.id);
+    setConfirmDialog({
+      visible: true,
+      title: 'Delete Password',
+      message: `Are you sure you want to delete "${password.title}"? This action cannot be undone.`,
+      confirmText: 'Delete',
+      confirmStyle: 'destructive',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, visible: false }));
+        setIsDeleting(true);
+        try {
+          await deletePassword(password.id);
 
-              // Reset navigation stack to PasswordsList with success message
-              // Don't set isDeleting(false) here as navigation.reset will unmount the component
-              navigation.reset({
-                index: 0,
-                routes: [
-                  {
-                    name: 'PasswordsList',
-                    params: {
-                      successMessage: 'Password deleted successfully!',
-                    },
-                  },
-                ],
-              });
-            } catch (error) {
-              console.error('Error deleting password:', error);
-              setIsDeleteDialogShowing(false);
-              Alert.alert(
-                'Error',
-                'Failed to delete password entry. Please try again.',
-                [{ text: 'OK' }],
-              );
-              setIsDeleting(false); // Only reset loading state on error
-            }
-          },
-        },
-      ],
-    );
+          // Reset navigation stack to PasswordsList with success message
+          // Don't set isDeleting(false) here as navigation.reset will unmount the component
+          navigation.reset({
+            index: 0,
+            routes: [
+              {
+                name: 'PasswordsList',
+                params: {
+                  successMessage: 'Password deleted successfully!',
+                },
+              },
+            ],
+          });
+        } catch (error) {
+          console.error('Error deleting password:', error);
+          setIsDeleteDialogShowing(false);
+          setConfirmDialog({
+            visible: true,
+            title: 'Error',
+            message: 'Failed to delete password entry. Please try again.',
+            confirmText: 'OK',
+            onConfirm: () =>
+              setConfirmDialog(prev => ({ ...prev, visible: false })),
+          });
+          setIsDeleting(false); // Only reset loading state on error
+        }
+      },
+    });
   };
 
   // Loading state
-  if (isLoading || isSaving || isDeleting) {
+  if (isLoading || isSaving) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.headerButton} onPress={handleCancel}>
-            <MaterialIcons name="close" size={24} color={theme.text} />
+            <Ionicons name="close-outline" size={24} color={theme.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>
-            {isDeleting ? 'Deleting...' : 'Edit Password'}
-          </Text>
+          <Text style={styles.headerTitle}>Edit Password</Text>
           <View style={styles.headerButton} />
         </View>
         <View style={styles.loadingContainer}>
-          <MaterialIcons
-            name={isDeleting ? 'delete' : 'edit'}
-            size={48}
-            color={theme.primary}
-          />
+          <Ionicons name="create-outline" size={48} color={theme.primary} />
           <Text style={styles.loadingText}>
-            {isDeleting
-              ? 'Deleting password...'
-              : isSaving
-              ? 'Saving changes...'
-              : 'Loading...'}
+            {isSaving ? 'Saving changes...' : 'Loading...'}
           </Text>
         </View>
       </SafeAreaView>
@@ -422,14 +572,14 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
             style={styles.headerButton}
             onPress={() => navigation.goBack()}
           >
-            <MaterialIcons name="arrow-back" size={24} color={theme.text} />
+            <Ionicons name="arrow-back-outline" size={24} color={theme.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Edit Password</Text>
           <View style={styles.headerButton} />
         </View>
         <View style={styles.errorContainer}>
-          <MaterialIcons
-            name="error-outline"
+          <Ionicons
+            name="alert-circle-outline"
             size={64}
             color={theme.error}
             style={styles.errorIcon}
@@ -458,10 +608,11 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
           disabled={isDeleteDialogShowing || isDeleting}
         >
           <Text
-            style={[
-              styles.deleteButtonText,
-              (isDeleteDialogShowing || isDeleting) && { opacity: 0.5 },
-            ]}
+            style={
+              isDeleteDialogShowing || isDeleting
+                ? styles.deleteButtonTextDisabled
+                : styles.deleteButtonText
+            }
           >
             Delete
           </Text>
@@ -490,21 +641,21 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
             }}
             onCancel={handleCancel}
             isEditing={true}
+            onDecryptPassword={handleDecryptPassword}
           />
 
           {/* Password History Section - Always show */}
           <PasswordHistoryViewer
-            history={password.passwordHistory || []}
-            currentPassword={formData.password || ''}
+            visible={false}
+            onClose={() => {}}
+            passwordEntry={password}
             onRestorePassword={handleRestorePassword}
           />
 
           {/* Security Audit Section - Always show */}
           <SecurityAuditPanel
-            auditData={password.auditData}
-            breachStatus={password.breachStatus}
-            createdAt={password.createdAt}
-            updatedAt={password.updatedAt}
+            passwordEntry={password}
+            onDecryptPassword={handleDecryptPassword}
           />
         </ScrollView>
 
@@ -519,29 +670,14 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
             onPress={handleSave}
             disabled={!isFormValid() || isSaving || !hasUnsavedChanges()}
           >
-            <MaterialIcons
-              name={isSaving ? 'hourglass-empty' : 'save'}
+            <Ionicons
+              name={isSaving ? 'hourglass-outline' : 'save-outline'}
               size={20}
               color="#FFFFFF"
             />
             <Text style={styles.buttonText}>
               {isSaving ? 'Saving...' : 'Save Changes'}
             </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.deleteButton,
-              (isDeleteDialogShowing || isDeleting) && { opacity: 0.5 },
-            ]}
-            onPress={handleDelete}
-            disabled={isDeleteDialogShowing || isDeleting}
-          >
-            <MaterialIcons
-              name={isDeleting ? 'hourglass-empty' : 'delete'}
-              size={20}
-              color={theme.error}
-            />
           </TouchableOpacity>
         </View>
       </View>
@@ -553,6 +689,20 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
         visible={showToast}
         onHide={handleHideToast}
         duration={2000}
+      />
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        visible={confirmDialog.visible}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        confirmStyle={confirmDialog.confirmStyle}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => {
+          setConfirmDialog(prev => ({ ...prev, visible: false }));
+          setIsDeleteDialogShowing(false);
+        }}
       />
     </SafeAreaView>
   );

@@ -8,7 +8,7 @@ import {
   ScrollView,
   Dimensions,
 } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 
 export interface PasswordTemplate {
@@ -35,7 +35,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     id: 'banking',
     name: 'Banking & Finance',
     description: 'Extra secure for financial accounts',
-    icon: 'account-balance',
+    icon: 'business-outline',
     color: '#4CAF50',
     settings: {
       length: 20,
@@ -51,7 +51,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     id: 'social',
     name: 'Social Media',
     description: 'Strong but memorable for social accounts',
-    icon: 'people',
+    icon: 'people-outline',
     color: '#FF9800',
     settings: {
       length: 16,
@@ -67,7 +67,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     id: 'email',
     name: 'Email Accounts',
     description: 'Balanced security for email access',
-    icon: 'email',
+    icon: 'mail-outline',
     color: '#2196F3',
     settings: {
       length: 18,
@@ -83,7 +83,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     id: 'work',
     name: 'Work & Business',
     description: 'Professional passwords for work accounts',
-    icon: 'business',
+    icon: 'briefcase-outline',
     color: '#9C27B0',
     settings: {
       length: 16,
@@ -99,7 +99,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     id: 'gaming',
     name: 'Gaming',
     description: 'Fun but secure for gaming platforms',
-    icon: 'sports-esports',
+    icon: 'game-controller-outline',
     color: '#E91E63',
     settings: {
       length: 14,
@@ -114,7 +114,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     id: 'shopping',
     name: 'Shopping & E-commerce',
     description: 'Secure passwords for online shopping',
-    icon: 'shopping-cart',
+    icon: 'cart-outline',
     color: '#FF5722',
     settings: {
       length: 16,
@@ -129,7 +129,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     id: 'wifi',
     name: 'WiFi Networks',
     description: 'Strong passwords for WiFi security',
-    icon: 'wifi',
+    icon: 'wifi-outline',
     color: '#607D8B',
     settings: {
       length: 24,
@@ -145,7 +145,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     id: 'memorable',
     name: 'Memorable',
     description: 'Easy to remember but still secure',
-    icon: 'psychology',
+    icon: 'bulb-outline',
     color: '#795548',
     settings: {
       length: 12,
@@ -192,7 +192,7 @@ export const PasswordTemplates: React.FC<PasswordTemplatesProps> = ({
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity onPress={onClose}>
-            <MaterialIcons name="close" size={24} color={theme.text} />
+            <Ionicons name="close" size={24} color={theme.text} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: theme.text }]}>
             Password Templates
@@ -230,15 +230,15 @@ export const PasswordTemplates: React.FC<PasswordTemplatesProps> = ({
                       { backgroundColor: `${template.color}20` },
                     ]}
                   >
-                    <MaterialIcons
+                    <Ionicons
                       name={template.icon as any}
                       size={24}
                       color={template.color}
                     />
                   </View>
                   {selectedTemplate?.id === template.id && (
-                    <MaterialIcons
-                      name="check-circle"
+                    <Ionicons
+                      name="checkmark-circle"
                       size={20}
                       color={theme.primary}
                     />
@@ -259,8 +259,8 @@ export const PasswordTemplates: React.FC<PasswordTemplatesProps> = ({
 
                 <View style={styles.templateSettings}>
                   <View style={styles.settingItem}>
-                    <MaterialIcons
-                      name="straighten"
+                    <Ionicons
+                      name="resize-outline"
                       size={16}
                       color={theme.textSecondary}
                     />
@@ -274,8 +274,8 @@ export const PasswordTemplates: React.FC<PasswordTemplatesProps> = ({
                     </Text>
                   </View>
                   <View style={styles.settingItem}>
-                    <MaterialIcons
-                      name="security"
+                    <Ionicons
+                      name="shield-checkmark-outline"
                       size={16}
                       color={theme.textSecondary}
                     />

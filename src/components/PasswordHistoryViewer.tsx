@@ -1,582 +1,878 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
+  Modal,
   TouchableOpacity,
   ScrollView,
-  Modal,
-  Alert,
+  FlatList,
 } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
-import { PasswordHistoryEntry } from '../types/password';
-import { format } from 'date-fns';
-import Clipboard from '@react-native-clipboard/clipboard';
-import { BiometricService } from '../services/biometricService';
+import { PasswordEntry } from '../types/password';
 
-interface PasswordHistoryViewerProps {
-  history: PasswordHistoryEntry[];
-  currentPassword: string;
-  onRestorePassword?: (password: string) => void;
+export interface PasswordHistoryItem {
+  id: string;
+  password: string;
+  strength: number;
+  strengthLabel: string;
+  timestamp: Date;
+  reason: 'manual' | 'generated' | 'policy' | 'breach' | 'imported';
+  reasonLabel: string;
+  metadata?: {
+    generatorSettings?: any;
+    breachSource?: string;
+    importSource?: string;
+  };
 }
 
-export const PasswordHistoryViewer: React.FC<PasswordHistoryViewerProps> = ({
-  history,
-  currentPassword,
+interface PasswordHistoryViewerProps {
+  visible: boolean;
+  onClose: () => void;
+  passwordEntry: PasswordEntry | null;
+  onRestorePassword?: (historyItem: PasswordHistoryItem) => void;
+}
+
+const PasswordHistoryViewer: React.FC<PasswordHistoryViewerProps> = ({
+  visible,
+  onClose,
+  passwordEntry,
   onRestorePassword,
 }) => {
   const { theme } = useTheme();
-  const [expanded, setExpanded] = useState(false);
-  const [selectedPassword, setSelectedPassword] = useState<string | null>(null);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [revealedPasswords, setRevealedPasswords] = useState<Set<string>>(
-    new Set(),
+  const [selectedHistoryItem, setSelectedHistoryItem] =
+    useState<PasswordHistoryItem | null>(null);
+  const [showCompareView, setShowCompareView] = useState(false);
+  const [showPasswordText, setShowPasswordText] = useState<{
+    [key: string]: boolean;
+  }>({});
+
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
+  // Sample password history data
+  const passwordHistory = useMemo(
+    (): PasswordHistoryItem[] => [
+      {
+        id: '1',
+        password: 'MyStr0ngP@ssw0rd2024!',
+        strength: 95,
+        strengthLabel: 'Very Strong',
+        timestamp: new Date('2024-10-07T10:00:00'),
+        reason: 'manual',
+        reasonLabel: 'Manual Update',
+      },
+      {
+        id: '2',
+        password: 'TempP@ss123',
+        strength: 72,
+        strengthLabel: 'Good',
+        timestamp: new Date('2024-09-15T14:30:00'),
+        reason: 'generated',
+        reasonLabel: 'Generated',
+        metadata: {
+          generatorSettings: {
+            length: 12,
+            includeSymbols: true,
+            includeNumbers: true,
+          },
+        },
+      },
+      {
+        id: '3',
+        password: 'password123',
+        strength: 25,
+        strengthLabel: 'Very Weak',
+        timestamp: new Date('2024-08-20T09:15:00'),
+        reason: 'breach',
+        reasonLabel: 'Breach Detection',
+        metadata: {
+          breachSource: 'HaveIBeenPwned',
+        },
+      },
+      {
+        id: '4',
+        password: 'InitialPass2024',
+        strength: 68,
+        strengthLabel: 'Fair',
+        timestamp: new Date('2024-07-10T16:45:00'),
+        reason: 'imported',
+        reasonLabel: 'Imported',
+        metadata: {
+          importSource: '1Password',
+        },
+      },
+    ],
+    [],
   );
 
-  const styles = StyleSheet.create({
-    container: {
-      backgroundColor: theme.surface,
-      borderRadius: 12,
-      padding: 16,
-      marginBottom: 16,
-    },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    headerLeft: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      flex: 1,
-    },
-    headerIcon: {
-      marginRight: 12,
-    },
-    headerTitle: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: theme.text,
-    },
-    headerSubtitle: {
-      fontSize: 12,
-      color: theme.textSecondary,
-      marginTop: 2,
-    },
-    expandButton: {
-      padding: 4,
-    },
-    historyList: {
-      marginTop: 16,
-    },
-    historyItem: {
-      backgroundColor: theme.background,
-      borderRadius: 8,
-      padding: 12,
-      marginBottom: 8,
-      borderWidth: 1,
-      borderColor: theme.border,
-    },
-    currentItem: {
-      borderColor: theme.primary,
-      borderWidth: 2,
-    },
-    historyItemHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 8,
-    },
-    historyItemDate: {
-      fontSize: 14,
-      fontWeight: '500',
-      color: theme.text,
-    },
-    currentBadge: {
-      backgroundColor: theme.primary,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 4,
-    },
-    currentBadgeText: {
-      fontSize: 10,
-      fontWeight: '600',
-      color: '#FFFFFF',
-    },
-    passwordRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 8,
-    },
-    passwordText: {
-      flex: 1,
-      fontSize: 14,
-      fontFamily: 'monospace',
-      color: theme.text,
-    },
-    passwordHidden: {
-      color: theme.textSecondary,
-    },
-    iconButton: {
-      padding: 4,
-      marginLeft: 8,
-    },
-    strengthRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 8,
-    },
-    strengthLabel: {
-      fontSize: 12,
-      color: theme.textSecondary,
-      marginRight: 8,
-    },
-    strengthBadge: {
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 4,
-    },
-    strengthText: {
-      fontSize: 11,
-      fontWeight: '600',
-      color: '#FFFFFF',
-    },
-    actionButtons: {
-      flexDirection: 'row',
-      gap: 8,
-    },
-    actionButton: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: 8,
-      paddingHorizontal: 12,
-      borderRadius: 6,
-      borderWidth: 1,
-      borderColor: theme.border,
-    },
-    restoreButton: {
-      borderColor: theme.primary,
-    },
-    actionButtonText: {
-      fontSize: 12,
-      fontWeight: '500',
-      color: theme.text,
-      marginLeft: 4,
-    },
-    restoreButtonText: {
-      color: theme.primary,
-    },
-    emptyState: {
-      alignItems: 'center',
-      paddingVertical: 24,
-    },
-    emptyStateText: {
-      fontSize: 14,
-      color: theme.textSecondary,
-      marginTop: 8,
-    },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    modalContent: {
-      backgroundColor: theme.surface,
-      borderRadius: 16,
-      padding: 24,
-      width: '85%',
-      maxWidth: 400,
-    },
-    modalTitle: {
-      fontSize: 18,
-      fontWeight: '600',
-      color: theme.text,
-      marginBottom: 16,
-      textAlign: 'center',
-    },
-    modalPassword: {
-      backgroundColor: theme.background,
-      padding: 16,
-      borderRadius: 8,
-      marginBottom: 16,
-    },
-    modalPasswordText: {
-      fontSize: 16,
-      fontFamily: 'monospace',
-      color: theme.text,
-      textAlign: 'center',
-    },
-    modalButtons: {
-      flexDirection: 'row',
-      gap: 12,
-    },
-    modalButton: {
-      flex: 1,
-      paddingVertical: 12,
-      borderRadius: 8,
-      alignItems: 'center',
-    },
-    modalButtonPrimary: {
-      backgroundColor: theme.primary,
-    },
-    modalButtonSecondary: {
-      backgroundColor: theme.background,
-      borderWidth: 1,
-      borderColor: theme.border,
-    },
-    modalButtonText: {
-      fontSize: 14,
-      fontWeight: '600',
-      color: '#FFFFFF',
-    },
-    modalButtonTextSecondary: {
-      color: theme.text,
-    },
-  });
+  const togglePasswordVisibility = useCallback((itemId: string) => {
+    setShowPasswordText(prev => ({
+      ...prev,
+      [itemId]: !prev[itemId],
+    }));
+  }, []);
 
-  const getStrengthColor = (score: number): string => {
-    if (score >= 4) return '#4CAF50'; // Strong - Green
-    if (score >= 3) return '#8BC34A'; // Good - Light Green
-    if (score >= 2) return '#FFC107'; // Fair - Yellow
-    if (score >= 1) return '#FF9800'; // Weak - Orange
-    return '#F44336'; // Very Weak - Red
-  };
+  const handleComparePassword = useCallback((item: PasswordHistoryItem) => {
+    setSelectedHistoryItem(item);
+    setShowCompareView(true);
+  }, []);
 
-  const togglePasswordVisibility = async (passwordId: string) => {
-    // If password is hidden, require biometric authentication to reveal
-    if (!revealedPasswords.has(passwordId)) {
-      const biometricService = BiometricService.getInstance();
-      const result = await biometricService.authenticateWithBiometrics(
-        'Authenticate to view password history',
-      );
-
-      if (!result.success) {
-        if (result.error && !result.error.includes('cancelled')) {
-          Alert.alert(
-            'Authentication Failed',
-            result.error || 'Could not verify your identity',
-          );
-        }
-        return;
+  const handleRestorePassword = useCallback(
+    (item: PasswordHistoryItem) => {
+      if (onRestorePassword) {
+        onRestorePassword(item);
+        onClose();
       }
-    }
-
-    // Toggle visibility after successful authentication (or when hiding)
-    setRevealedPasswords(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(passwordId)) {
-        newSet.delete(passwordId);
-      } else {
-        newSet.add(passwordId);
-      }
-      return newSet;
-    });
-  };
-
-  const handleCopyPassword = async (password: string) => {
-    // Require biometric authentication to copy password
-    const biometricService = BiometricService.getInstance();
-    const result = await biometricService.authenticateWithBiometrics(
-      'Authenticate to copy password',
-    );
-
-    if (result.success) {
-      Clipboard.setString(password);
-      Alert.alert('Copied', 'Password copied to clipboard');
-    } else if (result.error && !result.error.includes('cancelled')) {
-      Alert.alert(
-        'Authentication Failed',
-        result.error || 'Could not verify your identity',
-      );
-    }
-  };
-
-  const handleRestorePassword = async (password: string) => {
-    // Require biometric authentication to restore password
-    const biometricService = BiometricService.getInstance();
-    const result = await biometricService.authenticateWithBiometrics(
-      'Authenticate to restore password',
-    );
-
-    if (result.success) {
-      setSelectedPassword(password);
-      setShowPasswordModal(true);
-    } else if (result.error && !result.error.includes('cancelled')) {
-      Alert.alert(
-        'Authentication Failed',
-        result.error || 'Could not verify your identity',
-      );
-    }
-  };
-
-  const confirmRestore = () => {
-    if (selectedPassword && onRestorePassword) {
-      onRestorePassword(selectedPassword);
-      setShowPasswordModal(false);
-      setSelectedPassword(null);
-      Alert.alert('Success', 'Password restored successfully');
-    }
-  };
-
-  const sortedHistory = [...history].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    },
+    [onRestorePassword, onClose],
   );
 
-  if (!history || history.length === 0) {
+  const getStrengthColor = useCallback((strength: number) => {
+    if (strength >= 90) return '#00C851';
+    if (strength >= 75) return '#4CAF50';
+    if (strength >= 60) return '#FF9800';
+    if (strength >= 40) return '#FF5722';
+    return '#F44336';
+  }, []);
+
+  const getReasonIcon = useCallback((reason: string) => {
+    switch (reason) {
+      case 'manual':
+        return 'create-outline';
+      case 'generated':
+        return 'sparkles-outline';
+      case 'policy':
+        return 'document-text-outline';
+      case 'breach':
+        return 'shield-checkmark-outline';
+      case 'imported':
+        return 'download-outline';
+      default:
+        return 'help-circle-outline';
+    }
+  }, []);
+
+  const formatTimestamp = useCallback((timestamp: Date) => {
+    const now = new Date();
+    const diff = now.getTime() - timestamp.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (days === 0) {
+      return 'Today';
+    } else if (days === 1) {
+      return 'Yesterday';
+    } else if (days < 7) {
+      return `${days} days ago`;
+    } else if (days < 30) {
+      const weeks = Math.floor(days / 7);
+      return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
+    } else if (days < 365) {
+      const months = Math.floor(days / 30);
+      return `${months} month${months > 1 ? 's' : ''} ago`;
+    } else {
+      const years = Math.floor(days / 365);
+      return `${years} year${years > 1 ? 's' : ''} ago`;
+    }
+  }, []);
+
+  const renderHistoryItem = ({
+    item,
+    index,
+  }: {
+    item: PasswordHistoryItem;
+    index: number;
+  }) => {
+    const isPasswordVisible = showPasswordText[item.id] || false;
+    const strengthColor = getStrengthColor(item.strength);
+    const isCurrent = index === 0;
+
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <MaterialIcons
-              name="history"
-              size={24}
-              color={theme.textSecondary}
-              style={styles.headerIcon}
-            />
-            <View>
-              <Text style={styles.headerTitle}>Password History</Text>
-              <Text style={styles.headerSubtitle}>No history available</Text>
+      <View
+        style={[styles.historyItem, isCurrent && styles.currentHistoryItem]}
+      >
+        {/* Header */}
+        <View style={styles.historyItemHeader}>
+          <View style={styles.historyItemInfo}>
+            <View style={styles.reasonContainer}>
+              <Ionicons
+                name={getReasonIcon(item.reason)}
+                size={16}
+                color={isCurrent ? theme.primary : theme.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.reasonText,
+                  isCurrent && styles.currentReasonText,
+                ]}
+              >
+                {item.reasonLabel}
+              </Text>
+              {isCurrent && (
+                <View style={styles.currentBadge}>
+                  <Text style={styles.currentBadgeText}>Current</Text>
+                </View>
+              )}
             </View>
+            <Text style={styles.timestampText}>
+              {formatTimestamp(item.timestamp)}
+            </Text>
+          </View>
+
+          {/* Actions */}
+          <View style={styles.historyItemActions}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => handleComparePassword(item)}
+            >
+              <Ionicons
+                name="swap-horizontal-outline"
+                size={18}
+                color={theme.primary}
+              />
+            </TouchableOpacity>
+
+            {!isCurrent && onRestorePassword && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => handleRestorePassword(item)}
+              >
+                <Ionicons
+                  name="refresh-outline"
+                  size={18}
+                  color={theme.success || theme.primary}
+                />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
-        <View style={styles.emptyState}>
-          <MaterialIcons name="history" size={48} color={theme.textSecondary} />
-          <Text style={styles.emptyStateText}>
-            No password changes recorded yet
+
+        {/* Password Display */}
+        <View style={styles.passwordContainer}>
+          <View style={styles.passwordRow}>
+            <Text style={styles.passwordText}>
+              {isPasswordVisible
+                ? item.password
+                : '•'.repeat(item.password.length)}
+            </Text>
+            <TouchableOpacity
+              style={styles.visibilityButton}
+              onPress={() => togglePasswordVisibility(item.id)}
+            >
+              <Ionicons
+                name={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'}
+                size={20}
+                color={theme.textSecondary}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Strength Indicator */}
+        <View style={styles.strengthContainer}>
+          <View style={styles.strengthBar}>
+            <View
+              style={[
+                styles.strengthFill,
+                {
+                  width: `${item.strength}%`,
+                  backgroundColor: strengthColor,
+                },
+              ]}
+            />
+          </View>
+          <Text style={[styles.strengthText, { color: strengthColor }]}>
+            {item.strengthLabel} ({item.strength}%)
           </Text>
         </View>
+
+        {/* Metadata */}
+        {item.metadata && (
+          <View style={styles.metadataContainer}>
+            {item.metadata.generatorSettings && (
+              <Text style={styles.metadataText}>
+                Generated: {item.metadata.generatorSettings.length} chars,
+                {item.metadata.generatorSettings.includeSymbols
+                  ? ' symbols,'
+                  : ''}
+                {item.metadata.generatorSettings.includeNumbers
+                  ? ' numbers'
+                  : ''}
+              </Text>
+            )}
+            {item.metadata.breachSource && (
+              <Text style={[styles.metadataText, styles.breachText]}>
+                Detected in breach: {item.metadata.breachSource}
+              </Text>
+            )}
+            {item.metadata.importSource && (
+              <Text style={styles.metadataText}>
+                Imported from: {item.metadata.importSource}
+              </Text>
+            )}
+          </View>
+        )}
       </View>
     );
-  }
+  };
 
-  return (
-    <>
-      <View style={styles.container}>
-        <TouchableOpacity
-          style={styles.header}
-          onPress={() => setExpanded(!expanded)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.headerLeft}>
-            <MaterialIcons
-              name="history"
-              size={24}
-              color={theme.primary}
-              style={styles.headerIcon}
-            />
-            <View>
-              <Text style={styles.headerTitle}>Password History</Text>
-              <Text style={styles.headerSubtitle}>
-                {history.length} previous{' '}
-                {history.length === 1 ? 'version' : 'versions'}
-              </Text>
-            </View>
-          </View>
-          <TouchableOpacity
-            style={styles.expandButton}
-            onPress={() => setExpanded(!expanded)}
-          >
-            <MaterialIcons
-              name={expanded ? 'expand-less' : 'expand-more'}
-              size={24}
-              color={theme.text}
-            />
-          </TouchableOpacity>
-        </TouchableOpacity>
+  const renderCompareView = () => {
+    if (!selectedHistoryItem) return null;
 
-        {expanded && (
-          <ScrollView style={styles.historyList} nestedScrollEnabled>
-            {/* Current Password */}
-            <View style={[styles.historyItem, styles.currentItem]}>
-              <View style={styles.historyItemHeader}>
-                <Text style={styles.historyItemDate}>Current Password</Text>
-                <View style={styles.currentBadge}>
-                  <Text style={styles.currentBadgeText}>ACTIVE</Text>
-                </View>
-              </View>
+    const currentPassword = passwordHistory[0];
 
-              <View style={styles.passwordRow}>
-                <Text
-                  style={[
-                    styles.passwordText,
-                    !revealedPasswords.has('current') && styles.passwordHidden,
-                  ]}
-                >
-                  {revealedPasswords.has('current')
-                    ? currentPassword
-                    : '••••••••••••'}
-                </Text>
-                <TouchableOpacity
-                  style={styles.iconButton}
-                  onPress={() => togglePasswordVisibility('current')}
-                >
-                  <MaterialIcons
-                    name={
-                      revealedPasswords.has('current')
-                        ? 'visibility-off'
-                        : 'visibility'
-                    }
-                    size={20}
-                    color={theme.textSecondary}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.iconButton}
-                  onPress={() => handleCopyPassword(currentPassword)}
-                >
-                  <MaterialIcons
-                    name="content-copy"
-                    size={20}
-                    color={theme.textSecondary}
-                  />
-                </TouchableOpacity>
-              </View>
+    return (
+      <Modal
+        visible={showCompareView}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCompareView(false)}
+      >
+        <View style={styles.compareOverlay}>
+          <View style={styles.compareModal}>
+            <View style={styles.compareHeader}>
+              <Text style={styles.compareTitle}>Password Comparison</Text>
+              <TouchableOpacity
+                onPress={() => setShowCompareView(false)}
+                style={styles.compareCloseButton}
+              >
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
             </View>
 
-            {/* Historical Passwords */}
-            {sortedHistory.map((entry, index) => (
-              <View key={entry.id} style={styles.historyItem}>
-                <View style={styles.historyItemHeader}>
-                  <Text style={styles.historyItemDate}>
-                    {format(new Date(entry.createdAt), 'MMM dd, yyyy HH:mm')}
-                  </Text>
-                </View>
-
-                <View style={styles.passwordRow}>
-                  <Text
-                    style={[
-                      styles.passwordText,
-                      !revealedPasswords.has(entry.id) && styles.passwordHidden,
-                    ]}
-                  >
-                    {revealedPasswords.has(entry.id)
-                      ? entry.password
-                      : '••••••••••••'}
+            <ScrollView style={styles.compareContent}>
+              {/* Current Password */}
+              <View style={styles.compareSection}>
+                <Text style={styles.compareSectionTitle}>Current Password</Text>
+                <View style={styles.comparePasswordContainer}>
+                  <Text style={styles.comparePassword}>
+                    {showPasswordText.current
+                      ? currentPassword.password
+                      : '•'.repeat(currentPassword.password.length)}
                   </Text>
                   <TouchableOpacity
-                    style={styles.iconButton}
-                    onPress={() => togglePasswordVisibility(entry.id)}
+                    onPress={() => togglePasswordVisibility('current')}
+                    style={styles.compareVisibilityButton}
                   >
-                    <MaterialIcons
+                    <Ionicons
                       name={
-                        revealedPasswords.has(entry.id)
-                          ? 'visibility-off'
-                          : 'visibility'
+                        showPasswordText.current
+                          ? 'eye-off-outline'
+                          : 'eye-outline'
                       }
                       size={20}
                       color={theme.textSecondary}
                     />
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.iconButton}
-                    onPress={() => handleCopyPassword(entry.password)}
+                </View>
+                <View style={styles.compareStrengthRow}>
+                  <Text style={styles.compareStrengthLabel}>Strength:</Text>
+                  <Text
+                    style={[
+                      styles.compareStrengthValue,
+                      { color: getStrengthColor(currentPassword.strength) },
+                    ]}
                   >
-                    <MaterialIcons
-                      name="content-copy"
+                    {currentPassword.strengthLabel} ({currentPassword.strength}
+                    %)
+                  </Text>
+                </View>
+              </View>
+
+              {/* Historical Password */}
+              <View style={styles.compareSection}>
+                <Text style={styles.compareSectionTitle}>
+                  Historical Password (
+                  {formatTimestamp(selectedHistoryItem.timestamp)})
+                </Text>
+                <View style={styles.comparePasswordContainer}>
+                  <Text style={styles.comparePassword}>
+                    {showPasswordText.historical
+                      ? selectedHistoryItem.password
+                      : '•'.repeat(selectedHistoryItem.password.length)}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => togglePasswordVisibility('historical')}
+                    style={styles.compareVisibilityButton}
+                  >
+                    <Ionicons
+                      name={
+                        showPasswordText.historical
+                          ? 'eye-off-outline'
+                          : 'eye-outline'
+                      }
                       size={20}
                       color={theme.textSecondary}
                     />
                   </TouchableOpacity>
                 </View>
-
-                <View style={styles.strengthRow}>
-                  <Text style={styles.strengthLabel}>Strength:</Text>
-                  <View
+                <View style={styles.compareStrengthRow}>
+                  <Text style={styles.compareStrengthLabel}>Strength:</Text>
+                  <Text
                     style={[
-                      styles.strengthBadge,
-                      {
-                        backgroundColor: getStrengthColor(entry.strength.score),
-                      },
+                      styles.compareStrengthValue,
+                      { color: getStrengthColor(selectedHistoryItem.strength) },
                     ]}
                   >
-                    <Text style={styles.strengthText}>
-                      {entry.strength.label}
+                    {selectedHistoryItem.strengthLabel} (
+                    {selectedHistoryItem.strength}%)
+                  </Text>
+                </View>
+              </View>
+
+              {/* Strength Comparison */}
+              <View style={styles.compareSection}>
+                <Text style={styles.compareSectionTitle}>
+                  Security Improvement
+                </Text>
+                <View style={styles.strengthComparisonContainer}>
+                  <View style={styles.strengthComparisonRow}>
+                    <Text style={styles.strengthComparisonLabel}>
+                      Strength Change:
                     </Text>
+                    <View style={styles.strengthComparisonValue}>
+                      {currentPassword.strength >
+                      selectedHistoryItem.strength ? (
+                        <>
+                          <Ionicons
+                            name="trending-up"
+                            size={16}
+                            color={theme.success || '#00C851'}
+                          />
+                          <Text
+                            style={[
+                              styles.strengthComparisonText,
+                              styles.strengthImprovementText,
+                            ]}
+                          >
+                            +
+                            {currentPassword.strength -
+                              selectedHistoryItem.strength}
+                            % Stronger
+                          </Text>
+                        </>
+                      ) : currentPassword.strength <
+                        selectedHistoryItem.strength ? (
+                        <>
+                          <Ionicons
+                            name="trending-down"
+                            size={16}
+                            color={theme.error || '#F44336'}
+                          />
+                          <Text
+                            style={[
+                              styles.strengthComparisonText,
+                              styles.strengthDecllineText,
+                            ]}
+                          >
+                            -
+                            {selectedHistoryItem.strength -
+                              currentPassword.strength}
+                            % Weaker
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons
+                            name="remove"
+                            size={16}
+                            color={theme.textSecondary}
+                          />
+                          <Text
+                            style={[
+                              styles.strengthComparisonText,
+                              styles.strengthNoChangeText,
+                            ]}
+                          >
+                            No Change
+                          </Text>
+                        </>
+                      )}
+                    </View>
                   </View>
                 </View>
-
-                {onRestorePassword && (
-                  <View style={styles.actionButtons}>
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.restoreButton]}
-                      onPress={() => handleRestorePassword(entry.password)}
-                    >
-                      <MaterialIcons
-                        name="restore"
-                        size={16}
-                        color={theme.primary}
-                      />
-                      <Text
-                        style={[
-                          styles.actionButtonText,
-                          styles.restoreButtonText,
-                        ]}
-                      >
-                        Restore
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
               </View>
-            ))}
-          </ScrollView>
-        )}
-      </View>
+            </ScrollView>
 
-      {/* Restore Confirmation Modal */}
-      <Modal
-        visible={showPasswordModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowPasswordModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Restore Password?</Text>
-            <Text
-              style={[
-                styles.headerSubtitle,
-                { textAlign: 'center', marginBottom: 16 },
-              ]}
-            >
-              This will replace your current password with the selected one.
-            </Text>
-            <View style={styles.modalPassword}>
-              <Text style={styles.modalPasswordText}>{selectedPassword}</Text>
-            </View>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonSecondary]}
-                onPress={() => {
-                  setShowPasswordModal(false);
-                  setSelectedPassword(null);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.modalButtonText,
-                    styles.modalButtonTextSecondary,
-                  ]}
+            {onRestorePassword && (
+              <View style={styles.compareActions}>
+                <TouchableOpacity
+                  style={styles.restoreButton}
+                  onPress={() => {
+                    handleRestorePassword(selectedHistoryItem);
+                    setShowCompareView(false);
+                  }}
                 >
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonPrimary]}
-                onPress={confirmRestore}
-              >
-                <Text style={styles.modalButtonText}>Restore</Text>
-              </TouchableOpacity>
-            </View>
+                  <Ionicons name="refresh-outline" size={20} color="white" />
+                  <Text style={styles.restoreButtonText}>
+                    Restore This Password
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
-    </>
+    );
+  };
+
+  if (!passwordEntry) return null;
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onClose} style={styles.headerButton}>
+            <Ionicons name="close" size={24} color={theme.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Password History</Text>
+          <View style={styles.headerButton} />
+        </View>
+
+        {/* Entry Info */}
+        <View style={styles.entryInfo}>
+          <Text style={styles.entryTitle}>{passwordEntry.title}</Text>
+          <Text style={styles.entrySubtitle}>
+            {passwordHistory.length} password
+            {passwordHistory.length !== 1 ? 's' : ''} in history
+          </Text>
+        </View>
+
+        {/* History List */}
+        <FlatList
+          data={passwordHistory}
+          keyExtractor={item => item.id}
+          renderItem={renderHistoryItem}
+          style={styles.historyList}
+          contentContainerStyle={styles.historyListContent}
+          showsVerticalScrollIndicator={false}
+        />
+
+        {/* Compare Modal */}
+        {renderCompareView()}
+      </View>
+    </Modal>
   );
 };
+
+const createStyles = (theme: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    headerButton: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    headerTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: theme.text,
+    },
+    entryInfo: {
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    entryTitle: {
+      fontSize: 20,
+      fontWeight: '600',
+      color: theme.text,
+      marginBottom: 4,
+    },
+    entrySubtitle: {
+      fontSize: 14,
+      color: theme.textSecondary,
+    },
+    historyList: {
+      flex: 1,
+    },
+    historyListContent: {
+      padding: 20,
+    },
+    historyItem: {
+      backgroundColor: theme.surface || theme.card,
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    currentHistoryItem: {
+      borderColor: theme.primary,
+      backgroundColor: theme.primary + '10',
+    },
+    historyItemHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+    },
+    historyItemInfo: {
+      flex: 1,
+    },
+    reasonContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 4,
+    },
+    reasonText: {
+      fontSize: 16,
+      fontWeight: '500',
+      color: theme.text,
+      marginLeft: 8,
+    },
+    currentReasonText: {
+      color: theme.primary,
+      fontWeight: '600',
+    },
+    currentBadge: {
+      backgroundColor: theme.primary,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 10,
+      marginLeft: 8,
+    },
+    currentBadgeText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: 'white',
+    },
+    timestampText: {
+      fontSize: 14,
+      color: theme.textSecondary,
+    },
+    historyItemActions: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    actionButton: {
+      width: 36,
+      height: 36,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.background,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    passwordContainer: {
+      marginBottom: 12,
+    },
+    passwordRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.background,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    passwordText: {
+      flex: 1,
+      fontSize: 16,
+      color: theme.text,
+      letterSpacing: 1,
+      fontFamily: 'monospace',
+    },
+    visibilityButton: {
+      width: 32,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    strengthContainer: {
+      marginBottom: 8,
+    },
+    strengthBar: {
+      height: 4,
+      backgroundColor: theme.border,
+      borderRadius: 2,
+      marginBottom: 4,
+      overflow: 'hidden',
+    },
+    strengthFill: {
+      height: '100%',
+      borderRadius: 2,
+    },
+    strengthText: {
+      fontSize: 14,
+      fontWeight: '500',
+    },
+    metadataContainer: {
+      marginTop: 8,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: theme.border,
+    },
+    metadataText: {
+      fontSize: 12,
+      color: theme.textSecondary,
+      marginBottom: 2,
+    },
+    breachText: {
+      color: theme.error || '#F44336',
+    },
+    compareOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 20,
+    },
+    compareModal: {
+      backgroundColor: theme.surface || theme.card,
+      borderRadius: 16,
+      width: '100%',
+      maxWidth: 500,
+      maxHeight: '80%',
+    },
+    compareHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    compareTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: theme.text,
+    },
+    compareCloseButton: {
+      width: 32,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    compareContent: {
+      flex: 1,
+      paddingHorizontal: 20,
+    },
+    compareSection: {
+      paddingVertical: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    compareSectionTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: theme.text,
+      marginBottom: 12,
+    },
+    comparePasswordContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.background,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderWidth: 1,
+      borderColor: theme.border,
+      marginBottom: 8,
+    },
+    comparePassword: {
+      flex: 1,
+      fontSize: 16,
+      color: theme.text,
+      letterSpacing: 1,
+      fontFamily: 'monospace',
+    },
+    compareVisibilityButton: {
+      width: 32,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    compareStrengthRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    compareStrengthLabel: {
+      fontSize: 14,
+      color: theme.textSecondary,
+      marginRight: 8,
+    },
+    compareStrengthValue: {
+      fontSize: 14,
+      fontWeight: '500',
+    },
+    strengthComparisonContainer: {
+      backgroundColor: theme.background,
+      borderRadius: 8,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    strengthComparisonRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    strengthComparisonLabel: {
+      fontSize: 14,
+      color: theme.textSecondary,
+    },
+    strengthComparisonValue: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    strengthComparisonText: {
+      fontSize: 14,
+      fontWeight: '500',
+      marginLeft: 4,
+    },
+    strengthImprovementText: {
+      color: theme.success || '#00C851',
+    },
+    strengthDecllineText: {
+      color: theme.error || '#F44336',
+    },
+    strengthNoChangeText: {
+      color: theme.textSecondary,
+    },
+    compareActions: {
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      borderTopWidth: 1,
+      borderTopColor: theme.border,
+    },
+    restoreButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.success || theme.primary,
+      paddingVertical: 12,
+      borderRadius: 12,
+    },
+    restoreButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: 'white',
+      marginLeft: 8,
+    },
+  });
 
 export default PasswordHistoryViewer;

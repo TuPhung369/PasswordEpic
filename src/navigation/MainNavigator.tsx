@@ -1,14 +1,18 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { PasswordsNavigator } from './PasswordsNavigator';
+import { NavigatorScreenParams } from '@react-navigation/native';
+import {
+  PasswordsNavigator,
+  PasswordsStackParamList,
+} from './PasswordsNavigator';
 import { GeneratorScreen } from '../screens/main/GeneratorScreen';
 import { SettingsScreen } from '../screens/main/SettingsScreen';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 
 export type MainTabParamList = {
-  Passwords: undefined;
+  Passwords: NavigatorScreenParams<PasswordsStackParamList> | undefined;
   Generator: undefined;
   Settings: undefined;
 };
@@ -24,16 +28,14 @@ const TabBarIcon: React.FC<{
   let iconName: string;
 
   if (routeName === 'Passwords') {
-    iconName = 'lock';
+    iconName = 'lock-closed-outline';
   } else if (routeName === 'Generator') {
-    iconName = 'refresh';
+    iconName = 'refresh-outline';
   } else {
-    iconName = 'settings';
+    iconName = 'settings-outline';
   }
 
-  return (
-    <MaterialIcons name={iconName} size={focused ? 26 : 24} color={color} />
-  );
+  return <Ionicons name={iconName} size={focused ? 26 : 24} color={color} />;
 };
 
 // Tạo function render icon ra ngoài component
@@ -122,9 +124,9 @@ export const MainNavigator: React.FC = () => {
 const styles = StyleSheet.create({
   tabBar: {
     borderTopWidth: 0.5,
-    paddingBottom: 8,
+    paddingBottom: 4,
     paddingTop: 8,
-    height: 88,
+    height: 84,
   },
   tabLabel: {
     fontSize: 12,

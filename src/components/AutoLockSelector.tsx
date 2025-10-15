@@ -8,7 +8,7 @@ import {
   StyleSheet,
   Dimensions,
 } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface AutoLockOption {
@@ -39,49 +39,49 @@ const AUTO_LOCK_OPTIONS: AutoLockOption[] = [
     label: '30 seconds',
     value: 0.5,
     description: 'Lock after 30 seconds of no user interaction',
-    icon: 'security',
+    icon: 'shield-checkmark-outline',
     securityLevel: 'maximum',
   },
   {
     label: '1 minute',
     value: 1,
     description: 'Lock after 1 minute of inactivity',
-    icon: 'shield',
+    icon: 'shield-outline',
     securityLevel: 'high',
   },
   {
     label: '2 minutes',
     value: 2,
     description: 'Lock after 2 minutes without touches/taps',
-    icon: 'timer',
+    icon: 'timer-outline',
     securityLevel: 'high',
   },
   {
     label: '5 minutes',
     value: 5,
     description: 'Lock after 5 minutes of no interaction',
-    icon: 'access_time',
+    icon: 'time-outline',
     securityLevel: 'moderate',
   },
   {
     label: '10 minutes',
     value: 10,
     description: 'Lock after 10 minutes without activity',
-    icon: 'schedule',
+    icon: 'time-outline',
     securityLevel: 'balanced',
   },
   {
     label: '15 minutes',
     value: 15,
     description: 'Lock after 15 minutes of no user input',
-    icon: 'update',
+    icon: 'refresh-outline',
     securityLevel: 'low',
   },
   {
     label: '30 minutes',
     value: 30,
     description: 'Lock after 30 minutes of inactivity',
-    icon: 'event',
+    icon: 'calendar-outline',
     securityLevel: 'convenience',
   },
 ];
@@ -186,8 +186,8 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
           >
             {currentOption?.label || 'Select timeout'}
           </Text>
-          <MaterialIcons
-            name="keyboard-arrow-down"
+          <Ionicons
+            name="chevron-down-outline"
             size={24}
             color={theme.textSecondary}
           />
@@ -246,7 +246,7 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
                   activeOpacity={0.7}
                 >
                   <View style={styles.optionLeft}>
-                    <MaterialIcons
+                    <Ionicons
                       name={option.icon as any}
                       size={24}
                       color={getSecurityLevelColor(option.securityLevel)}
@@ -286,8 +286,8 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
                     </View>
                   </View>
                   {currentValue === option.value && (
-                    <MaterialIcons
-                      name="check-circle"
+                    <Ionicons
+                      name="checkmark-circle-outline"
                       size={24}
                       color={theme.primary}
                     />
@@ -299,11 +299,7 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
             {/* Footer Info */}
             <View style={styles.modalFooter}>
               <View style={styles.footerItem}>
-                <MaterialIcons
-                  name="fingerprint"
-                  size={16}
-                  color={theme.primary}
-                />
+                <Ionicons name="finger-print" size={16} color={theme.primary} />
                 <Text
                   style={[styles.footerText, { color: theme.textSecondary }]}
                 >
@@ -311,8 +307,8 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
                 </Text>
               </View>
               <View style={styles.footerItem}>
-                <MaterialIcons
-                  name="security"
+                <Ionicons
+                  name="shield-checkmark-outline"
                   size={16}
                   color={theme.primary}
                 />

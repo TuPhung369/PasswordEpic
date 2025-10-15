@@ -4,12 +4,12 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { useAppDispatch } from '../../hooks/redux';
 import {
   loginStart,
@@ -39,6 +39,21 @@ export const LoginScreen: React.FC = () => {
   // Use ref to track loading state immediately
   const isLoadingRef = React.useRef(false);
   const buttonPressedRef = React.useRef(false);
+
+  // Confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    confirmStyle?: 'default' | 'destructive';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   // Cleanup on unmount
   React.useEffect(() => {
@@ -74,20 +89,28 @@ export const LoginScreen: React.FC = () => {
 
     try {
       if (!googleSignInAvailable) {
-        Alert.alert(
-          'Google Sign-In Unavailable',
-          'Google Sign-In is not available in this build. Please use a development build that includes the Google Sign-In module.',
-          [{ text: 'OK' }],
-        );
+        setConfirmDialog({
+          visible: true,
+          title: 'Google Sign-In Unavailable',
+          message:
+            'Google Sign-In is not available in this build. Please use a development build that includes the Google Sign-In module.',
+          confirmText: 'OK',
+          onConfirm: () =>
+            setConfirmDialog(prev => ({ ...prev, visible: false })),
+        });
         return;
       }
 
       if (!isGoogleSignInReady()) {
-        Alert.alert(
-          'Google Sign-In Not Ready',
-          'Google Sign-In is still initializing. Please wait a moment and try again.',
-          [{ text: 'OK' }],
-        );
+        setConfirmDialog({
+          visible: true,
+          title: 'Google Sign-In Not Ready',
+          message:
+            'Google Sign-In is still initializing. Please wait a moment and try again.',
+          confirmText: 'OK',
+          onConfirm: () =>
+            setConfirmDialog(prev => ({ ...prev, visible: false })),
+        });
         return;
       }
 
@@ -122,15 +145,26 @@ export const LoginScreen: React.FC = () => {
         return;
       } else {
         dispatch(loginFailure(result.error || 'Failed to sign in with Google'));
-        Alert.alert(
-          'Authentication Error',
-          result.error || 'Failed to sign in with Google',
-        );
+        setConfirmDialog({
+          visible: true,
+          title: 'Authentication Error',
+          message: result.error || 'Failed to sign in with Google',
+          confirmText: 'OK',
+          onConfirm: () =>
+            setConfirmDialog(prev => ({ ...prev, visible: false })),
+        });
       }
     } catch (error: any) {
       const errorMessage = error.message || 'An unexpected error occurred';
       dispatch(loginFailure(errorMessage));
-      Alert.alert('Error', errorMessage);
+      setConfirmDialog({
+        visible: true,
+        title: 'Error',
+        message: errorMessage,
+        confirmText: 'OK',
+        onConfirm: () =>
+          setConfirmDialog(prev => ({ ...prev, visible: false })),
+      });
 
       // Only reset states on error - not on success
       buttonPressedRef.current = false;
@@ -209,6 +243,16 @@ export const LoginScreen: React.FC = () => {
           🔒 Your data is encrypted end-to-end and never stored on our servers
         </Text>
       </View>
+
+      <ConfirmDialog
+        visible={confirmDialog.visible}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        confirmStyle={confirmDialog.confirmStyle}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
+      />
     </SafeAreaView>
   );
 };

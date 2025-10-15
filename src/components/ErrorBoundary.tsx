@@ -1,6 +1,6 @@
 import React, { Component, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 interface Props {
   children: ReactNode;
@@ -47,7 +47,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
       return (
         <View style={styles.container}>
-          <MaterialIcons name="error" size={64} color="#FF3B30" />
+          <Ionicons name="alert-circle-outline" size={64} color="#FF3B30" />
           <Text style={styles.title}>Something went wrong</Text>
           <Text style={styles.message}>
             An unexpected error occurred. Please try again.
@@ -61,7 +61,7 @@ export class ErrorBoundary extends Component<Props, State> {
             style={styles.retryButton}
             onPress={this.handleRetry}
           >
-            <MaterialIcons name="refresh" size={20} color="#FFFFFF" />
+            <Ionicons name="refresh-outline" size={20} color="#FFFFFF" />
             <Text style={styles.retryText}>Try Again</Text>
           </TouchableOpacity>
         </View>

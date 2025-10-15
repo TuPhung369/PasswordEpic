@@ -18,15 +18,21 @@ export interface BiometricAuthResult {
 export class BiometricService {
   private static instance: BiometricService;
   private rnBiometrics: ReactNativeBiometrics;
+  private rnBiometricsWithFallback: ReactNativeBiometrics;
   private readonly BIOMETRIC_KEY_ALIAS = 'passwordepic_biometric_key';
 
   private constructor() {
-    // For Android emulator, we need to allow device credentials as fallback
+    // Initialize biometric-only instance (shows fingerprint icon)
     this.rnBiometrics = new ReactNativeBiometrics({
-      allowDeviceCredentials: true, // Allow PIN/Pattern as fallback for emulator
+      allowDeviceCredentials: false, // Biometric only - shows fingerprint icon
     });
 
-    // BiometricService initialized with device credentials allowed
+    // Initialize instance with device credentials fallback (for retry after biometric fails)
+    this.rnBiometricsWithFallback = new ReactNativeBiometrics({
+      allowDeviceCredentials: true, // Allow fallback to PIN/Pattern
+    });
+
+    // BiometricService initialized
   }
 
   public static getInstance(): BiometricService {
@@ -41,10 +47,9 @@ export class BiometricService {
    */
   public async checkBiometricCapability(): Promise<BiometricCapability> {
     try {
-      // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
-      // console.log('🔐 BiometricService: checkBiometricCapability called');
+      console.log('🔐 BiometricService: checkBiometricCapability called');
       const result = await this.rnBiometrics.isSensorAvailable();
-      // console.log('🔐 BiometricService: isSensorAvailable result:', result);
+      console.log('🔐 BiometricService: isSensorAvailable result:', result);
 
       const { biometryType } = result;
 
@@ -210,139 +215,83 @@ export class BiometricService {
       }
 
       // console.log('🔐 BiometricService: Starting biometric authentication...');
-      // Create signature with current timestamp
-      const payload = `auth_${Date.now()}`;
 
       try {
-        // First, check if we need to use emulator fallback immediately
-        const { keysExist } = await this.rnBiometrics.biometricKeysExist();
+        // Use biometric with device credentials fallback (PIN/Pattern) from the start
+        // This shows fingerprint icon AND allows PIN/Pattern as alternative
+        console.log(
+          '🔐 Starting authentication with biometric and PIN/Pattern fallback...',
+        );
 
-        if (!keysExist) {
-          // Emulator mode: attempting biometric authentication
-          try {
-            // First try to use simplePrompt which is more reliable on emulator
-            // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
-            // console.log('🎭 Emulator: Trying simplePrompt first...');
-            const simpleResult = await this.rnBiometrics.simplePrompt({
-              promptMessage:
-                promptMessage +
-                '\n\n💡 Emulator: Use Extended Controls → Touch Sensor',
-              cancelButtonText: 'Cancel',
-            });
+        const authResult = await this.rnBiometricsWithFallback.simplePrompt({
+          promptMessage: promptMessage,
+          cancelButtonText: 'Cancel',
+        });
 
-            if (simpleResult.success) {
-              // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
-              // console.log('✅ Emulator biometric authentication succeeded');
-              return {
-                success: true,
-                signature: 'emulator_fake_signature_' + Date.now(),
-              };
-            } else {
-              // Check if user cancelled
-              if (
-                simpleResult.error?.includes('cancelled') ||
-                simpleResult.error?.includes('Cancel') ||
-                simpleResult.error?.includes('authentication was cancelled')
-              ) {
-                return {
-                  success: false,
-                  error: 'Authentication cancelled by user',
-                };
-              }
-
-              return {
-                success: false,
-                error:
-                  simpleResult.error ||
-                  'Biometric authentication failed. On emulator, use Extended Controls → Touch Sensor.',
-              };
-            }
-          } catch (emulatorError: any) {
-            console.error(
-              '🎭 Emulator authentication error:',
-              emulatorError.message,
-            );
-
-            // Check if user cancelled
-            if (
-              emulatorError.message?.includes('cancelled') ||
-              emulatorError.message?.includes('Cancel') ||
-              emulatorError.message?.includes('authentication was cancelled')
-            ) {
-              // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
-              // console.log('❌ User cancelled emulator authentication');
-              return {
-                success: false,
-                error: 'Authentication cancelled by user',
-              };
-            }
-
-            // For other emulator errors, provide helpful message
-            return {
-              success: false,
-              error:
-                'Biometric authentication failed. On emulator, use Extended Controls → Touch Sensor.',
-            };
-          }
-        }
-
-        // For real devices with actual keys
-        // Using real device biometric authentication
-        const { success, signature, error } =
-          await this.rnBiometrics.createSignature({
-            promptMessage,
-            payload,
-            cancelButtonText: 'Cancel',
-          });
-
-        if (success && signature) {
-          // Real device biometric authentication succeeded
-          return { success: true, signature };
-        } else {
-          const errorMessage =
-            typeof error === 'string'
-              ? error
-              : 'Biometric authentication failed';
-          console.error('Biometric authentication failed:', errorMessage);
+        if (authResult.success) {
+          console.log('✅ Authentication succeeded');
           return {
-            success: false,
-            error: errorMessage,
+            success: true,
+            signature: 'auth_signature_' + Date.now(),
           };
         }
-      } catch (signatureError: any) {
-        console.warn('🔐 Signature creation error:', signatureError.message);
 
         // Check if user cancelled
         if (
-          signatureError.message?.includes('cancelled') ||
-          signatureError.message?.includes('Cancel') ||
-          signatureError.message?.includes('authentication was cancelled')
+          authResult.error?.includes('cancelled') ||
+          authResult.error?.includes('Cancel') ||
+          authResult.error?.includes('authentication was cancelled')
         ) {
-          // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
-          // console.log('❌ User cancelled authentication');
-          return { success: false, error: 'Authentication cancelled by user' };
-        }
-
-        // For hardware/key errors, return failure instead of fallback
-        if (
-          signatureError.message?.includes('generating public private keys') ||
-          signatureError.message?.includes('KeyStore') ||
-          signatureError.message?.includes(
-            'No installed provider supports this key',
-          ) ||
-          signatureError.message?.includes('generating signature') ||
-          signatureError.message?.includes('Hardware security module')
-        ) {
-          // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
-          // console.log('❌ Hardware biometric authentication failed');
+          console.log('❌ User cancelled authentication');
           return {
             success: false,
-            error: 'Biometric hardware authentication failed',
+            error: 'Authentication cancelled by user',
           };
         }
 
-        // For other errors, rethrow
-        throw signatureError;
+        return {
+          success: false,
+          error: authResult.error || 'Authentication failed.',
+        };
+      } catch (biometricError: any) {
+        console.error(
+          '🔐 Biometric authentication error:',
+          biometricError.message,
+        );
+
+        // Check if FragmentActivity is null (Android-specific timing issue)
+        if (
+          biometricError.message?.includes('FragmentActivity') ||
+          biometricError.message?.includes('must not be null')
+        ) {
+          console.error(
+            '❌ FragmentActivity not ready - Activity context is null',
+          );
+          return {
+            success: false,
+            error: 'Biometric prompt not ready. Please try again in a moment.',
+          };
+        }
+
+        // Check if user cancelled
+        if (
+          biometricError.message?.includes('cancelled') ||
+          biometricError.message?.includes('Cancel') ||
+          biometricError.message?.includes('authentication was cancelled')
+        ) {
+          console.log('❌ User cancelled authentication');
+          return {
+            success: false,
+            error: 'Authentication cancelled by user',
+          };
+        }
+
+        // For other errors, provide helpful message
+        return {
+          success: false,
+          error:
+            'Biometric authentication failed. Make sure biometric is set up on your device.',
+        };
       }
     } catch (error: any) {
       console.error('❌ Error during biometric authentication:', error);

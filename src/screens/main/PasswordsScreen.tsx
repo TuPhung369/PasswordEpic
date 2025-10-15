@@ -12,9 +12,7 @@ import {
   FlatList,
   TouchableOpacity,
   TextInput,
-  Alert,
   ActivityIndicator,
-  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -23,24 +21,58 @@ import {
   NativeStackScreenProps,
 } from '@react-navigation/native-stack';
 import { useAppSelector, useAppDispatch } from '../../hooks/redux';
-import { RootState } from '../../store';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { RootState, persistor } from '../../store';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { PasswordEntry as Password } from '../../types/password';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordManagement } from '../../hooks/usePasswordManagement';
+import { getEffectiveMasterPassword } from '../../services/staticMasterPasswordService';
+import { loadPasswordsLazy } from '../../store/slices/passwordsSlice';
+import { restoreSettings as restoreSettingsAction } from '../../store/slices/settingsSlice';
 import PasswordEntryComponent from '../../components/PasswordEntry';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
-import { loadPasswords } from '../../store/slices/passwordsSlice';
-import { getEffectiveMasterPassword } from '../../services/dynamicMasterPasswordService';
 import Toast from '../../components/Toast';
 import {
   recalculatePasswordStrengths,
   needsStrengthRecalculation,
 } from '../../utils/passwordStrengthMigration';
-import SortFilterSheet, {
-  SortOption,
-  FilterOption,
-} from '../../components/SortFilterSheet';
+import SortDropdown from '../../components/SortDropdown';
+import FilterDropdown, {
+  MultipleFilterOptions,
+} from '../../components/FilterDropdown';
+import BackupRestoreModal from '../../components/BackupRestoreModal';
+import FileNameInputModal from '../../components/FileNameInputModal';
+import { importExportService } from '../../services/importExportService';
+import { backupService } from '../../services/backupService';
+import FilePicker from '../../modules/FilePicker';
+import { useActivityTracking } from '../../hooks/useActivityTracking';
+import {
+  deriveKeyFromPassword,
+  decryptData,
+} from '../../services/cryptoService';
+import {
+  uploadToGoogleDrive,
+  isGoogleDriveAvailable,
+  requestDrivePermissions,
+} from '../../services/googleDriveService';
+import { encryptedDatabase } from '../../services/encryptedDatabaseService';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
+
+// Define local types for PasswordsScreen string-based filtering
+type SortOption =
+  | 'createdAt-desc'
+  | 'createdAt-asc'
+  | 'updatedAt-desc'
+  | 'updatedAt-asc'
+  | 'title-asc'
+  | 'title-desc'
+  | 'strength-asc'
+  | 'strength-desc'
+  | 'category-asc'
+  | 'category-desc'
+  | 'username-asc'
+  | 'username-desc';
 
 type NavigationProp = NativeStackNavigationProp<
   PasswordsStackParamList,
@@ -57,7 +89,13 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   const navigation = useNavigation<NavigationProp>();
   const dispatch = useAppDispatch();
   const { passwords } = useAppSelector((state: RootState) => state.passwords);
+  const settings = useAppSelector((state: RootState) => state.settings);
   const { deletePassword, updatePassword } = usePasswordManagement();
+  const { onScroll: trackScrollActivity } = useActivityTracking();
+
+  // Confirm dialog hook
+  const { confirmDialog, showAlert, showDestructive, hideConfirm } =
+    useConfirmDialog();
 
   // State management
   const [searchQuery, setSearchQuery] = useState('');
@@ -75,8 +113,32 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   const [showSortSheet, setShowSortSheet] = useState(false);
   const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [currentSort, setCurrentSort] = useState<SortOption>('createdAt-desc');
-  const [currentFilter, setCurrentFilter] = useState<FilterOption>('all');
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [currentFilters, setCurrentFilters] = useState<MultipleFilterOptions>({
+    weak: false,
+    compromised: false,
+    duplicate: false,
+    favorite: false,
+    categories: [],
+  });
+  const [sortButtonPosition, setSortButtonPosition] = useState({ x: 0, y: 0 });
+  const [filterButtonPosition, setFilterButtonPosition] = useState({
+    x: 0,
+    y: 0,
+  });
+
+  // Export and Backup state
+  const [showBackupModal, setShowBackupModal] = useState(false);
+  const [showFileNameModal, setShowFileNameModal] = useState(false);
+  const [availableBackups, setAvailableBackups] = useState([]);
+  const [isExportLoading, setIsExportLoading] = useState(false);
+  const [pendingExport, setPendingExport] = useState<{
+    entries: any;
+    format: any;
+    options: any;
+  } | null>(null);
+
+  // Import state
+  const [isImportLoading, setIsImportLoading] = useState(false);
 
   // Track recalculated password IDs to prevent infinite loop
   const recalculatedPasswordIds = useRef<Set<string>>(new Set());
@@ -104,40 +166,56 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   useFocusEffect(
     React.useCallback(() => {
       const loadPasswordsData = async () => {
+        const screenStartTime = Date.now();
+        console.log('🔐 [PasswordsScreen] Starting password load...');
+
         try {
           setIsLoadingPasswords(true);
-          // console.log('🔐 PasswordsScreen: Loading passwords...');
 
-          // Add small delay to ensure Firebase auth is ready
-          await new Promise(resolve => setTimeout(resolve, 100));
+          // Remove initial delay - rely on pre-warmed cache from AppNavigator
+          // await new Promise(resolve => setTimeout(resolve, 300));
 
-          // Get the master password (dynamic or biometric)
+          // Get the master password (should be cached from AppNavigator pre-warming)
+          const mpStartTime = Date.now();
           const result = await getEffectiveMasterPassword();
+          const mpDuration = Date.now() - mpStartTime;
+
+          // Debug log to see what we got
+          console.log('🔍 [PasswordsScreen] Master password result:', {
+            success: result.success,
+            hasPassword: !!result.password,
+            passwordLength: result.password?.length || 0,
+            duration: `${mpDuration}ms`,
+            error: result.error,
+          });
 
           if (result.success && result.password) {
-            // console.log(
-            //   '✅ PasswordsScreen: Master password obtained, loading passwords...',
-            // );
-            await dispatch(loadPasswords(result.password)).unwrap();
-            // console.log('✅ PasswordsScreen: Passwords loaded successfully');
-          } else {
-            console.warn(
-              '⚠️ PasswordsScreen: Failed to get master password:',
-              result.error,
+            const loadStartTime = Date.now();
+            await dispatch(loadPasswordsLazy(result.password)).unwrap();
+            const loadDuration = Date.now() - loadStartTime;
+            const totalDuration = Date.now() - screenStartTime;
+            console.log(
+              `✅ [PasswordsScreen] Passwords loaded (load: ${loadDuration}ms, total: ${totalDuration}ms)`,
             );
-            // If failed, try again after a short delay (auth might not be ready)
-            // console.log('🔄 PasswordsScreen: Retrying after 500ms...');
+          } else {
+            // Don't show warning yet - auth might not be ready, try retry first
+            console.log(
+              '🔄 [PasswordsScreen] First attempt failed, retrying after 500ms...',
+            );
             await new Promise(resolve => setTimeout(resolve, 500));
             const retryResult = await getEffectiveMasterPassword();
             if (retryResult.success && retryResult.password) {
-              // console.log(
-              //   '✅ PasswordsScreen: Master password obtained on retry, loading passwords...',
-              // );
-              await dispatch(loadPasswords(retryResult.password)).unwrap();
-              // console.log('✅ PasswordsScreen: Passwords loaded successfully');
+              const loadStartTime = Date.now();
+              await dispatch(loadPasswordsLazy(retryResult.password)).unwrap();
+              const loadDuration = Date.now() - loadStartTime;
+              const totalDuration = Date.now() - screenStartTime;
+              console.log(
+                `✅ [PasswordsScreen] Passwords loaded on retry (load: ${loadDuration}ms, total: ${totalDuration}ms)`,
+              );
             } else {
-              console.error(
-                '❌ PasswordsScreen: Failed to get master password after retry:',
+              // Only show warning if both attempts failed
+              console.warn(
+                '⚠️ PasswordsScreen: Failed to get master password after retry:',
                 retryResult.error,
               );
             }
@@ -145,6 +223,10 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         } catch (error) {
           console.error('❌ PasswordsScreen: Failed to load passwords:', error);
         } finally {
+          const finalDuration = Date.now() - screenStartTime;
+          console.log(
+            `🏁 [PasswordsScreen] Load complete (${finalDuration}ms)`,
+          );
           setIsLoadingPasswords(false);
         }
       };
@@ -190,6 +272,25 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     recalculateStrengths();
   }, [passwords, updatePassword]);
 
+  // Load available backups on mount
+  useEffect(() => {
+    loadAvailableBackups();
+  }, []);
+
+  // Reload backups when modal opens
+  useEffect(() => {
+    console.log(
+      '🔍 [PasswordsScreen] showBackupModal changed:',
+      showBackupModal,
+    );
+    if (showBackupModal) {
+      console.log(
+        '🔄 [PasswordsScreen] Backup modal opened, reloading backups...',
+      );
+      loadAvailableBackups();
+    }
+  }, [showBackupModal]);
+
   // Get unique categories from passwords
   const categories = useMemo(() => {
     const uniqueCategories = new Set<string>();
@@ -219,43 +320,55 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       );
     }
 
-    // Apply filter
-    switch (currentFilter) {
-      case 'weak':
-        result = result.filter(
-          p =>
-            p.auditData?.passwordStrength &&
-            p.auditData.passwordStrength.score < 2,
+    // Apply multiple filters (AND logic - all selected filters must pass)
+    // If any filters are active, apply them with AND logic
+    const hasActiveFilters =
+      currentFilters.weak ||
+      currentFilters.compromised ||
+      currentFilters.duplicate ||
+      currentFilters.favorite ||
+      currentFilters.categories.length > 0;
+
+    if (hasActiveFilters) {
+      result = result.filter(p => {
+        const passesWeakFilter =
+          !currentFilters.weak ||
+          (p.auditData?.passwordStrength &&
+            p.auditData.passwordStrength.score < 2);
+
+        const passesCompromisedFilter =
+          !currentFilters.compromised || p.breachStatus?.isBreached;
+
+        const passesDuplicateFilter =
+          !currentFilters.duplicate ||
+          (p.auditData?.duplicateCount && p.auditData.duplicateCount > 0);
+
+        const passesFavoriteFilter = !currentFilters.favorite || p.isFavorite;
+
+        const passesCategoryFilter =
+          currentFilters.categories.length === 0 ||
+          currentFilters.categories.includes(p.category || '');
+
+        return (
+          passesWeakFilter &&
+          passesCompromisedFilter &&
+          passesDuplicateFilter &&
+          passesFavoriteFilter &&
+          passesCategoryFilter
         );
-        break;
-      case 'compromised':
-        result = result.filter(p => p.breachStatus?.isBreached);
-        break;
-      case 'duplicate':
-        result = result.filter(
-          p => p.auditData?.duplicateCount && p.auditData.duplicateCount > 0,
-        );
-        break;
-      case 'strong':
-        result = result.filter(
-          p =>
-            p.auditData?.passwordStrength &&
-            p.auditData.passwordStrength.score >= 3,
-        );
-        break;
-      case 'category':
-        if (selectedCategory) {
-          result = result.filter(p => p.category === selectedCategory);
-        }
-        break;
-      case 'all':
-      default:
-        // No additional filtering
-        break;
+      });
     }
 
     // Apply sort
     const sorted = [...result];
+    console.log(
+      '🔄 Applying sort:',
+      currentSort,
+      'to',
+      result.length,
+      'passwords',
+    );
+
     switch (currentSort) {
       case 'title-asc':
         sorted.sort((a, b) => a.title.localeCompare(b.title));
@@ -264,15 +377,29 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         sorted.sort((a, b) => b.title.localeCompare(a.title));
         break;
       case 'createdAt-asc':
+        console.log('📅 Sorting by createdAt ASC');
         sorted.sort(
           (a, b) =>
             new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
         );
         break;
       case 'createdAt-desc':
+        console.log('📅 Sorting by createdAt DESC');
         sorted.sort(
           (a, b) =>
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        );
+        break;
+      case 'updatedAt-asc':
+        sorted.sort(
+          (a, b) =>
+            new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime(),
+        );
+        break;
+      case 'updatedAt-desc':
+        sorted.sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
         );
         break;
       case 'strength-asc':
@@ -313,8 +440,17 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         break;
     }
 
+    console.log('🔍 [Filter Debug] Final result:', {
+      totalPasswords: passwords.length,
+      afterSearch: result.length,
+      afterFilter: sorted.length,
+      searchQuery,
+      hasActiveFilters,
+      currentFilters,
+    });
+
     return sorted;
-  }, [passwords, searchQuery, currentFilter, currentSort, selectedCategory]);
+  }, [passwords, searchQuery, currentFilters, currentSort]);
 
   // Calculate statistics
   const statistics = useMemo(() => {
@@ -382,26 +518,20 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   };
 
   const handlePasswordDelete = async (password: Password) => {
-    Alert.alert(
+    showDestructive(
       'Delete Password',
       `Are you sure you want to delete "${password.title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // console.log('Delete password:', password.id);
-              await deletePassword(password.id);
-              // console.log('✅ Password deleted successfully:', password.id);
-            } catch (error) {
-              console.error('❌ Failed to delete password:', error);
-              Alert.alert('Error', 'Failed to delete password');
-            }
-          },
-        },
-      ],
+      async () => {
+        try {
+          // console.log('Delete password:', password.id);
+          await deletePassword(password.id);
+          // console.log('✅ Password deleted successfully:', password.id);
+        } catch (error) {
+          console.error('❌ Failed to delete password:', error);
+          showAlert('Error', 'Failed to delete password');
+        }
+      },
+      'Delete',
     );
   };
 
@@ -435,81 +565,899 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   const handleBulkDelete = () => {
     if (selectedPasswords.length === 0) return;
 
-    Alert.alert(
+    showDestructive(
       'Delete Passwords',
       `Are you sure you want to delete ${selectedPasswords.length} password(s)?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
+      async () => {
+        try {
+          // console.log('🗑️ Bulk deleting passwords:', selectedPasswords);
+
+          // Delete all selected passwords
+          const deletePromises = selectedPasswords.map(passwordId =>
+            deletePassword(passwordId),
+          );
+
+          await Promise.all(deletePromises);
+
+          // console.log('✅ Bulk delete completed successfully');
+
+          // Show success toast
+          setToastMessage(
+            `Successfully deleted ${selectedPasswords.length} password(s)`,
+          );
+          setToastType('success');
+          setShowToast(true);
+
+          // Exit bulk mode and clear selection
+          setBulkMode(false);
+          clearSelection();
+        } catch (error) {
+          console.error('❌ Failed to bulk delete passwords:', error);
+          showAlert('Error', 'Failed to delete passwords');
+        }
+      },
+      'Delete',
+    );
+  };
+
+  // Toggle favorite handler
+  const handleToggleFavorite = async (password: Password) => {
+    try {
+      const updatedPassword = {
+        ...password,
+        isFavorite: !password.isFavorite,
+      };
+      await updatePassword(password.id, updatedPassword);
+      setToastMessage(
+        password.isFavorite ? 'Removed from favorites' : 'Added to favorites',
+      );
+      setToastType('success');
+      setShowToast(true);
+    } catch (error) {
+      console.error('❌ Failed to toggle favorite:', error);
+      setToastMessage('Failed to update favorite status');
+      setToastType('error');
+      setShowToast(true);
+    }
+  };
+
+  // Sort and Filter handlers
+  const handleSortChange = (sort: SortOption | any) => {
+    // If sort is object from SortDropdown, convert to string format
+    if (typeof sort === 'object' && sort.field && sort.direction) {
+      const fieldMap: Record<string, string> = {
+        name: 'title',
+        dateModified: 'updatedAt', // Map to updatedAt for last modified
+        dateCreated: 'createdAt', // Map to createdAt for creation date
+        category: 'category',
+        strength: 'strength',
+      };
+
+      const mappedField = fieldMap[sort.field] || sort.field;
+      const sortString = `${mappedField}-${sort.direction}` as SortOption;
+      setCurrentSort(sortString);
+    } else {
+      // If sort is already string format
+      setCurrentSort(sort as SortOption);
+    }
+  };
+
+  const handleFiltersChange = (filters: MultipleFilterOptions) => {
+    setCurrentFilters(filters);
+  };
+
+  // Convert string-based sort to object format for SortSheet
+  const convertSortToObject = (sortString: SortOption) => {
+    const [field, direction] = sortString.split('-') as [
+      string,
+      'asc' | 'desc',
+    ];
+
+    const fieldMap: Record<
+      string,
+      'name' | 'dateModified' | 'dateCreated' | 'category' | 'strength'
+    > = {
+      title: 'name',
+      createdAt: 'dateCreated', // createdAt maps to dateCreated
+      updatedAt: 'dateModified', // updatedAt maps to dateModified
+      category: 'category',
+      strength: 'strength',
+      username: 'name', // Map username to name for now
+    };
+
+    return {
+      field: fieldMap[field] || 'name',
+      direction: direction,
+    };
+  };
+
+  const handleResetFilters = () => {
+    setCurrentFilters({
+      weak: false,
+      compromised: false,
+      duplicate: false,
+      favorite: false,
+      categories: [],
+    });
+    setCurrentSort('createdAt-desc');
+  };
+
+  // Toggle sort direction when clicking on sort chip
+  const handleToggleSort = () => {
+    const [field, direction] = currentSort.split('-') as [
+      string,
+      'asc' | 'desc',
+    ];
+    const newDirection = direction === 'asc' ? 'desc' : 'asc';
+    const newSort = `${field}-${newDirection}` as SortOption;
+    setCurrentSort(newSort);
+  };
+
+  // Export and Backup handlers
+  const handleFileNameConfirm = async (fileName: string) => {
+    if (!pendingExport) return;
+
+    const { entries, format, options } = pendingExport;
+
+    try {
+      setIsExportLoading(true);
+      setShowFileNameModal(false);
+
+      const exportOptions = {
+        format: format.id,
+        includePasswords: true,
+        includeNotes: options.includeNotes,
+        includeCustomFields: true,
+        categories: options.includeCategories ? undefined : [],
+        tags: options.includeTags ? undefined : [],
+        encryptionPassword: options.encrypt
+          ? options.encryptionPassword
+          : undefined,
+        fileName: `${fileName}.${format.extension}`,
+      };
+
+      const result = await importExportService.exportPasswords(
+        entries,
+        exportOptions,
+      );
+
+      if (result.success) {
+        // Show success toast and auto-hide
+        setToastMessage(
+          `Successfully exported ${result.exportedCount} passwords`,
+        );
+        setToastType('success');
+        setShowToast(true);
+      } else {
+        const errorMsg =
+          result.errors && result.errors.length > 0
+            ? result.errors.join(', ')
+            : 'Export operation failed';
+        throw new Error(errorMsg);
+      }
+    } catch (error) {
+      console.error('❌ Export failed:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      setToastMessage(`Export failed: ${errorMessage}`);
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setIsExportLoading(false);
+      setPendingExport(null);
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      setIsImportLoading(true);
+
+      // Open native file picker
+      const filePath = await FilePicker.pickFile();
+
+      if (!filePath) {
+        setIsImportLoading(false);
+        return;
+      }
+
+      console.log('🔍 [Import] Selected file:', filePath);
+
+      // Get current master password for decryption
+      const masterPasswordResult = await getEffectiveMasterPassword();
+      if (!masterPasswordResult.success) {
+        setToastMessage(
+          'Master password not found. Please log out and log back in.',
+        );
+        setToastType('error');
+        setShowToast(true);
+        setIsImportLoading(false);
+        return;
+      }
+
+      // Extract filename for display
+      const fileName = filePath.split('/').pop() || 'selected file';
+      setToastMessage(`Importing from ${fileName}...`);
+      setToastType('success');
+      setShowToast(true);
+
+      const importResult = await importExportService.importPasswords(
+        filePath,
+        passwords,
         {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // console.log('🗑️ Bulk deleting passwords:', selectedPasswords);
+          format: 'json',
+          encryptionPassword: masterPasswordResult.password,
+          mergeStrategy: 'skip',
+        },
+      );
 
-              // Delete all selected passwords
-              const deletePromises = selectedPasswords.map(passwordId =>
-                deletePassword(passwordId),
+      if (importResult.success) {
+        // Refresh the passwords list - MUST await to ensure UI updates
+        await dispatch(
+          loadPasswordsLazy(masterPasswordResult.password),
+        ).unwrap();
+
+        setToastMessage(
+          `Import successful! ${importResult.importedCount} passwords imported, ${importResult.skippedCount} skipped (duplicates)`,
+        );
+        setToastType('success');
+        setShowToast(true);
+      } else {
+        const errorMsg =
+          importResult.errors && importResult.errors.length > 0
+            ? importResult.errors.map(e => e.error).join(', ')
+            : `Failed to import from ${fileName}. File might be corrupted or encrypted with different password.`;
+        setToastMessage(errorMsg);
+        setToastType('error');
+        setShowToast(true);
+      }
+    } catch (error: any) {
+      console.error('Import error:', error);
+
+      // Handle user cancellation gracefully
+      if (error.code === 'FILE_PICKER_CANCELLED') {
+        setToastMessage('File selection cancelled');
+        setToastType('success');
+      } else {
+        setToastMessage(
+          error.message || 'An unexpected error occurred during import',
+        );
+        setToastType('error');
+      }
+      setShowToast(true);
+    } finally {
+      setIsImportLoading(false);
+    }
+  };
+
+  const handleBackup = async (options: any) => {
+    console.log('🟢 [PasswordsScreen] handleBackup called');
+    console.log('🟢 [PasswordsScreen] Options received:', options);
+
+    try {
+      setIsExportLoading(true);
+
+      // Get master password for encryption
+      console.log('🟢 [PasswordsScreen] Getting master password...');
+      const masterPasswordResult = await getEffectiveMasterPassword();
+      if (!masterPasswordResult.success || !masterPasswordResult.password) {
+        console.log('❌ [PasswordsScreen] Failed to get master password');
+        setToastMessage('Failed to get master password for encryption');
+        setToastType('error');
+        setShowToast(true);
+        return;
+      }
+      console.log('✅ [PasswordsScreen] Master password retrieved');
+
+      // Prepare backup data with master password encryption
+      const backupOptions = {
+        includeSettings: true,
+        includePasswords: true,
+        includeAttachments: options.includeAttachments,
+        encryptBackup: true, // Always encrypt
+        compressBackup: options.compression,
+        encryptionPassword: masterPasswordResult.password, // Use master password
+        filename: options.filename,
+      };
+
+      console.log(
+        '🟢 [PasswordsScreen] Backup options prepared (cloud-only):',
+        { ...backupOptions, encryptionPassword: '[REDACTED]' },
+      );
+
+      // Get categories for backup
+      const backupCategories = Array.from(
+        new Set(passwords.map(p => p.category).filter(Boolean)),
+      ).map(categoryName => ({
+        id: categoryName,
+        name: categoryName,
+        icon: 'folder',
+        color: '#007AFF',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+
+      // Debug: Log settings before backup
+      console.log(
+        '🔍 [PasswordsScreen] Settings to backup:',
+        JSON.stringify(settings, null, 2),
+      );
+
+      // Create backup in memory (temporary file for upload)
+      const result = await backupService.createBackup(
+        passwords,
+        backupCategories,
+        settings, // Use actual settings from Redux store
+        backupOptions,
+      );
+
+      if (result.success && result.filePath) {
+        console.log(
+          '🔵 [PasswordsScreen] Backup created, uploading to Google Drive...',
+        );
+        console.log('🔵 [PasswordsScreen] File path:', result.filePath);
+        console.log('🔵 [PasswordsScreen] File name:', options.filename);
+
+        try {
+          // Check if Google Drive is available
+          let isDriveAvailable = await isGoogleDriveAvailable();
+          console.log(
+            '🔵 [PasswordsScreen] Google Drive available:',
+            isDriveAvailable,
+          );
+
+          // If not available, try to request permissions
+          if (!isDriveAvailable) {
+            console.log('🔵 [PasswordsScreen] Requesting Drive permissions...');
+            const permissionResult = await requestDrivePermissions();
+
+            if (permissionResult.success) {
+              console.log('✅ [PasswordsScreen] Drive permissions granted');
+              isDriveAvailable = true;
+            } else {
+              console.log(
+                '❌ [PasswordsScreen] Failed to get Drive permissions',
               );
+              showAlert(
+                'Google Drive Permission Required',
+                'Please grant Google Drive access to upload backups. You may need to sign out and sign in again.',
+              );
+              return;
+            }
+          }
 
-              await Promise.all(deletePromises);
+          if (isDriveAvailable) {
+            console.log('🔵 [PasswordsScreen] Starting upload...');
+            const uploadResult = await uploadToGoogleDrive(
+              result.filePath,
+              options.filename || 'backup',
+              'application/octet-stream',
+            );
 
-              // console.log('✅ Bulk delete completed successfully');
+            if (uploadResult.success) {
+              console.log(
+                '✅ [PasswordsScreen] Uploaded to Google Drive successfully',
+              );
+              console.log('✅ [PasswordsScreen] File ID:', uploadResult.fileId);
 
-              // Show success toast
+              // Delete local temporary file after successful upload
+              try {
+                const RNFS = require('react-native-fs');
+                await RNFS.unlink(result.filePath);
+                console.log(
+                  '🗑️ [PasswordsScreen] Temporary backup file deleted',
+                );
+              } catch (deleteError) {
+                console.warn(
+                  '⚠️ [PasswordsScreen] Failed to delete temp file:',
+                  deleteError,
+                );
+              }
+
               setToastMessage(
-                `Successfully deleted ${selectedPasswords.length} password(s)`,
+                '✅ Backup uploaded to Google Drive successfully',
               );
               setToastType('success');
               setShowToast(true);
 
-              // Exit bulk mode and clear selection
-              setBulkMode(false);
-              clearSelection();
-            } catch (error) {
-              console.error('❌ Failed to bulk delete passwords:', error);
-              Alert.alert('Error', 'Failed to delete passwords');
+              // Close the modal
+              setShowBackupModal(false);
+
+              // Refresh available backups
+              loadAvailableBackups();
+            } else {
+              throw new Error(uploadResult.error || 'Upload failed');
             }
-          },
-        },
-      ],
-    );
-  };
-
-  // Sort and Filter handlers
-  const handleSortChange = (sort: SortOption) => {
-    setCurrentSort(sort);
-  };
-
-  const handleFilterChange = (filter: FilterOption) => {
-    setCurrentFilter(filter);
-    if (filter !== 'category') {
-      setSelectedCategory('');
+          }
+        } catch (error: any) {
+          console.error(
+            '❌ [PasswordsScreen] Google Drive upload error:',
+            error,
+          );
+          setToastMessage(
+            `Failed to upload to Google Drive: ${error.message || error}`,
+          );
+          setToastType('error');
+          setShowToast(true);
+        }
+      } else {
+        throw new Error('Backup creation failed');
+      }
+    } catch (error: any) {
+      console.error('❌ Backup failed:', error);
+      setToastMessage(`Failed to create backup: ${error.message || error}`);
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setIsExportLoading(false);
     }
   };
 
-  const handleCategorySelect = (category: string) => {
-    setSelectedCategory(category);
+  const handleRestore = async (backupId: string, options: any) => {
+    let tempFilePath: string | null = null; // Declare outside try block for cleanup
+
+    try {
+      setIsExportLoading(true);
+
+      // Get master password for decryption
+      console.log(
+        '🟢 [PasswordsScreen] Getting master password for restore...',
+      );
+      const masterPasswordResult = await getEffectiveMasterPassword();
+      if (!masterPasswordResult.success || !masterPasswordResult.password) {
+        console.log('❌ [PasswordsScreen] Failed to get master password');
+        setToastMessage('Failed to get master password for decryption');
+        setToastType('error');
+        setShowToast(true);
+        return;
+      }
+      console.log('✅ [PasswordsScreen] Master password retrieved for restore');
+
+      // Find the backup file path
+      const backup = availableBackups.find((b: any) => b.id === backupId);
+      if (!backup) {
+        throw new Error('Backup not found');
+      }
+
+      console.log('🔵 [PasswordsScreen] Backup object:', backup);
+
+      // Check if this is a Google Drive backup (no filePath, only id)
+      let filePath = (backup as any).filePath;
+
+      if (!filePath) {
+        // This is a Google Drive backup, download it first
+        console.log('🔵 [PasswordsScreen] Downloading from Google Drive...');
+        const { downloadFromGoogleDrive } = await import(
+          '../../services/googleDriveService'
+        );
+
+        // Create temp file path
+        const RNFS = await import('react-native-fs');
+        tempFilePath = `${
+          RNFS.default.CachesDirectoryPath
+        }/temp_restore_${Date.now()}.bak`;
+
+        const downloadResult = await downloadFromGoogleDrive(
+          backup.id,
+          tempFilePath,
+        );
+
+        if (!downloadResult.success) {
+          throw new Error(
+            `Failed to download backup: ${
+              downloadResult.error || 'Unknown error'
+            }`,
+          );
+        }
+
+        console.log('✅ [PasswordsScreen] Downloaded to:', tempFilePath);
+        filePath = tempFilePath;
+      }
+
+      const restoreOptions = {
+        mergeStrategy: options.mergeWithExisting
+          ? ('merge' as const)
+          : ('replace' as const),
+        decryptionPassword: masterPasswordResult.password, // Use master password
+        restoreSettings: options.restoreSettings,
+        restoreCategories: options.restoreCategories,
+        overwriteDuplicates: options.overwriteDuplicates,
+      };
+
+      console.log(
+        '🔵 [PasswordsScreen] Restoring backup with master password...',
+      );
+      console.log('🔵 [PasswordsScreen] Restore options:', restoreOptions);
+
+      const result = await backupService.restoreFromBackup(
+        filePath,
+        restoreOptions,
+      );
+
+      console.log('🔵 [PasswordsScreen] Restore result:', result);
+
+      if (result.result.success) {
+        console.log('✅ [PasswordsScreen] Restore successful');
+
+        // If replace strategy, clear existing passwords first
+        if (restoreOptions.mergeStrategy === 'replace') {
+          console.log(
+            '🗑️ [PasswordsScreen] Replace mode: clearing existing passwords...',
+          );
+          const existingPasswords =
+            await encryptedDatabase.getAllPasswordEntries(
+              masterPasswordResult.password,
+            );
+          for (const existingEntry of existingPasswords) {
+            try {
+              await encryptedDatabase.deletePasswordEntry(existingEntry.id);
+            } catch (deleteError) {
+              console.error(
+                `❌ [PasswordsScreen] Failed to delete entry ${existingEntry.id}:`,
+                deleteError,
+              );
+            }
+          }
+          console.log('✅ [PasswordsScreen] Existing passwords cleared');
+        }
+
+        // Save restored entries to database
+        if (
+          result.data &&
+          result.data.entries &&
+          result.data.entries.length > 0
+        ) {
+          console.log(
+            `💾 [PasswordsScreen] Saving ${result.data.entries.length} restored entries to database...`,
+          );
+
+          // Get existing passwords for duplicate detection (only in merge mode)
+          let existingPasswords: any[] = [];
+          if (restoreOptions.mergeStrategy === 'merge') {
+            existingPasswords = await encryptedDatabase.getAllPasswordEntries(
+              masterPasswordResult.password,
+            );
+            console.log(
+              `🔍 [PasswordsScreen] Found ${existingPasswords.length} existing passwords for duplicate detection`,
+            );
+          }
+
+          let savedCount = 0;
+          let skippedCount = 0;
+          let overwrittenCount = 0;
+
+          for (const entry of result.data.entries) {
+            try {
+              // Check if this entry has encrypted password data from backup
+              let entryToSave = entry;
+              if (
+                (entry as any).salt &&
+                (entry as any).iv &&
+                (entry as any).authTag &&
+                (entry as any).isPasswordEncrypted
+              ) {
+                // This is an encrypted entry from backup
+                // We need to decrypt it first, then re-encrypt with current format
+                console.log(
+                  `🔓 [PasswordsScreen] Decrypting backed up entry: ${entry.title}`,
+                );
+
+                try {
+                  // Decrypt the password using the master password
+                  const derivedKey = deriveKeyFromPassword(
+                    masterPasswordResult.password,
+                    (entry as any).salt,
+                  );
+                  const decryptedPassword = decryptData(
+                    entry.password,
+                    derivedKey,
+                    (entry as any).iv,
+                    (entry as any).authTag,
+                  );
+
+                  // Create entry with decrypted password (remove encryption metadata)
+                  entryToSave = {
+                    ...entry,
+                    password: decryptedPassword,
+                  };
+                  // Remove encryption metadata fields
+                  delete (entryToSave as any).salt;
+                  delete (entryToSave as any).iv;
+                  delete (entryToSave as any).authTag;
+                  delete (entryToSave as any).isPasswordEncrypted;
+
+                  console.log(
+                    `✅ [PasswordsScreen] Successfully decrypted: ${entry.title}`,
+                  );
+                } catch (decryptError) {
+                  console.error(
+                    `❌ [PasswordsScreen] Failed to decrypt entry ${entry.title}:`,
+                    decryptError,
+                  );
+                  // Skip this entry if decryption fails
+                  skippedCount++;
+                  continue;
+                }
+              }
+
+              // Check for duplicates (same title and username)
+              const isDuplicate = existingPasswords.some(
+                existing =>
+                  existing.title?.toLowerCase() ===
+                    entryToSave.title?.toLowerCase() &&
+                  existing.username?.toLowerCase() ===
+                    entryToSave.username?.toLowerCase(),
+              );
+
+              if (isDuplicate) {
+                if (restoreOptions.overwriteDuplicates) {
+                  // Find and delete the existing entry, then save the new one
+                  const existingEntry = existingPasswords.find(
+                    existing =>
+                      existing.title?.toLowerCase() ===
+                        entryToSave.title?.toLowerCase() &&
+                      existing.username?.toLowerCase() ===
+                        entryToSave.username?.toLowerCase(),
+                  );
+                  if (existingEntry) {
+                    await encryptedDatabase.deletePasswordEntry(
+                      existingEntry.id,
+                    );
+                    console.log(
+                      `🔄 [PasswordsScreen] Overwriting duplicate: ${entryToSave.title}`,
+                    );
+                  }
+                  await encryptedDatabase.savePasswordEntry(
+                    entryToSave,
+                    masterPasswordResult.password,
+                  );
+                  overwrittenCount++;
+                } else {
+                  // Skip duplicate
+                  console.log(
+                    `⏭️ [PasswordsScreen] Skipping duplicate: ${entryToSave.title}`,
+                  );
+                  skippedCount++;
+                  continue;
+                }
+              } else {
+                // Not a duplicate, save normally
+                await encryptedDatabase.savePasswordEntry(
+                  entryToSave,
+                  masterPasswordResult.password,
+                );
+                savedCount++;
+              }
+            } catch (saveError) {
+              console.error(
+                `❌ [PasswordsScreen] Failed to save entry ${entry.id}:`,
+                saveError,
+              );
+            }
+          }
+
+          console.log(
+            `✅ [PasswordsScreen] Restore complete: ${savedCount} new, ${overwrittenCount} overwritten, ${skippedCount} skipped`,
+          );
+
+          // Store counts for toast message
+          var restoreSummary = {
+            saved: savedCount,
+            overwritten: overwrittenCount,
+            skipped: skippedCount,
+          };
+        } else {
+          console.log('⚠️ [PasswordsScreen] No entries to save from restore');
+          var restoreSummary = { saved: 0, overwritten: 0, skipped: 0 };
+        }
+
+        // Restore settings if enabled
+        if (restoreOptions.restoreSettings && result.data?.settings) {
+          console.log('⚙️ [PasswordsScreen] Restoring settings from backup...');
+          console.log(
+            '🔍 [PasswordsScreen] Settings from backup:',
+            JSON.stringify(result.data.settings, null, 2),
+          );
+          dispatch(restoreSettingsAction(result.data.settings));
+          console.log('✅ [PasswordsScreen] Settings restored to Redux state');
+
+          // Force persist to AsyncStorage immediately
+          console.log(
+            '💾 [PasswordsScreen] Flushing persistor to AsyncStorage...',
+          );
+          await persistor.flush();
+          console.log('✅ [PasswordsScreen] Persistor flushed successfully');
+        } else {
+          console.log('⚠️ [PasswordsScreen] Settings not restored:', {
+            restoreSettingsEnabled: restoreOptions.restoreSettings,
+            hasSettings: !!result.data?.settings,
+          });
+        }
+
+        // Build detailed toast message
+        const totalRestored = restoreSummary.saved + restoreSummary.overwritten;
+        let toastMsg = `✅ Restored ${totalRestored} password${
+          totalRestored !== 1 ? 's' : ''
+        }`;
+        if (restoreSummary.overwritten > 0) {
+          toastMsg += ` (${restoreSummary.overwritten} overwritten)`;
+        }
+        if (restoreSummary.skipped > 0) {
+          toastMsg += `, ${restoreSummary.skipped} skipped (duplicates)`;
+        }
+
+        setToastMessage(toastMsg);
+        setToastType('success');
+        setShowToast(true);
+
+        // Reload passwords after restore
+        await dispatch(
+          loadPasswordsLazy(masterPasswordResult.password),
+        ).unwrap();
+
+        // Close the modal
+        setShowBackupModal(false);
+      } else {
+        // Log the actual errors
+        console.error(
+          '❌ [PasswordsScreen] Restore failed with errors:',
+          result.result.errors,
+        );
+        console.error(
+          '❌ [PasswordsScreen] Restore warnings:',
+          result.result.warnings,
+        );
+
+        // Throw error with actual details
+        const errorMessage = result.result.errors?.length
+          ? result.result.errors.join(', ')
+          : 'Restore failed';
+        throw new Error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('❌ Restore failed:', error);
+      setToastMessage(`Failed to restore backup: ${error.message || error}`);
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      // Clean up temporary file if it was created
+      if (tempFilePath) {
+        try {
+          const RNFS = await import('react-native-fs');
+          if (await RNFS.default.exists(tempFilePath)) {
+            await RNFS.default.unlink(tempFilePath);
+            console.log('🗑️ [PasswordsScreen] Cleaned up temp file');
+          }
+        } catch (cleanupError) {
+          console.warn(
+            '⚠️ [PasswordsScreen] Failed to cleanup temp file:',
+            cleanupError,
+          );
+        }
+      }
+      setIsExportLoading(false);
+    }
   };
 
-  const handleResetFilters = () => {
-    setCurrentFilter('all');
-    setSelectedCategory('');
-    setCurrentSort('createdAt-desc');
+  const handleDeleteBackup = async (backupId: string) => {
+    try {
+      console.log('🗑️ [PasswordsScreen] Deleting backup:', backupId);
+
+      // Import Google Drive service
+      const { deleteFromGoogleDrive } = await import(
+        '../../services/googleDriveService'
+      );
+
+      // Delete from Google Drive
+      const deleteResult = await deleteFromGoogleDrive(backupId);
+
+      if (!deleteResult.success) {
+        throw new Error(
+          deleteResult.error || 'Failed to delete backup from Google Drive',
+        );
+      }
+
+      console.log('✅ [PasswordsScreen] Backup deleted successfully');
+
+      // Reload available backups
+      await loadAvailableBackups();
+    } catch (error: any) {
+      console.error('❌ Delete backup failed:', error);
+      throw error; // Re-throw to be handled by the modal
+    }
   };
 
-  const renderPasswordItem = ({ item }: { item: Password }) => (
-    <PasswordEntryComponent
-      password={item}
-      onPress={() => handlePasswordPress(item)}
-      onEdit={() => handlePasswordEdit(item)}
-      onDelete={() => handlePasswordDelete(item)}
-      selectable={bulkMode}
-      selected={selectedPasswords.includes(item.id)}
-      onSelect={_selected => togglePasswordSelection(item.id)}
-      showActions={!bulkMode}
-    />
-  );
+  const loadAvailableBackups = async () => {
+    console.log('🔵 [PasswordsScreen] loadAvailableBackups called!');
+    try {
+      console.log('📂 [PasswordsScreen] Loading available backups...');
+
+      // Check if Google Drive is available
+      const isDriveAvailable = await isGoogleDriveAvailable();
+      console.log(
+        '🔵 [PasswordsScreen] Google Drive available:',
+        isDriveAvailable,
+      );
+
+      if (isDriveAvailable) {
+        // Load backups from Google Drive
+        console.log('🔵 [PasswordsScreen] Importing listGoogleDriveBackups...');
+        const { listGoogleDriveBackups } = await import(
+          '../../services/googleDriveService'
+        );
+        console.log('🔵 [PasswordsScreen] Calling listGoogleDriveBackups...');
+        const driveResult = await listGoogleDriveBackups();
+        console.log('🔵 [PasswordsScreen] Drive result:', driveResult);
+
+        if (driveResult.success && driveResult.files) {
+          console.log(
+            '✅ [PasswordsScreen] Loaded Google Drive backups:',
+            driveResult.files.length,
+            'items',
+          );
+
+          // Convert Google Drive files to BackupInfo format
+          const backups = driveResult.files
+            .filter(
+              file =>
+                file.name.endsWith('.bak') || file.name.endsWith('.backup'),
+            )
+            .map(file => ({
+              id: file.id,
+              filename: file.name,
+              createdAt: new Date(file.createdTime),
+              size: parseInt(file.size || '0', 10),
+              entryCount: 0, // Will be populated when backup is selected
+              categoryCount: 0, // Will be populated when backup is selected
+              encrypted: true, // Assume all backups are encrypted
+              version: '1.0',
+              appVersion: '1.0.0',
+            }));
+
+          console.log(
+            '🔵 [PasswordsScreen] Converted backups:',
+            backups.length,
+            'items',
+          );
+          setAvailableBackups(backups as any);
+          console.log('✅ [PasswordsScreen] State updated successfully');
+        } else {
+          console.log('⚠️ [PasswordsScreen] No backups found on Google Drive');
+          setAvailableBackups([]);
+        }
+      } else {
+        // Fallback to local backups if Google Drive is not available
+        console.log('📂 [PasswordsScreen] Loading local backups...');
+        const backups = await backupService.listBackups();
+        console.log(
+          '✅ [PasswordsScreen] Loaded local backups:',
+          backups?.length || 0,
+          'items',
+        );
+        setAvailableBackups(backups as any);
+      }
+    } catch (error) {
+      console.error('❌ [PasswordsScreen] Failed to load backups:', error);
+      setAvailableBackups([]); // Set empty array on error
+    }
+    console.log('🔵 [PasswordsScreen] loadAvailableBackups completed');
+  };
+
+  const renderPasswordItem = ({ item }: { item: Password }) => {
+    console.log('🎯 [FlatList] Rendering item:', item.id, item.title);
+    return (
+      <PasswordEntryComponent
+        password={item}
+        onPress={() => handlePasswordPress(item)}
+        onEdit={() => handlePasswordEdit(item)}
+        onDelete={() => handlePasswordDelete(item)}
+        onToggleFavorite={() => handleToggleFavorite(item)}
+        selectable={bulkMode}
+        selected={selectedPasswords.includes(item.id)}
+        onSelect={_selected => togglePasswordSelection(item.id)}
+        showActions={!bulkMode}
+      />
+    );
+  };
 
   const renderSearchBar = () => {
     if (!showSearch) return null;
@@ -521,7 +1469,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           { backgroundColor: theme.surface, borderColor: theme.border },
         ]}
       >
-        <MaterialIcons name="search" size={20} color={theme.textSecondary} />
+        <Ionicons name="search-outline" size={20} color={theme.textSecondary} />
         <TextInput
           style={[styles.searchInput, { color: theme.text }]}
           placeholder="Search passwords..."
@@ -537,7 +1485,11 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           }}
           style={styles.searchClose}
         >
-          <MaterialIcons name="close" size={20} color={theme.textSecondary} />
+          <Ionicons
+            name="close-outline"
+            size={20}
+            color={theme.textSecondary}
+          />
         </TouchableOpacity>
       </View>
     );
@@ -557,7 +1509,11 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           onPress={selectAllPasswords}
           style={styles.bulkButton}
         >
-          <MaterialIcons name="select-all" size={20} color={theme.primary} />
+          <Ionicons
+            name="checkmark-done-outline"
+            size={20}
+            color={theme.primary}
+          />
           <Text style={[styles.bulkButtonText, { color: theme.primary }]}>
             All
           </Text>
@@ -568,7 +1524,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           style={styles.bulkButton}
           disabled={selectedPasswords.length === 0}
         >
-          <MaterialIcons name="delete" size={20} color={theme.error} />
+          <Ionicons name="trash-outline" size={20} color={theme.error} />
           <Text style={[styles.bulkButtonText, { color: theme.error }]}>
             Delete
           </Text>
@@ -583,27 +1539,28 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
   const renderActiveFilters = () => {
     const hasActiveFilters =
-      currentFilter !== 'all' || currentSort !== 'createdAt-desc';
+      currentFilters.weak ||
+      currentFilters.compromised ||
+      currentFilters.duplicate ||
+      currentFilters.favorite ||
+      currentFilters.categories.length > 0 ||
+      currentSort !== 'createdAt-desc';
 
     if (!hasActiveFilters) return null;
 
-    const getFilterLabel = () => {
-      switch (currentFilter) {
-        case 'weak':
-          return 'Weak Passwords';
-        case 'compromised':
-          return 'Compromised';
-        case 'duplicate':
-          return 'Duplicates';
-        case 'strong':
-          return 'Strong Passwords';
-        case 'category':
-          return selectedCategory
-            ? `Category: ${selectedCategory}`
-            : 'By Category';
-        default:
-          return null;
-      }
+    const getActiveFilterLabels = () => {
+      const labels = [];
+
+      if (currentFilters.weak) labels.push('Weak');
+      if (currentFilters.compromised) labels.push('Compromised');
+      if (currentFilters.duplicate) labels.push('Duplicates');
+      if (currentFilters.favorite) labels.push('Favorites');
+
+      currentFilters.categories.forEach(category => {
+        labels.push(`${category}`);
+      });
+
+      return labels;
     };
 
     const getSortLabel = () => {
@@ -613,7 +1570,13 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         case 'title-desc':
           return 'Name (Z-A)';
         case 'createdAt-asc':
-          return 'Oldest First';
+          return 'Date Created (Oldest First)';
+        case 'createdAt-desc':
+          return 'Date Created (Newest First)';
+        case 'updatedAt-asc':
+          return 'Date Modified (Oldest First)';
+        case 'updatedAt-desc':
+          return 'Date Modified (Newest First)';
         case 'strength-asc':
           return 'Weakest First';
         case 'strength-desc':
@@ -631,7 +1594,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       }
     };
 
-    const filterLabel = getFilterLabel();
+    const filterLabels = getActiveFilterLabels();
     const sortLabel = getSortLabel();
 
     return (
@@ -641,57 +1604,67 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           { backgroundColor: theme.surface, borderColor: theme.border },
         ]}
       >
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.activeFiltersContent}
-        >
-          {filterLabel && (
-            <View
+        <View style={styles.activeFiltersContent}>
+          {/* Sort chip always first */}
+          {sortLabel && (
+            <TouchableOpacity
               style={[
                 styles.filterChip,
                 { backgroundColor: theme.primary + '20' },
               ]}
+              onPress={handleToggleSort}
+              activeOpacity={0.7}
             >
-              <MaterialIcons
-                name="filter-list"
+              <Ionicons
+                name="swap-vertical-outline"
                 size={14}
                 color={theme.primary}
               />
               <Text style={[styles.filterChipText, { color: theme.primary }]}>
-                {filterLabel}
+                {sortLabel}
               </Text>
-            </View>
+            </TouchableOpacity>
           )}
-          {sortLabel && (
+          {/* Filter chips after sort */}
+          {filterLabels.map((label, index) => (
             <View
+              key={index}
               style={[
                 styles.filterChip,
                 { backgroundColor: theme.primary + '20' },
               ]}
             >
-              <MaterialIcons name="sort" size={14} color={theme.primary} />
+              <Ionicons name="funnel-outline" size={14} color={theme.primary} />
               <Text style={[styles.filterChipText, { color: theme.primary }]}>
-                {sortLabel}
+                {label}
               </Text>
             </View>
-          )}
-        </ScrollView>
-        <TouchableOpacity
-          onPress={handleResetFilters}
-          style={styles.resetButton}
-        >
-          <Text style={[styles.resetButtonText, { color: theme.primary }]}>
-            Reset
-          </Text>
-        </TouchableOpacity>
+          ))}
+          {/* Reset button at the end */}
+          <TouchableOpacity
+            onPress={handleResetFilters}
+            style={[
+              styles.resetButton,
+              { backgroundColor: theme.primary + '10' },
+            ]}
+          >
+            <Ionicons
+              name="close-circle-outline"
+              size={18}
+              color={theme.primary}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
 
-  const renderHeader = () => (
-    <View style={[styles.header, { borderBottomColor: theme.border }]}>
-      <View style={styles.headerLeft}>
+  const renderVaultHeader = () => (
+    <View
+      style={[styles.vaultHeaderContainer, { borderBottomColor: theme.border }]}
+    >
+      {/* Column 1: Vault Title */}
+      <View style={styles.vaultTitleColumn}>
         <Text style={[styles.title, { color: theme.text }]}>🔐 Vault</Text>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
           {filteredPasswords.length} passwords
@@ -709,91 +1682,204 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           )}
         </Text>
       </View>
-      <View style={styles.headerRight}>
-        {!bulkMode && (
-          <>
-            <TouchableOpacity
-              onPress={() => setShowSearch(!showSearch)}
-              style={[styles.headerButton, { backgroundColor: theme.surface }]}
-            >
-              <MaterialIcons
-                name="search"
-                size={22}
-                color={theme.textSecondary}
-              />
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => setShowSortSheet(true)}
-              style={[
-                styles.headerButton,
-                {
-                  backgroundColor:
-                    currentSort !== 'createdAt-desc'
-                      ? theme.primary + '30'
-                      : theme.surface,
-                },
-              ]}
-            >
-              <MaterialIcons
-                name="sort"
-                size={22}
-                color={
-                  currentSort !== 'createdAt-desc'
-                    ? theme.primary
-                    : theme.textSecondary
-                }
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setShowFilterSheet(true)}
-              style={[
-                styles.headerButton,
-                {
-                  backgroundColor:
-                    currentFilter !== 'all'
-                      ? theme.primary + '30'
-                      : theme.surface,
-                },
-              ]}
-            >
-              <MaterialIcons
-                name="filter-list"
-                size={22}
-                color={
-                  currentFilter !== 'all' ? theme.primary : theme.textSecondary
-                }
-              />
-            </TouchableOpacity>
-          </>
-        )}
-
-        <TouchableOpacity
-          onPress={toggleBulkMode}
-          style={[
-            styles.headerButton,
-            { backgroundColor: bulkMode ? theme.primary : theme.surface },
-          ]}
-        >
-          <MaterialIcons
-            name="checklist"
-            size={22}
-            color={bulkMode ? '#FFFFFF' : theme.textSecondary}
-          />
-        </TouchableOpacity>
-
-        {!bulkMode && (
-          <TouchableOpacity
-            onPress={handleAddPassword}
-            style={[styles.addButton, { backgroundColor: theme.primary }]}
-          >
-            <MaterialIcons name="add" size={22} color="#FFFFFF" />
-          </TouchableOpacity>
-        )}
-      </View>
+      {/* Column 2: Action Buttons */}
+      <View style={styles.actionButtonsColumn}>{renderActionButtons()}</View>
     </View>
   );
+
+  const renderActionButtons = () =>
+    [
+      // Search button
+      !bulkMode && (
+        <TouchableOpacity
+          key="search"
+          onPress={() => setShowSearch(!showSearch)}
+          style={[styles.headerButton, { backgroundColor: theme.surface }]}
+        >
+          <Ionicons
+            name="search-outline"
+            size={20}
+            color={theme.textSecondary}
+          />
+        </TouchableOpacity>
+      ),
+
+      // Sort button
+      !bulkMode && (
+        <TouchableOpacity
+          key="sort"
+          onPress={event => {
+            // Measure button position before showing dropdown
+            event.currentTarget.measure((x, y, width, height, pageX, pageY) => {
+              setSortButtonPosition({ x: pageX + width, y: pageY + height });
+              setShowSortSheet(true);
+            });
+          }}
+          style={[
+            styles.headerButton,
+            {
+              backgroundColor:
+                currentSort !== 'createdAt-desc'
+                  ? theme.primary + '30'
+                  : theme.surface,
+            },
+          ]}
+        >
+          <Ionicons
+            name="swap-vertical-outline"
+            size={20}
+            color={
+              currentSort !== 'createdAt-desc'
+                ? theme.primary
+                : theme.textSecondary
+            }
+          />
+        </TouchableOpacity>
+      ),
+
+      // Filter button
+      !bulkMode && (
+        <TouchableOpacity
+          key="filter"
+          onPress={event => {
+            // Measure button position before showing dropdown
+            event.currentTarget.measure((x, y, width, height, pageX, pageY) => {
+              setFilterButtonPosition({ x: pageX + width, y: pageY + height });
+              setShowFilterSheet(true);
+            });
+          }}
+          style={[
+            styles.headerButton,
+            {
+              backgroundColor:
+                currentFilters.weak ||
+                currentFilters.compromised ||
+                currentFilters.duplicate ||
+                currentFilters.favorite ||
+                currentFilters.categories.length > 0
+                  ? theme.primary + '30'
+                  : theme.surface,
+            },
+          ]}
+        >
+          <Ionicons
+            name="funnel-outline"
+            size={20}
+            color={
+              currentFilters.weak ||
+              currentFilters.compromised ||
+              currentFilters.duplicate ||
+              currentFilters.favorite ||
+              currentFilters.categories.length > 0
+                ? theme.primary
+                : theme.textSecondary
+            }
+          />
+        </TouchableOpacity>
+      ),
+
+      // Add button
+      !bulkMode && (
+        <TouchableOpacity
+          key="add"
+          onPress={handleAddPassword}
+          style={[styles.headerButton, { backgroundColor: theme.primary }]}
+        >
+          <Ionicons name="add-outline" size={20} color="#FFFFFF" />
+        </TouchableOpacity>
+      ),
+
+      // Export button
+      !bulkMode && (
+        <TouchableOpacity
+          key="export"
+          onPress={() => {
+            // Skip ExportOptionsModal and go directly to file name input with default options
+            const defaultFormat = {
+              id: 'json',
+              extension: 'json',
+              name: 'JSON',
+            };
+            const defaultOptions = {
+              includeNotes: true,
+              includeCategories: true,
+              includeTags: true,
+              encrypt: false,
+              encryptionPassword: '',
+            };
+            setPendingExport({
+              entries: filteredPasswords,
+              format: defaultFormat,
+              options: defaultOptions,
+            });
+            setShowFileNameModal(true);
+          }}
+          style={[styles.headerButton, { backgroundColor: theme.surface }]}
+        >
+          <Ionicons
+            name="share-outline"
+            size={20}
+            color={theme.textSecondary}
+          />
+        </TouchableOpacity>
+      ),
+
+      // Import button
+      !bulkMode && (
+        <TouchableOpacity
+          key="import"
+          onPress={handleImport}
+          style={[
+            styles.headerButton,
+            { backgroundColor: theme.surface },
+            isImportLoading && styles.importButtonLoading,
+          ]}
+          disabled={isImportLoading}
+        >
+          {isImportLoading ? (
+            <ActivityIndicator size={20} color={theme.textSecondary} />
+          ) : (
+            <Ionicons
+              name="download-outline"
+              size={20}
+              color={theme.textSecondary}
+            />
+          )}
+        </TouchableOpacity>
+      ),
+
+      // Backup button
+      !bulkMode && (
+        <TouchableOpacity
+          key="backup"
+          onPress={() => setShowBackupModal(true)}
+          style={[styles.headerButton, { backgroundColor: theme.surface }]}
+        >
+          <Ionicons
+            name="cloud-outline"
+            size={20}
+            color={theme.textSecondary}
+          />
+        </TouchableOpacity>
+      ),
+
+      // Bulk mode button
+      <TouchableOpacity
+        key="bulk"
+        onPress={toggleBulkMode}
+        style={[
+          styles.headerButton,
+          { backgroundColor: bulkMode ? theme.primary : theme.surface },
+        ]}
+      >
+        <Ionicons
+          name="checkmark-done-outline"
+          size={20}
+          color={bulkMode ? '#FFFFFF' : theme.textSecondary}
+        />
+      </TouchableOpacity>,
+    ].filter(Boolean);
 
   const renderEmptyState = () => {
     // Show loading indicator while passwords are being loaded
@@ -818,7 +1904,11 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     return (
       <View style={styles.emptyState}>
         <View style={[styles.emptyIcon, { backgroundColor: theme.surface }]}>
-          <MaterialIcons name="lock" size={48} color={theme.primary} />
+          <Ionicons
+            name="lock-closed-outline"
+            size={48}
+            color={theme.primary}
+          />
         </View>
         <Text style={[styles.emptyTitle, { color: theme.text }]}>
           Your Vault is Empty
@@ -833,7 +1923,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             { backgroundColor: theme.card, borderColor: theme.primary },
           ]}
         >
-          <MaterialIcons name="add" size={20} color={theme.primary} />
+          <Ionicons name="add-outline" size={20} color={theme.primary} />
           <Text style={[styles.emptyButtonText, { color: theme.primary }]}>
             Add Password
           </Text>
@@ -842,11 +1932,30 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     );
   };
 
+  console.log('🎨 [Render] Rendering PasswordsScreen:', {
+    passwordsCount: passwords.length,
+    filteredCount: filteredPasswords.length,
+    isLoadingPasswords,
+    showEmptyState: filteredPasswords.length === 0,
+  });
+
+  // Debug: Log filtered passwords data
+  console.log('📋 [FlatList Debug] Filtered passwords:', {
+    count: filteredPasswords.length,
+    firstItem: filteredPasswords[0]
+      ? {
+          id: filteredPasswords[0].id,
+          title: filteredPasswords[0].title,
+          hasPassword: !!filteredPasswords[0].password,
+        }
+      : null,
+  });
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.background }]}
     >
-      {renderHeader()}
+      {renderVaultHeader()}
       {renderSearchBar()}
       {renderActiveFilters()}
       {renderBulkActions()}
@@ -860,6 +1969,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           keyExtractor={item => item.id}
           style={styles.list}
           showsVerticalScrollIndicator={false}
+          onScroll={trackScrollActivity}
+          scrollEventThrottle={400}
         />
       )}
 
@@ -872,26 +1983,67 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         duration={3000}
       />
 
-      {/* Sort Sheet */}
-      <SortFilterSheet
+      {/* Sort Dropdown */}
+      <SortDropdown
         visible={showSortSheet}
         onClose={() => setShowSortSheet(false)}
-        mode="sort"
-        currentSort={currentSort}
+        currentSort={convertSortToObject(currentSort)}
         onSortChange={handleSortChange}
+        anchorPosition={sortButtonPosition}
       />
 
-      {/* Filter Sheet */}
-      <SortFilterSheet
+      {/* Filter Dropdown */}
+      <FilterDropdown
         visible={showFilterSheet}
         onClose={() => setShowFilterSheet(false)}
-        mode="filter"
-        currentFilter={currentFilter}
-        onFilterChange={handleFilterChange}
+        currentFilters={currentFilters}
+        onFiltersChange={handleFiltersChange}
         categories={categories}
-        selectedCategory={selectedCategory}
-        onCategorySelect={handleCategorySelect}
+        anchorPosition={filterButtonPosition}
       />
+
+      {/* Export Options Modal - DISABLED: Now using direct export with default options */}
+      {/* <ExportOptionsModal
+        visible={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        entries={filteredPasswords}
+        onExport={handleExport}
+      /> */}
+
+      {/* File Name Input Modal */}
+      <FileNameInputModal
+        visible={showFileNameModal}
+        onClose={() => {
+          setShowFileNameModal(false);
+          setPendingExport(null);
+        }}
+        onConfirm={handleFileNameConfirm}
+        defaultFileName={`PasswordEpic_Export_${
+          new Date().toISOString().split('T')[0]
+        }`}
+        fileExtension={pendingExport?.format?.extension || 'json'}
+        title="Export File Name"
+        description="Enter a name for your export file"
+      />
+
+      {/* Backup & Restore Modal */}
+      <BackupRestoreModal
+        visible={showBackupModal}
+        onClose={() => setShowBackupModal(false)}
+        onBackup={handleBackup}
+        onRestore={handleRestore}
+        onDeleteBackup={handleDeleteBackup}
+        availableBackups={availableBackups}
+        isLoading={isExportLoading}
+        onShowToast={(message: string, type: 'success' | 'error') => {
+          setToastMessage(message);
+          setToastType(type);
+          setShowToast(true);
+        }}
+      />
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog {...confirmDialog} onCancel={hideConfirm} />
     </SafeAreaView>
   );
 };
@@ -1090,9 +2242,11 @@ const styles = StyleSheet.create({
   },
   activeFiltersContent: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 8,
-    paddingRight: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   filterChip: {
     flexDirection: 'row',
@@ -1107,11 +2261,51 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   resetButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  resetButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
+  vaultTitleContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#38383A',
+  },
+  actionButtonsContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#38383A',
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  // New 2-column layout styles
+  vaultHeaderContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#38383A',
+    alignItems: 'flex-start',
+  },
+  vaultTitleColumn: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  actionButtonsColumn: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: 8,
+    maxWidth: '60%',
+  },
+  importButtonLoading: {
+    opacity: 0.6,
   },
 });

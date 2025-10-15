@@ -1,7 +1,7 @@
 // Optimized Password Management Hook - Eliminate redundant getMasterPassword calls
 import { useState, useCallback } from 'react';
 import { useAppDispatch } from './redux';
-import { getEffectiveMasterPassword } from '../services/dynamicMasterPasswordService';
+import { getEffectiveMasterPassword } from '../services/staticMasterPasswordService';
 import { PasswordEntry } from '../types/password';
 import { savePassword } from '../store/slices/passwordsSlice';
 
@@ -63,7 +63,7 @@ export const useOptimizedPasswordManagement = (masterPassword?: string) => {
           password: dynamicResult.password,
           derivedKey: dynamicResult.derivedKey || '',
           timestamp: Date.now(),
-          sessionId: dynamicResult.sessionId || '',
+          sessionId: '',
         };
 
         setInitializedMasterPassword(dynamicResult.password);

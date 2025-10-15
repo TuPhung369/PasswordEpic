@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { calculatePasswordStrength } from '../utils/passwordUtils';
 
@@ -27,11 +27,11 @@ export const PasswordStrengthMeter: React.FC<PasswordStrengthMeterProps> = ({
   const strength = calculatePasswordStrength(password);
 
   const getStrengthIcon = () => {
-    if (strength.score <= 1) return 'security';
-    if (strength.score <= 2) return 'warning';
-    if (strength.score <= 3) return 'verified-user';
-    if (strength.score <= 4) return 'shield';
-    return 'military-tech';
+    if (strength.score <= 1) return 'shield-outline';
+    if (strength.score <= 2) return 'warning-outline';
+    if (strength.score <= 3) return 'shield-checkmark-outline';
+    if (strength.score <= 4) return 'shield-outline';
+    return 'ribbon-outline';
   };
 
   const renderStrengthBars = () => {
@@ -56,11 +56,7 @@ export const PasswordStrengthMeter: React.FC<PasswordStrengthMeterProps> = ({
   const renderCompactView = () => (
     <View style={styles.compactContainer}>
       <View style={styles.compactHeader}>
-        <MaterialIcons
-          name={getStrengthIcon()}
-          size={16}
-          color={strength.color}
-        />
+        <Ionicons name={getStrengthIcon()} size={16} color={strength.color} />
         <Text style={[styles.compactLabel, { color: strength.color }]}>
           {strength.label}
         </Text>
@@ -78,11 +74,7 @@ export const PasswordStrengthMeter: React.FC<PasswordStrengthMeterProps> = ({
     >
       <View style={styles.header}>
         <View style={styles.strengthInfo}>
-          <MaterialIcons
-            name={getStrengthIcon()}
-            size={24}
-            color={strength.color}
-          />
+          <Ionicons name={getStrengthIcon()} size={24} color={strength.color} />
           <View style={styles.strengthText}>
             <Text style={[styles.strengthLabel, { color: strength.color }]}>
               {strength.label}
@@ -108,8 +100,8 @@ export const PasswordStrengthMeter: React.FC<PasswordStrengthMeterProps> = ({
               </Text>
               {strength.feedback.map((item, index) => (
                 <View key={index} style={styles.feedbackItem}>
-                  <MaterialIcons
-                    name="info-outline"
+                  <Ionicons
+                    name="information-circle-outline"
                     size={16}
                     color={theme.primary}
                   />
@@ -126,7 +118,7 @@ export const PasswordStrengthMeter: React.FC<PasswordStrengthMeterProps> = ({
               Crack Time Estimate
             </Text>
             <View style={styles.suggestionItem}>
-              <MaterialIcons name="schedule" size={16} color={theme.primary} />
+              <Ionicons name="time-outline" size={16} color={theme.primary} />
               <Text style={[styles.suggestionText, { color: theme.text }]}>
                 {strength.crackTime} to crack this password
               </Text>

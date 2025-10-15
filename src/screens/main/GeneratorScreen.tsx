@@ -11,10 +11,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
+import { useNavigation } from '@react-navigation/native';
+import type { CompositeNavigationProp } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAppSelector, useAppDispatch } from '../../hooks/redux';
 import { RootState } from '../../store';
 import { updateGeneratorSettings } from '../../store/slices/settingsSlice';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordGenerator } from '../../hooks/usePasswordGenerator';
 import { PasswordStrengthMeter } from '../../components/PasswordStrengthMeter';
@@ -24,9 +28,17 @@ import {
   PasswordTemplate,
 } from '../../components/PasswordTemplates';
 import { GeneratorPreset } from '../../services/passwordGeneratorService';
+import { MainTabParamList } from '../../navigation/MainNavigator';
+import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
+
+type GeneratorScreenNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Generator'>,
+  NativeStackNavigationProp<PasswordsStackParamList>
+>;
 
 export const GeneratorScreen: React.FC = () => {
   const dispatch = useAppDispatch();
+  const navigation = useNavigation<GeneratorScreenNavigationProp>();
   const { generator } = useAppSelector((state: RootState) => state.settings);
   const { theme } = useTheme();
   const {
@@ -46,11 +58,15 @@ export const GeneratorScreen: React.FC = () => {
 
   const handleSelectPreset = async (preset: GeneratorPreset) => {
     setSelectedPreset(preset);
+    // Reset selected template when choosing a preset
+    setSelectedTemplate(null);
     await applyPreset(preset.id);
   };
 
   const handleSelectTemplate = async (template: PasswordTemplate) => {
     setSelectedTemplate(template);
+    // Reset selected preset when choosing a template
+    setSelectedPreset(null);
     // Apply template settings to generator
     dispatch(
       updateGeneratorSettings({
@@ -75,6 +91,9 @@ export const GeneratorScreen: React.FC = () => {
         excludeSimilar: true,
         excludeAmbiguous: false,
       });
+      // Reset selections when manually generating password
+      setSelectedPreset(null);
+      setSelectedTemplate(null);
     } catch (error) {
       console.error('Error generating password:', error);
     }
@@ -86,9 +105,22 @@ export const GeneratorScreen: React.FC = () => {
     }
   };
 
+  const handleSaveToVault = () => {
+    if (generatedPassword) {
+      // Navigate to Passwords tab, then to AddPassword screen with the generated password
+      navigation.navigate('Passwords', {
+        screen: 'AddPassword',
+        params: { generatedPassword },
+      });
+    }
+  };
+
   const updateLength = (newLength: number) => {
     setLength(newLength);
     dispatch(updateGeneratorSettings({ defaultLength: newLength }));
+    // Reset selections when manually changing settings
+    setSelectedPreset(null);
+    setSelectedTemplate(null);
   };
 
   const canToggleOff = (currentOption: keyof typeof generator) => {
@@ -119,6 +151,9 @@ export const GeneratorScreen: React.FC = () => {
         includeUppercase: !generator.includeUppercase,
       }),
     );
+    // Reset selections when manually changing settings
+    setSelectedPreset(null);
+    setSelectedTemplate(null);
   };
 
   const toggleLowercase = () => {
@@ -130,6 +165,9 @@ export const GeneratorScreen: React.FC = () => {
         includeLowercase: !generator.includeLowercase,
       }),
     );
+    // Reset selections when manually changing settings
+    setSelectedPreset(null);
+    setSelectedTemplate(null);
   };
 
   const toggleNumbers = () => {
@@ -139,6 +177,9 @@ export const GeneratorScreen: React.FC = () => {
     dispatch(
       updateGeneratorSettings({ includeNumbers: !generator.includeNumbers }),
     );
+    // Reset selections when manually changing settings
+    setSelectedPreset(null);
+    setSelectedTemplate(null);
   };
 
   const toggleSymbols = () => {
@@ -148,6 +189,9 @@ export const GeneratorScreen: React.FC = () => {
     dispatch(
       updateGeneratorSettings({ includeSymbols: !generator.includeSymbols }),
     );
+    // Reset selections when manually changing settings
+    setSelectedPreset(null);
+    setSelectedTemplate(null);
   };
 
   const getEnabledOptionsCount = () => {
@@ -193,7 +237,7 @@ export const GeneratorScreen: React.FC = () => {
                   { backgroundColor: theme.surface },
                 ]}
               >
-                <MaterialIcons name="vpn-key" size={20} color={theme.primary} />
+                <Ionicons name="key-outline" size={20} color={theme.primary} />
                 <Text
                   style={[styles.passwordLabel, { color: theme.textSecondary }]}
                 >
@@ -213,8 +257,8 @@ export const GeneratorScreen: React.FC = () => {
                     ]}
                     onPress={handleCopyToClipboard}
                   >
-                    <MaterialIcons
-                      name="content-copy"
+                    <Ionicons
+                      name="copy-outline"
                       size={18}
                       color={theme.primary}
                     />
@@ -238,7 +282,7 @@ export const GeneratorScreen: React.FC = () => {
                 ]}
                 onPress={handleGeneratePassword}
               >
-                <MaterialIcons name="refresh" size={20} color="#ffffff" />
+                <Ionicons name="refresh-outline" size={20} color="#ffffff" />
                 <Text style={styles.generateButtonText}>
                   Generate New Password
                 </Text>
@@ -249,8 +293,13 @@ export const GeneratorScreen: React.FC = () => {
                     styles.saveButton,
                     { backgroundColor: theme.card, borderColor: theme.primary },
                   ]}
+                  onPress={handleSaveToVault}
                 >
-                  <MaterialIcons name="save" size={18} color={theme.primary} />
+                  <Ionicons
+                    name="save-outline"
+                    size={18}
+                    color={theme.primary}
+                  />
                   <Text
                     style={[styles.saveButtonText, { color: theme.primary }]}
                   >
@@ -274,7 +323,7 @@ export const GeneratorScreen: React.FC = () => {
               ]}
               onPress={() => setShowTemplates(true)}
             >
-              <MaterialIcons name="category" size={20} color={theme.primary} />
+              <Ionicons name="grid-outline" size={20} color={theme.primary} />
               <Text style={[styles.templatesButtonText, { color: theme.text }]}>
                 Choose Template
               </Text>
@@ -288,8 +337,8 @@ export const GeneratorScreen: React.FC = () => {
                   ? selectedTemplate.name
                   : 'Banking, Social, Email, etc.'}
               </Text>
-              <MaterialIcons
-                name="chevron-right"
+              <Ionicons
+                name="chevron-forward-outline"
                 size={20}
                 color={theme.textSecondary}
               />

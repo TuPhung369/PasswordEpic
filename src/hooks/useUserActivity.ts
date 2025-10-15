@@ -140,14 +140,27 @@ export const useUserActivity = (
   );
 
   // Create PanResponder to capture all touch events
+  // This will capture touches even when child components handle them
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => {
-        // Record interaction on touch start only
+      // CRITICAL: Return true here to capture ALL touches, even on child components
+      onStartShouldSetPanResponderCapture: () => {
+        // Record interaction on touch start
         // The service has debounce logic to prevent excessive calls
-        console.log('🎯 PanResponder: Touch detected');
+        console.log('🎯 PanResponder: Touch detected (capture phase)');
         recordInteraction();
-        return false; // Don't capture the gesture
+        return false; // Don't actually capture - let children handle the touch
+      },
+      onStartShouldSetPanResponder: () => {
+        // This is called after children have a chance to handle the touch
+        // Record interaction here as well for touches not handled by children
+        console.log('🎯 PanResponder: Touch detected (bubble phase)');
+        recordInteraction();
+        return false; // Don't capture the gesture - let children handle it
+      },
+      onMoveShouldSetPanResponderCapture: () => {
+        // Don't record on move to reduce calls
+        return false;
       },
       onMoveShouldSetPanResponder: () => {
         // Don't record on move check to reduce calls

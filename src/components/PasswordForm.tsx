@@ -5,12 +5,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
   Switch,
   Platform,
   InputAccessoryView,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import {
   PasswordEntry,
   CustomField, // Keep for backward compatibility with state typing
@@ -19,12 +18,14 @@ import {
 import { useTheme, Theme } from '../contexts/ThemeContext';
 import {
   calculatePasswordStrength,
-  generateSecurePassword,
+  // generateSecurePassword, // Moved to QuickPasswordGenerator component
 } from '../utils/passwordUtils';
 // import { PasswordValidationService } from '../services/passwordValidationService'; // Unused - real-time validation removed
 import { TrackedTextInput as TextInput } from './TrackedTextInput';
 import CategorySelector from './CategorySelector';
 import { BiometricService } from '../services/biometricService';
+import { QuickPasswordGenerator } from './QuickPasswordGenerator';
+import ConfirmDialog from './ConfirmDialog';
 
 interface PasswordFormProps {
   password?: PasswordEntry;
@@ -33,6 +34,7 @@ interface PasswordFormProps {
   onDataChange?: (password: Partial<PasswordEntry>) => void; // Real-time updates for parent
   isEditing?: boolean;
   enableAutoSave?: boolean; // Default true, set to false to disable auto-save
+  onDecryptPassword?: () => Promise<string>; // Callback to decrypt password on-demand
 }
 
 // Unique ID for empty input accessory view to hide toolbar
@@ -91,6 +93,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
   onDataChange,
   isEditing: _isEditing = false, // Marked as unused since we removed Save button
   enableAutoSave = true,
+  onDecryptPassword,
 }) => {
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -102,7 +105,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
   const [website, setWebsite] = useState(password?.website || '');
   const [notes, setNotes] = useState(password?.notes || '');
   const [category, setCategory] = useState(password?.category || 'Other');
-  const [_isFavorite, _setIsFavorite] = useState(password?.isFavorite || false); // Marked as unused
+  const [isFavorite, setIsFavorite] = useState(password?.isFavorite || false);
   const [_customFields, _setCustomFields] = useState<CustomField[]>( // Marked as unused
     password?.customFields || [],
   );
@@ -120,37 +123,132 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
   const [_showCustomFields, _setShowCustomFields] = useState(false); // Marked as unused
   const [_isValidating, _setIsValidating] = useState(false); // Marked as unused
   const [validationErrors, _setValidationErrors] = useState<string[]>([]); // Keep validationErrors for display, but don't set it
-
-  // Password generator options
-  const [generatorOptions, setGeneratorOptions] = useState({
-    length: 16,
-    includeUppercase: true,
-    includeLowercase: true,
-    includeNumbers: true,
-    includeSymbols: false,
-    excludeSimilar: true,
+  const [confirmDialog, setConfirmDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    confirmStyle?: 'default' | 'destructive';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
   });
+
+  // Password generator options - DEPRECATED: Now using QuickPasswordGenerator component
+  // const [generatorOptions, setGeneratorOptions] = useState({
+  //   length: 16,
+  //   includeUppercase: true,
+  //   includeLowercase: true,
+  //   includeNumbers: true,
+  //   includeSymbols: false,
+  //   excludeSimilar: true,
+  // });
 
   // Use ref to track if form has been initialized to avoid overwriting user input
   const isInitializedRef = React.useRef(false);
+  const lastPasswordIdRef = React.useRef<string | undefined>(undefined);
+  // Track if password has been decrypted (when user clicks eye icon)
+  const isPasswordDecryptedRef = React.useRef(false);
+  // Track original values for reset functionality
+  const originalValuesRef = React.useRef({
+    title: '',
+    username: '',
+    password: '',
+    website: '',
+    notes: '',
+    category: 'Other',
+    isFavorite: false,
+  });
 
-  // Sync form state with password prop ONLY on initial load (not during editing)
+  // Sync form state with password prop ONLY on initial load or when password ID changes
   useEffect(() => {
-    // Only sync on first load or when password ID changes, not during editing
-    if (password && !isInitializedRef.current) {
-      console.log(
-        '🔄 PasswordForm: Initial sync with password prop:',
-        password,
-      );
+    console.log('🔍 PasswordForm useEffect triggered:', {
+      hasPassword: !!password,
+      passwordId: password?.id,
+      passwordValue: password?.isDecrypted
+        ? '[DECRYPTED]'
+        : password?.password
+        ? '[ENCRYPTED]'
+        : '[EMPTY]',
+      currentPasswordValue: passwordValue ? '[HAS_VALUE]' : '[EMPTY]',
+      isInitialized: isInitializedRef.current,
+      lastPasswordId: lastPasswordIdRef.current,
+    });
+
+    // Sync if:
+    // 1. First time initialization, OR
+    // 2. Password ID changed (editing different password), OR
+    // 3. Password value changed when creating new entry (no ID yet), OR
+    // 4. Password was decrypted (isDecrypted flag changed to true)
+    const shouldSync =
+      password &&
+      (!isInitializedRef.current ||
+        password.id !== lastPasswordIdRef.current ||
+        (!password.id &&
+          password.password &&
+          password.password !== passwordValue) ||
+        (password.isDecrypted &&
+          password.password &&
+          password.password !== passwordValue));
+
+    console.log('🔍 PasswordForm shouldSync:', shouldSync, {
+      condition1_firstTime: !isInitializedRef.current,
+      condition2_idChanged: password?.id !== lastPasswordIdRef.current,
+      condition3_newEntry:
+        !password?.id &&
+        password?.password &&
+        password?.password !== passwordValue,
+      condition4_decrypted:
+        password?.isDecrypted &&
+        password?.password &&
+        password?.password !== passwordValue,
+    });
+
+    if (shouldSync) {
+      console.log('🔄 PasswordForm: Syncing with password prop:', {
+        ...password,
+        password: password.isDecrypted
+          ? '[DECRYPTED]'
+          : password.password
+          ? '[ENCRYPTED]'
+          : '[EMPTY]',
+      });
       setTitle(password.title || '');
       setUsername(password.username || '');
       setPasswordValue(password.password || '');
       setWebsite(password.website || '');
       setNotes(password.notes || '');
       setCategory(password.category || 'Other');
+      setIsFavorite(password.isFavorite || false);
       isInitializedRef.current = true;
+      lastPasswordIdRef.current = password.id;
+
+      // Update decryption flag based on password state
+      // Mark password as decrypted if:
+      // 1. It's coming from generator (plain text, no ID), OR
+      // 2. It's an existing password that has been decrypted (isDecrypted = true)
+      if (password.password && password.isDecrypted) {
+        isPasswordDecryptedRef.current = true;
+      } else {
+        // Only reset to false if password is actually encrypted
+        isPasswordDecryptedRef.current = false;
+      }
+
+      // Store original values for reset functionality
+      originalValuesRef.current = {
+        title: password.title || '',
+        username: password.username || '',
+        password: password.password || '',
+        website: password.website || '',
+        notes: password.notes || '',
+        category: password.category || 'Other',
+        isFavorite: password.isFavorite || false,
+      };
     }
-  }, [password]); // Include password but only sync once
+  }, [password, passwordValue]); // Re-run when password prop or current passwordValue changes
 
   // Helper function to notify parent of form changes
   const notifyDataChange = useCallback(
@@ -162,6 +260,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
         website: string;
         notes: string;
         category: string;
+        isFavorite: boolean;
       }> = {},
     ) => {
       if (onDataChange) {
@@ -173,25 +272,35 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
           notes: overrides.notes ?? notes,
           category: overrides.category ?? category,
           // Include other fields that parent might need
-          isFavorite: false, // Disabled feature
+          isFavorite: overrides.isFavorite ?? isFavorite,
           customFields: [], // Disabled feature
           tags: [], // Default empty
         };
         onDataChange(currentFormData);
       }
     },
-    [title, username, passwordValue, website, notes, category, onDataChange],
+    [
+      title,
+      username,
+      passwordValue,
+      website,
+      notes,
+      category,
+      isFavorite,
+      onDataChange,
+    ],
   );
 
   // Calculate password strength when password changes
   useEffect(() => {
-    if (passwordValue) {
+    // Only calculate strength for decrypted passwords
+    if (passwordValue && (password?.isDecrypted || !password?.id)) {
       const strength = calculatePasswordStrength(passwordValue);
       setPasswordStrength(strength);
     } else {
       setPasswordStrength(null);
     }
-  }, [passwordValue]);
+  }, [passwordValue, password?.isDecrypted, password?.id]);
 
   // Debounced auto-save to prevent excessive calls
   useEffect(() => {
@@ -213,7 +322,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
           website,
           notes,
           category,
-          isFavorite: false, // Default value since favorite toggle removed
+          isFavorite,
           customFields: [], // Empty array since custom fields removed
           tags: password?.tags || [], // Preserve tags from parent
         });
@@ -270,7 +379,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
           website: website.trim() || undefined,
           notes: notes.trim() || undefined,
           category: category,
-          isFavorite: false, // Default value since favorite removed
+          isFavorite,
           customFields: [], // Empty since custom fields removed
           tags: password?.tags || [],
         });
@@ -291,7 +400,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     website,
     notes,
     category,
-    // isFavorite and customFields removed from dependencies
+    isFavorite,
     onSave,
     password?.tags,
     validationErrors.length,
@@ -341,15 +450,16 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
 
   // isValidUrl function removed - no longer needed without real-time validation
 
-  const handleGeneratePassword = () => {
-    try {
-      const newPassword = generateSecurePassword(generatorOptions);
-      setPasswordValue(newPassword);
-      setShowPasswordGenerator(false);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to generate password');
-    }
-  };
+  // DEPRECATED: Now using QuickPasswordGenerator component
+  // const handleGeneratePassword = () => {
+  //   try {
+  //     const newPassword = generateSecurePassword(generatorOptions);
+  //     setPasswordValue(newPassword);
+  //     setShowPasswordGenerator(false);
+  //   } catch (error) {
+  //     Alert.alert('Error', 'Failed to generate password');
+  //   }
+  // };
 
   // Custom field handlers removed - custom fields functionality removed
 
@@ -393,86 +503,15 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     );
   };
 
-  const renderPasswordGenerator = () => {
-    if (!showPasswordGenerator) return null;
-
-    return (
-      <View style={styles.generatorContainer}>
-        <View style={styles.generatorHeader}>
-          <Text style={styles.generatorTitle}>Password Generator</Text>
-          <TouchableOpacity
-            onPress={() => setShowPasswordGenerator(false)}
-            style={styles.closeButton}
-          >
-            <Icon name="close" size={20} color={theme.textSecondary} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.generatorOption}>
-          <Text style={styles.optionLabel}>
-            Length: {generatorOptions.length}
-          </Text>
-          {/* Note: In a real app, you'd use a Slider component here */}
-          <View style={styles.lengthControls}>
-            <TouchableOpacity
-              onPress={() =>
-                setGeneratorOptions({
-                  ...generatorOptions,
-                  length: Math.max(4, generatorOptions.length - 1),
-                })
-              }
-              style={styles.lengthButton}
-            >
-              <Icon name="remove" size={20} color={theme.primary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() =>
-                setGeneratorOptions({
-                  ...generatorOptions,
-                  length: Math.min(50, generatorOptions.length + 1),
-                })
-              }
-              style={styles.lengthButton}
-            >
-              <Icon name="add" size={20} color={theme.primary} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {Object.entries({
-          includeUppercase: 'Uppercase (A-Z)',
-          includeLowercase: 'Lowercase (a-z)',
-          includeNumbers: 'Numbers (0-9)',
-          includeSymbols: 'Symbols (!@#$)',
-          excludeSimilar: 'Exclude similar characters',
-        }).map(([key, label]) => (
-          <View key={key} style={styles.generatorOption}>
-            <Text style={styles.optionLabel}>{label}</Text>
-            <Switch
-              value={
-                generatorOptions[
-                  key as keyof typeof generatorOptions
-                ] as boolean
-              }
-              onValueChange={value =>
-                setGeneratorOptions({ ...generatorOptions, [key]: value })
-              }
-              thumbColor={theme.primary}
-              trackColor={{ false: theme.border, true: theme.primary + '40' }}
-            />
-          </View>
-        ))}
-
-        <TouchableOpacity
-          onPress={handleGeneratePassword}
-          style={styles.generateButton}
-        >
-          <Icon name="refresh" size={20} color="#FFFFFF" />
-          <Text style={styles.generateButtonText}>Generate Password</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  };
+  // DEPRECATED: Now using QuickPasswordGenerator component
+  // const renderPasswordGenerator = () => {
+  //   if (!showPasswordGenerator) return null;
+  //   return (
+  //     <View style={styles.generatorContainer}>
+  //       ... old generator UI ...
+  //     </View>
+  //   );
+  // };
 
   // renderCustomFields function removed - custom fields functionality removed
 
@@ -535,6 +574,17 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                 ]}
                 placeholder="Enter password"
                 value={passwordValue}
+                onFocus={() => {
+                  // Clear password field when user focuses IF password hasn't been decrypted yet
+                  // This prevents issues where user types into encrypted placeholder
+                  if (!isPasswordDecryptedRef.current && passwordValue) {
+                    console.log(
+                      '🔓 PasswordForm: Clearing encrypted password on focus (not yet decrypted)',
+                    );
+                    setPasswordValue('');
+                    notifyDataChange({ passwordValue: '' });
+                  }
+                }}
                 onChangeText={text => {
                   setPasswordValue(text);
                   notifyDataChange({ passwordValue: text });
@@ -558,15 +608,45 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                       );
 
                     if (result.success) {
+                      // If onDecryptPassword callback is provided and password hasn't been decrypted yet
+                      // AND the password is still encrypted, decrypt it first before showing
+                      // (Don't decrypt if user has already entered a new password)
+                      if (
+                        onDecryptPassword &&
+                        !isPasswordDecryptedRef.current &&
+                        !password?.isDecrypted
+                      ) {
+                        console.log(
+                          '🔓 PasswordForm: Requesting password decryption...',
+                        );
+                        const decrypted = await onDecryptPassword();
+                        if (decrypted) {
+                          // Don't set passwordValue here - let useEffect sync from parent's formData update
+                          // This avoids race condition between local state and prop updates
+                          console.log(
+                            '✅ PasswordForm: Password decrypted, waiting for prop update...',
+                          );
+                          // Mark as decrypted so we don't try to decrypt again
+                          isPasswordDecryptedRef.current = true;
+                        }
+                      }
                       setIsPasswordVisible(true);
                     } else if (
                       result.error &&
                       !result.error.includes('cancelled')
                     ) {
-                      Alert.alert(
-                        'Authentication Failed',
-                        result.error || 'Could not verify your identity',
-                      );
+                      setConfirmDialog({
+                        visible: true,
+                        title: 'Authentication Failed',
+                        message:
+                          result.error || 'Could not verify your identity',
+                        confirmText: 'OK',
+                        onConfirm: () =>
+                          setConfirmDialog(prev => ({
+                            ...prev,
+                            visible: false,
+                          })),
+                      });
                     }
                   } else {
                     // Hiding password doesn't require authentication
@@ -575,24 +655,74 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                 }}
                 style={styles.passwordToggle}
               >
-                <Icon
-                  name={isPasswordVisible ? 'visibility-off' : 'visibility'}
+                <Ionicons
+                  name={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'}
                   size={20}
                   color={theme.textSecondary}
                 />
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => setShowPasswordGenerator(!showPasswordGenerator)}
+                onPress={() => {
+                  // Reset ALL fields to original values
+                  // Password reset based on visibility state:
+                  // - If password is hidden (eye closed) → reset to encrypted original
+                  // - If password is visible (eye open) → reset to decrypted original
+                  const resetPasswordValue = isPasswordVisible
+                    ? originalValuesRef.current.password
+                    : password?.password || '';
+
+                  console.log(
+                    '🔄 PasswordForm: Resetting all fields to original values',
+                    {
+                      isPasswordVisible,
+                      resetPasswordTo: isPasswordVisible
+                        ? '[DECRYPTED]'
+                        : '[ENCRYPTED]',
+                    },
+                  );
+
+                  // Reset all form fields
+                  setTitle(originalValuesRef.current.title);
+                  setUsername(originalValuesRef.current.username);
+                  setPasswordValue(resetPasswordValue);
+                  setWebsite(originalValuesRef.current.website);
+                  setNotes(originalValuesRef.current.notes);
+                  setCategory(originalValuesRef.current.category);
+                  setIsFavorite(originalValuesRef.current.isFavorite);
+
+                  // Notify parent of all changes
+                  notifyDataChange({
+                    title: originalValuesRef.current.title,
+                    username: originalValuesRef.current.username,
+                    passwordValue: resetPasswordValue,
+                    website: originalValuesRef.current.website,
+                    notes: originalValuesRef.current.notes,
+                    category: originalValuesRef.current.category,
+                    isFavorite: originalValuesRef.current.isFavorite,
+                  });
+                }}
                 style={styles.generateToggle}
               >
-                <Icon name="refresh" size={20} color={theme.primary} />
+                <Ionicons
+                  name="refresh-outline"
+                  size={20}
+                  color={theme.primary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowPasswordGenerator(true)}
+                style={styles.quickGenerateIcon}
+                accessibilityLabel="Quick Generate Password"
+              >
+                <Ionicons
+                  name={'flash-outline'}
+                  size={22}
+                  color={theme.primary}
+                />
               </TouchableOpacity>
             </View>
             {renderPasswordStrength()}
           </View>
-
-          {/* Password Generator */}
-          {renderPasswordGenerator()}
 
           {/* Website Field */}
           <View style={styles.field}>
@@ -625,6 +755,25 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               onCategorySelect={handleCategorySelect}
               allowCreate={true}
             />
+          </View>
+
+          {/* Favorite Toggle */}
+          <View style={styles.field}>
+            <View style={styles.favoriteRow}>
+              <Text style={styles.label}>Add to Favorites</Text>
+              <Switch
+                value={isFavorite}
+                onValueChange={value => {
+                  setIsFavorite(value);
+                  notifyDataChange({ isFavorite: value });
+                }}
+                trackColor={{
+                  false: theme.textSecondary + '30',
+                  true: theme.primary + '40',
+                }}
+                thumbColor={isFavorite ? theme.primary : theme.textSecondary}
+              />
+            </View>
           </View>
 
           {/* Notes Field */}
@@ -671,6 +820,26 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
           <View style={styles.emptyAccessoryView} />
         </InputAccessoryView>
       )}
+
+      {/* Quick Password Generator Modal */}
+      <QuickPasswordGenerator
+        visible={showPasswordGenerator}
+        onClose={() => setShowPasswordGenerator(false)}
+        onSelectPassword={generatedPassword => {
+          setPasswordValue(generatedPassword);
+          notifyDataChange({ passwordValue: generatedPassword });
+        }}
+      />
+
+      <ConfirmDialog
+        visible={confirmDialog.visible}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        confirmStyle={confirmDialog.confirmStyle}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
+      />
     </>
   );
 };
@@ -692,6 +861,11 @@ const createStyles = (theme: Theme) =>
       fontWeight: '600',
       color: theme.text,
       marginBottom: 8,
+    },
+    favoriteRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
     },
     input: {
       backgroundColor: theme.surface,
@@ -719,6 +893,12 @@ const createStyles = (theme: Theme) =>
     },
     generateToggle: {
       padding: 8,
+    },
+    quickGenerateIcon: {
+      padding: 8,
+      marginLeft: 2,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     notesInput: {
       height: 80,

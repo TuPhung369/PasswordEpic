@@ -6,11 +6,12 @@ import {
   TouchableOpacity,
   Modal,
   ScrollView,
-  Alert,
 } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import Clipboard from '@react-native-clipboard/clipboard';
+import ConfirmDialog from './ConfirmDialog';
+import Toast from './Toast';
 
 export interface GeneratedPasswordHistory {
   id: string;
@@ -54,6 +55,23 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
     [key: string]: boolean;
   }>({});
 
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    confirmStyle?: 'default' | 'destructive';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
   const togglePasswordVisibility = (id: string) => {
     setShowPasswords(prev => ({
       ...prev,
@@ -63,7 +81,8 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
 
   const copyToClipboard = async (password: string) => {
     await Clipboard.setString(password);
-    Alert.alert('Copied', 'Password copied to clipboard');
+    setToastMessage('Password copied to clipboard');
+    setShowToast(true);
   };
 
   const formatTimestamp = (timestamp: Date) => {
@@ -92,18 +111,18 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
   };
 
   const handleClearHistory = () => {
-    Alert.alert(
-      'Clear History',
-      'Are you sure you want to clear all generated passwords? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: onClearHistory,
-        },
-      ],
-    );
+    setConfirmDialog({
+      visible: true,
+      title: 'Clear History',
+      message:
+        'Are you sure you want to clear all generated passwords? This action cannot be undone.',
+      confirmText: 'Clear',
+      confirmStyle: 'destructive',
+      onConfirm: () => {
+        setConfirmDialog(prev => ({ ...prev, visible: false }));
+        onClearHistory();
+      },
+    });
   };
 
   const favoritePasswords = history.filter(item => item.isFavorite);
@@ -119,14 +138,14 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity onPress={onClose}>
-            <MaterialIcons name="close" size={24} color={theme.text} />
+            <Ionicons name="close-outline" size={24} color={theme.text} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: theme.text }]}>
             Generation History
           </Text>
           <TouchableOpacity onPress={handleClearHistory}>
-            <MaterialIcons
-              name="delete-outline"
+            <Ionicons
+              name="trash-outline"
               size={24}
               color={theme.textSecondary}
             />
@@ -135,8 +154,8 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
 
         {history.length === 0 ? (
           <View style={styles.emptyState}>
-            <MaterialIcons
-              name="history"
+            <Ionicons
+              name="time-outline"
               size={64}
               color={theme.textSecondary}
             />
@@ -201,6 +220,23 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
           </ScrollView>
         )}
       </View>
+
+      <ConfirmDialog
+        visible={confirmDialog.visible}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        confirmStyle={confirmDialog.confirmStyle}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
+      />
+
+      <Toast
+        visible={showToast}
+        message={toastMessage}
+        type="success"
+        onHide={() => setShowToast(false)}
+      />
     </Modal>
   );
 };
@@ -247,8 +283,8 @@ const PasswordHistoryItem: React.FC<PasswordHistoryItemProps> = ({
           )}
         </View>
         <TouchableOpacity onPress={onToggleFavorite}>
-          <MaterialIcons
-            name={item.isFavorite ? 'star' : 'star-border'}
+          <Ionicons
+            name={item.isFavorite ? 'star' : 'star-outline'}
             size={20}
             color={item.isFavorite ? '#FFD700' : theme.textSecondary}
           />
@@ -264,8 +300,8 @@ const PasswordHistoryItem: React.FC<PasswordHistoryItemProps> = ({
             onPress={onToggleVisibility}
             style={styles.eyeButton}
           >
-            <MaterialIcons
-              name={showPassword ? 'visibility-off' : 'visibility'}
+            <Ionicons
+              name={showPassword ? 'eye-off-outline' : 'eye-outline'}
               size={18}
               color={theme.textSecondary}
             />
@@ -300,7 +336,7 @@ const PasswordHistoryItem: React.FC<PasswordHistoryItemProps> = ({
           style={[styles.actionButton, { backgroundColor: theme.surface }]}
           onPress={onCopy}
         >
-          <MaterialIcons name="content-copy" size={16} color={theme.primary} />
+          <Ionicons name="copy-outline" size={16} color={theme.primary} />
           <Text style={[styles.actionText, { color: theme.primary }]}>
             Copy
           </Text>
@@ -309,7 +345,7 @@ const PasswordHistoryItem: React.FC<PasswordHistoryItemProps> = ({
           style={[styles.actionButton, { backgroundColor: theme.primary }]}
           onPress={onUse}
         >
-          <MaterialIcons name="launch" size={16} color="#ffffff" />
+          <Ionicons name="open-outline" size={16} color="#ffffff" />
           <Text style={[styles.actionText, styles.whiteText]}>Use</Text>
         </TouchableOpacity>
       </View>

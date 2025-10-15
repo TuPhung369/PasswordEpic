@@ -77,16 +77,16 @@ export const useBiometric = (): UseBiometricReturn => {
 
         setIsSetup(setupStatus);
 
-        // Only update Redux if different (avoid circular updates)
-        const currentEnabled = securityRef.current.biometricEnabled;
-        if (currentEnabled !== setupStatus) {
-          // Syncing Redux state
-          dispatch(setBiometricEnabled(setupStatus));
-        }
+        // ⚠️ DO NOT automatically sync Redux state with device capability
+        // This would override user's explicit settings (e.g., after restore from backup)
+        // Only update local state, let Redux state be controlled by user actions
       } else {
         // Biometric not available, disabling
         setIsSetup(false);
-        dispatch(setBiometricEnabled(false));
+        // Only disable in Redux if biometric is not available on device
+        if (securityRef.current.biometricEnabled) {
+          dispatch(setBiometricEnabled(false));
+        }
       }
 
       if (capability.error) {
@@ -240,12 +240,9 @@ export const useBiometric = (): UseBiometricReturn => {
     checkCapability();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync with Redux state changes
-  useEffect(() => {
-    if (security.biometricEnabled !== isSetup && isAvailable) {
-      checkCapability();
-    }
-  }, [security.biometricEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ⚠️ REMOVED: Auto-sync with Redux state changes
+  // This was causing biometric to be re-enabled after restore from backup
+  // The checkCapability function should only run on mount, not on every Redux state change
 
   return {
     // State

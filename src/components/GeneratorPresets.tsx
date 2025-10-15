@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { GeneratorPreset } from '../services/passwordGeneratorService';
 
@@ -15,7 +15,7 @@ export const DEFAULT_PRESETS: GeneratorPreset[] = [
     id: 'strong',
     name: 'Strong',
     description: 'Maximum security for critical accounts',
-    icon: 'security',
+    icon: 'shield-checkmark-outline',
     color: '#4CAF50',
     options: {
       length: 20,
@@ -33,7 +33,7 @@ export const DEFAULT_PRESETS: GeneratorPreset[] = [
     id: 'memorable',
     name: 'Memorable',
     description: 'Easy to pronounce and remember',
-    icon: 'psychology',
+    icon: 'bulb-outline',
     color: '#2196F3',
     options: {
       length: 16,
@@ -51,7 +51,7 @@ export const DEFAULT_PRESETS: GeneratorPreset[] = [
     id: 'pin',
     name: 'PIN',
     description: 'Numeric PIN codes',
-    icon: 'pin',
+    icon: 'keypad-outline',
     color: '#FF9800',
     options: {
       length: 6,
@@ -69,7 +69,7 @@ export const DEFAULT_PRESETS: GeneratorPreset[] = [
     id: 'passphrase',
     name: 'Passphrase',
     description: 'Word combinations like "BlueSky2024Fast"',
-    icon: 'article',
+    icon: 'document-text-outline',
     color: '#9C27B0',
     options: {
       length: 24,
@@ -87,7 +87,7 @@ export const DEFAULT_PRESETS: GeneratorPreset[] = [
     id: 'wifi',
     name: 'WiFi',
     description: 'Easy to share like "HomeNet2024"',
-    icon: 'wifi',
+    icon: 'wifi-outline',
     color: '#607D8B',
     options: {
       length: 12,
@@ -105,7 +105,7 @@ export const DEFAULT_PRESETS: GeneratorPreset[] = [
     id: 'basic',
     name: 'Basic',
     description: 'Simple passwords for low-risk accounts',
-    icon: 'lock-outline',
+    icon: 'lock-closed-outline',
     color: '#795548',
     options: {
       length: 12,
@@ -159,7 +159,7 @@ export const GeneratorPresets: React.FC<GeneratorPresetsProps> = ({
               { backgroundColor: `${preset.color}20` },
             ]}
           >
-            <MaterialIcons
+            <Ionicons
               name={preset.icon as any}
               size={18}
               color={preset.color}
@@ -175,8 +175,8 @@ export const GeneratorPresets: React.FC<GeneratorPresetsProps> = ({
             {preset.name}
           </Text>
           {isSelected && (
-            <MaterialIcons
-              name="check-circle"
+            <Ionicons
+              name="checkmark-circle-outline"
               size={16}
               color={preset.color}
               style={styles.checkIcon}
@@ -205,7 +205,7 @@ export const GeneratorPresets: React.FC<GeneratorPresetsProps> = ({
             { backgroundColor: `${preset.color}20` },
           ]}
         >
-          <MaterialIcons
+          <Ionicons
             name={preset.icon as any}
             size={compact ? 16 : 20}
             color={preset.color}
@@ -243,8 +243,8 @@ export const GeneratorPresets: React.FC<GeneratorPresetsProps> = ({
         )}
 
         {isSelected && (
-          <MaterialIcons
-            name="check-circle"
+          <Ionicons
+            name="checkmark-circle-outline"
             size={20}
             color={preset.color}
             style={styles.checkIcon}

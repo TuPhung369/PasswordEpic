@@ -3,8 +3,9 @@ import CryptoJS from 'crypto-js';
 
 // Constants for cryptographic operations
 export const CRYPTO_CONSTANTS = {
-  PBKDF2_ITERATIONS: 10000, // 10,000 iterations - optimized for mobile performance
-  PBKDF2_ITERATIONS_FAST: 5000, // 5,000 iterations for frequent operations
+  PBKDF2_ITERATIONS: 10000, // 10,000 iterations - for master password hashing
+  PBKDF2_ITERATIONS_STATIC: 2000, // 2,000 iterations - Optimized for mobile (reduced from 5000 for 60% faster performance)
+  PBKDF2_ITERATIONS_LEGACY: 5000, // 5,000 iterations - Legacy value for backward compatibility
   SALT_LENGTH: 32, // 256 bits
   KEY_LENGTH: 32, // 256 bits for AES-256
   IV_LENGTH: 12, // 96 bits for GCM
@@ -36,12 +37,12 @@ export const generateIV = (): string => {
 // Derive key from password using PBKDF2
 // Key cache to avoid repeated expensive derivations
 const keyCache = new Map<string, { key: string; timestamp: number }>();
-const KEY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const KEY_CACHE_TTL = 60 * 60 * 1000; // 60 minutes (increased from 5 for better performance)
 
 export const deriveKeyFromPassword = (
   password: string,
   salt: string,
-  iterations: number = CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_FAST, // Use faster default
+  iterations: number = CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC, // STATIC default - DO NOT CHANGE
 ): string => {
   // const startTime = Date.now();
   const cacheKey = `${password.slice(0, 8)}:${salt}:${iterations}`; // Safe cache key
@@ -201,11 +202,11 @@ export const encryptPasswordEntry = (
     // Generate unique salt for this entry
     const salt = generateSalt();
 
-    // Derive entry-specific key with fast iterations for mobile performance
+    // Derive entry-specific key with STATIC iterations (DO NOT CHANGE)
     const entryKey = deriveKeyFromPassword(
       masterKey,
       salt,
-      CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_FAST,
+      CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC,
     );
 
     // Serialize entry data
@@ -242,11 +243,11 @@ export const decryptPasswordEntry = (
   masterKey: string,
 ): PasswordEntry => {
   try {
-    // Derive entry-specific key using stored salt with fast iterations
+    // Derive entry-specific key using stored salt with STATIC iterations (DO NOT CHANGE)
     const entryKey = deriveKeyFromPassword(
       masterKey,
       encryptedEntry.salt,
-      CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_FAST,
+      CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC,
     );
 
     // Decrypt the entry data

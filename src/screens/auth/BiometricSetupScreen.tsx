@@ -5,14 +5,14 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useBiometric } from '../../hooks/useBiometric';
 import { useNavigation } from '@react-navigation/native';
 import { BiometricPrompt } from '../../components/BiometricPrompt';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface BiometricFeature {
   icon: string;
@@ -35,27 +35,42 @@ export const BiometricSetupScreen: React.FC = () => {
   const [showPrompt, setShowPrompt] = useState(false);
   const [setupComplete, setSetupComplete] = useState(false);
 
+  // Confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    confirmStyle?: 'default' | 'destructive';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
   const features: BiometricFeature[] = [
     {
-      icon: 'security',
+      icon: 'shield-checkmark-outline',
       title: 'Enhanced Security',
       description:
         'Your biometric data is stored securely on your device and never leaves it.',
     },
     {
-      icon: 'flash-on',
+      icon: 'flash-outline',
       title: 'Quick Access',
       description:
         'Access your passwords instantly without typing your master password.',
     },
     {
-      icon: 'verified-user',
+      icon: 'shield-checkmark-outline',
       title: 'Unique to You',
       description:
         'Only you can access your passwords using your unique biometric features.',
     },
     {
-      icon: 'privacy-tip',
+      icon: 'lock-closed-outline',
       title: 'Privacy Protected',
       description:
         'Your biometric data is processed locally and never shared or stored online.',
@@ -70,11 +85,14 @@ export const BiometricSetupScreen: React.FC = () => {
 
   const handleSetupBiometric = async () => {
     if (!isAvailable) {
-      Alert.alert(
-        'Not Available',
-        'Biometric authentication is not available on this device.',
-        [{ text: 'OK' }],
-      );
+      setConfirmDialog({
+        visible: true,
+        title: 'Not Available',
+        message: 'Biometric authentication is not available on this device.',
+        confirmText: 'OK',
+        onConfirm: () =>
+          setConfirmDialog(prev => ({ ...prev, visible: false })),
+      });
       return;
     }
 
@@ -88,52 +106,64 @@ export const BiometricSetupScreen: React.FC = () => {
       const success = await setupBiometric();
       if (success) {
         setSetupComplete(true);
-        Alert.alert(
-          'Setup Complete',
-          `${biometryType} authentication has been enabled successfully!`,
-          [
-            {
-              text: 'Continue',
-              onPress: () => navigation.goBack(),
-            },
-          ],
-        );
+        setConfirmDialog({
+          visible: true,
+          title: 'Setup Complete',
+          message: `${biometryType} authentication has been enabled successfully!`,
+          confirmText: 'Continue',
+          onConfirm: () => {
+            setConfirmDialog(prev => ({ ...prev, visible: false }));
+            navigation.goBack();
+          },
+        });
       } else {
-        Alert.alert(
-          'Setup Failed',
-          error ||
+        setConfirmDialog({
+          visible: true,
+          title: 'Setup Failed',
+          message:
+            error ||
             'Failed to setup biometric authentication. Please try again.',
-          [{ text: 'OK' }],
-        );
+          confirmText: 'OK',
+          onConfirm: () =>
+            setConfirmDialog(prev => ({ ...prev, visible: false })),
+        });
       }
     } catch (err) {
       console.error('Setup error:', err);
-      Alert.alert(
-        'Setup Error',
-        'An error occurred while setting up biometric authentication.',
-        [{ text: 'OK' }],
-      );
+      setConfirmDialog({
+        visible: true,
+        title: 'Setup Error',
+        message: 'An error occurred while setting up biometric authentication.',
+        confirmText: 'OK',
+        onConfirm: () =>
+          setConfirmDialog(prev => ({ ...prev, visible: false })),
+      });
     }
   };
 
   const handleBiometricError = (errorMessage: string) => {
     console.error('Biometric error:', errorMessage);
-    Alert.alert('Authentication Failed', errorMessage, [{ text: 'OK' }]);
+    setConfirmDialog({
+      visible: true,
+      title: 'Authentication Failed',
+      message: errorMessage,
+      confirmText: 'OK',
+      onConfirm: () => setConfirmDialog(prev => ({ ...prev, visible: false })),
+    });
   };
 
   const handleSkip = () => {
-    Alert.alert(
-      'Skip Setup',
-      'You can enable biometric authentication later in Settings.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Skip',
-          style: 'destructive',
-          onPress: () => navigation.goBack(),
-        },
-      ],
-    );
+    setConfirmDialog({
+      visible: true,
+      title: 'Skip Setup',
+      message: 'You can enable biometric authentication later in Settings.',
+      confirmText: 'Skip',
+      confirmStyle: 'destructive',
+      onConfirm: () => {
+        setConfirmDialog(prev => ({ ...prev, visible: false }));
+        navigation.goBack();
+      },
+    });
   };
 
   const renderFeature = (feature: BiometricFeature, index: number) => (
@@ -142,7 +172,7 @@ export const BiometricSetupScreen: React.FC = () => {
       style={[styles.featureItem, { borderColor: theme.border }]}
     >
       <View style={[styles.featureIcon, { backgroundColor: theme.surface }]}>
-        <MaterialIcons name={feature.icon} size={24} color={theme.primary} />
+        <Ionicons name={feature.icon} size={24} color={theme.primary} />
       </View>
       <View style={styles.featureContent}>
         <Text style={[styles.featureTitle, { color: theme.text }]}>
@@ -167,7 +197,7 @@ export const BiometricSetupScreen: React.FC = () => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <MaterialIcons name="arrow-back" size={24} color={theme.text} />
+          <Ionicons name="arrow-back-outline" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>
           Biometric Setup
@@ -183,8 +213,12 @@ export const BiometricSetupScreen: React.FC = () => {
         {/* Hero Section */}
         <View style={styles.heroSection}>
           <View style={[styles.heroIcon, { backgroundColor: theme.surface }]}>
-            <MaterialIcons
-              name={biometryType.includes('Face') ? 'face' : 'fingerprint'}
+            <Ionicons
+              name={
+                biometryType.includes('Face')
+                  ? 'person-outline'
+                  : 'finger-print'
+              }
               size={64}
               color={theme.primary}
             />
@@ -209,7 +243,11 @@ export const BiometricSetupScreen: React.FC = () => {
               { backgroundColor: theme.surface },
             ]}
           >
-            <MaterialIcons name="error-outline" size={24} color={theme.error} />
+            <Ionicons
+              name="alert-circle-outline"
+              size={24}
+              color={theme.error}
+            />
             <View style={styles.statusContent}>
               <Text style={[styles.statusTitle, { color: theme.error }]}>
                 Not Available
@@ -234,7 +272,11 @@ export const BiometricSetupScreen: React.FC = () => {
               { backgroundColor: theme.surface },
             ]}
           >
-            <MaterialIcons name="check-circle" size={24} color="#4CAF50" />
+            <Ionicons
+              name="checkmark-circle-outline"
+              size={24}
+              color="#4CAF50"
+            />
             <View style={styles.statusContent}>
               <Text style={[styles.statusTitle, styles.successColor]}>
                 Setup Complete
@@ -264,7 +306,11 @@ export const BiometricSetupScreen: React.FC = () => {
         <View
           style={[styles.securityNotice, { backgroundColor: theme.surface }]}
         >
-          <MaterialIcons name="info-outline" size={20} color={theme.primary} />
+          <Ionicons
+            name="information-circle-outline"
+            size={20}
+            color={theme.primary}
+          />
           <Text style={[styles.securityText, { color: theme.textSecondary }]}>
             Your biometric data is stored securely on your device using
             hardware-backed security features. It never leaves your device and
@@ -285,8 +331,12 @@ export const BiometricSetupScreen: React.FC = () => {
             onPress={handleSetupBiometric}
             disabled={!isAvailable || isLoading}
           >
-            <MaterialIcons
-              name={biometryType.includes('Face') ? 'face' : 'fingerprint'}
+            <Ionicons
+              name={
+                biometryType.includes('Face')
+                  ? 'person-outline'
+                  : 'finger-print'
+              }
               size={20}
               color="#ffffff"
             />
@@ -299,7 +349,7 @@ export const BiometricSetupScreen: React.FC = () => {
             style={[styles.completeButton, { backgroundColor: theme.primary }]}
             onPress={() => navigation.goBack()}
           >
-            <MaterialIcons name="check" size={20} color="#ffffff" />
+            <Ionicons name="checkmark-outline" size={20} color="#ffffff" />
             <Text style={styles.completeButtonText}>Continue</Text>
           </TouchableOpacity>
         )}
@@ -313,6 +363,16 @@ export const BiometricSetupScreen: React.FC = () => {
         onError={handleBiometricError}
         title={`Setup ${biometryType}`}
         subtitle={`Authenticate with your ${biometryType.toLowerCase()} to enable this feature`}
+      />
+
+      <ConfirmDialog
+        visible={confirmDialog.visible}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        confirmStyle={confirmDialog.confirmStyle}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
       />
     </SafeAreaView>
   );

@@ -1,14 +1,14 @@
-// Debug helper for Dynamic Master Password Session
+// Debug helper for Static Master Password
 import {
-  getDynamicMasterPasswordInfo,
-  verifyDynamicMasterPasswordSession,
-  DYNAMIC_MP_KEYS,
-} from '../services/dynamicMasterPasswordService';
+  getStaticMasterPasswordInfo,
+  verifyStaticMasterPassword,
+  STATIC_MP_KEYS,
+} from '../services/staticMasterPasswordService';
 import { getCurrentUser } from '../services/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const debugSessionInfo = async () => {
-  console.log('\n🔍 ===== SESSION DEBUG INFO =====');
+  console.log('\n🔍 ===== STATIC PASSWORD DEBUG INFO =====');
 
   try {
     // 1. Current User Info
@@ -19,46 +19,35 @@ export const debugSessionInfo = async () => {
       email: currentUser?.email || 'None',
     });
 
-    // 2. Stored Session Data
-    const sessionData = await AsyncStorage.multiGet([
-      DYNAMIC_MP_KEYS.LOGIN_TIMESTAMP,
-      DYNAMIC_MP_KEYS.USER_UUID,
-      DYNAMIC_MP_KEYS.SESSION_SALT,
-      DYNAMIC_MP_KEYS.CURRENT_SESSION_HASH,
+    // 2. Stored Static Password Data
+    const staticData = await AsyncStorage.multiGet([
+      STATIC_MP_KEYS.FIXED_SALT,
+      STATIC_MP_KEYS.USER_UUID,
     ]);
 
-    console.log('💾 Stored Session Data:');
-    sessionData.forEach(([key, value]) => {
+    console.log('💾 Stored Static Password Data:');
+    staticData.forEach(([key, value]) => {
       const keyName = key.split('_').pop();
       console.log(
-        `   ${keyName}: ${
-          value
-            ? keyName === 'timestamp'
-              ? `${value} (${new Date(parseInt(value, 10)).toISOString()})`
-              : value.substring(0, 16) + '...'
-            : 'None'
-        }`,
+        `   ${keyName}: ${value ? value.substring(0, 16) + '...' : 'None'}`,
       );
     });
 
-    // 3. Session Info from Service
-    const sessionInfo = await getDynamicMasterPasswordInfo();
-    if (sessionInfo.success && sessionInfo.info) {
-      console.log('🔐 Session Service Info:', {
-        hasSession: sessionInfo.info.hasSession,
-        sessionAge: sessionInfo.info.sessionAge
-          ? `${Math.round(sessionInfo.info.sessionAge / 1000)}s`
-          : 'Unknown',
-        cacheValid: sessionInfo.info.cacheValid,
+    // 3. Static Password Info from Service
+    const staticInfo = await getStaticMasterPasswordInfo();
+    if (staticInfo.success && staticInfo.info) {
+      console.log('🔐 Static Password Service Info:', {
+        hasFixedSalt: staticInfo.info.hasFixedSalt,
+        userUuidMatch: staticInfo.info.userUuidMatch,
+        cacheValid: staticInfo.info.cacheValid,
       });
     }
 
-    // 4. Session Verification
-    const verification = await verifyDynamicMasterPasswordSession();
-    console.log('✅ Session Verification:', {
+    // 4. Static Password Verification
+    const verification = await verifyStaticMasterPassword();
+    console.log('✅ Static Password Verification:', {
       success: verification.success,
       valid: verification.valid,
-      sessionId: verification.sessionId?.substring(0, 20) + '...' || 'None',
       error: verification.error || 'None',
     });
 
@@ -67,7 +56,7 @@ export const debugSessionInfo = async () => {
     const passwordKeys = allKeys.filter(
       key =>
         key.includes('password') ||
-        key.includes('dynamic_mp') ||
+        key.includes('static_mp') ||
         key.includes('encrypted'),
     );
     console.log(
@@ -75,10 +64,10 @@ export const debugSessionInfo = async () => {
       passwordKeys.length > 0 ? passwordKeys : 'None found',
     );
   } catch (error) {
-    console.error('❌ Debug session info failed:', error);
+    console.error('❌ Debug static password info failed:', error);
   }
 
-  console.log('===== END SESSION DEBUG =====\n');
+  console.log('===== END STATIC PASSWORD DEBUG =====\n');
 };
 
 // Export for use in development/testing

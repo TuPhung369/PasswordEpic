@@ -6,13 +6,13 @@ import {
   TouchableOpacity,
   Modal,
   StyleSheet,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { verifyMasterPassword } from '../services/secureStorageService';
+import ConfirmDialog from './ConfirmDialog';
 
 interface MasterPasswordPromptProps {
   visible: boolean;
@@ -33,10 +33,30 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    confirmStyle?: 'default' | 'destructive';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   const handleVerify = async () => {
     if (!password.trim()) {
-      Alert.alert('Error', 'Please enter your master password');
+      setConfirmDialog({
+        visible: true,
+        title: 'Error',
+        message: 'Please enter your master password',
+        confirmText: 'OK',
+        onConfirm: () =>
+          setConfirmDialog(prev => ({ ...prev, visible: false })),
+      });
       return;
     }
 
@@ -47,14 +67,26 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
         setPassword('');
         onSuccess();
       } else {
-        Alert.alert(
-          'Invalid Password',
-          result.error || 'The master password you entered is incorrect',
-        );
+        setConfirmDialog({
+          visible: true,
+          title: 'Invalid Password',
+          message:
+            result.error || 'The master password you entered is incorrect',
+          confirmText: 'OK',
+          onConfirm: () =>
+            setConfirmDialog(prev => ({ ...prev, visible: false })),
+        });
       }
     } catch (error) {
       console.error('Master password verification failed:', error);
-      Alert.alert('Error', 'Failed to verify master password');
+      setConfirmDialog({
+        visible: true,
+        title: 'Error',
+        message: 'Failed to verify master password',
+        confirmText: 'OK',
+        onConfirm: () =>
+          setConfirmDialog(prev => ({ ...prev, visible: false })),
+      });
     } finally {
       setLoading(false);
     }
@@ -85,7 +117,11 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
                 { backgroundColor: theme.primary + '20' },
               ]}
             >
-              <MaterialIcons name="lock" size={32} color={theme.primary} />
+              <Ionicons
+                name="lock-closed-outline"
+                size={32}
+                color={theme.primary}
+              />
             </View>
             <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
@@ -98,8 +134,8 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
             <View
               style={[styles.inputContainer, { borderColor: theme.border }]}
             >
-              <MaterialIcons
-                name="vpn-key"
+              <Ionicons
+                name="key-outline"
                 size={24}
                 color={theme.textSecondary}
               />
@@ -119,8 +155,8 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
                 onPress={() => setShowPassword(!showPassword)}
                 style={styles.eyeButton}
               >
-                <MaterialIcons
-                  name={showPassword ? 'visibility-off' : 'visibility'}
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                   size={24}
                   color={theme.textSecondary}
                 />
@@ -161,6 +197,16 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <ConfirmDialog
+        visible={confirmDialog.visible}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        confirmStyle={confirmDialog.confirmStyle}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
+      />
     </Modal>
   );
 };

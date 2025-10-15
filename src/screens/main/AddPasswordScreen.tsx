@@ -5,18 +5,18 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppState } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordManagement } from '../../hooks/usePasswordManagement';
 import PasswordForm from '../../components/PasswordForm';
 import ErrorBoundary from '../../components/ErrorBoundary';
 import Toast from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { PasswordEntry } from '../../types/password';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
 import { PasswordValidationService } from '../../services/passwordValidationService';
@@ -32,6 +32,7 @@ interface AddPasswordScreenProps {
   route?: {
     params?: {
       restoreData?: boolean;
+      generatedPassword?: string;
     };
   };
 }
@@ -96,6 +97,20 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    confirmStyle?: 'default' | 'destructive';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   // Use ref to track latest formData without causing re-renders
   const formDataRef = React.useRef(formData);
@@ -182,28 +197,23 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 
         if (currentHasChanges) {
           // Show confirmation dialog
-          Alert.alert(
-            'Discard Changes?',
-            'You have unsaved changes. Are you sure you want to discard them?',
-            [
-              {
-                text: 'Keep Editing',
-                style: 'cancel',
-              },
-              {
-                text: 'Discard',
-                style: 'destructive',
-                onPress: async () => {
-                  try {
-                    await navigationPersistence.clearScreenData('AddPassword');
-                  } catch (error) {
-                    console.error('Failed to clear temp form data:', error);
-                  }
-                  navigation.navigate('PasswordsList');
-                },
-              },
-            ],
-          );
+          setConfirmDialog({
+            visible: true,
+            title: 'Discard Changes?',
+            message:
+              'You have unsaved changes. Are you sure you want to discard them?',
+            confirmText: 'Discard',
+            confirmStyle: 'destructive',
+            onConfirm: async () => {
+              setConfirmDialog(prev => ({ ...prev, visible: false }));
+              try {
+                await navigationPersistence.clearScreenData('AddPassword');
+              } catch (error) {
+                console.error('Failed to clear temp form data:', error);
+              }
+              navigation.navigate('PasswordsList');
+            },
+          });
         } else {
           // No changes, just go back
           navigation.navigate('PasswordsList');
@@ -221,8 +231,19 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     useCallback(() => {
       console.log('AddPasswordScreen: Screen focused');
 
+      // Check if we have a generated password from the Generator screen
+      if (route?.params?.generatedPassword) {
+        console.log('🔑 Received generated password from Generator screen');
+        setFormData(prev => ({
+          ...prev,
+          password: route.params.generatedPassword,
+        }));
+
+        // Clear the parameter to prevent re-applying on subsequent focuses
+        navigation.setParams({ generatedPassword: undefined });
+      }
       // Only load saved form data when this is a restore request after authentication
-      if (route?.params?.restoreData) {
+      else if (route?.params?.restoreData) {
         console.log(
           '🔄 Detected data restoration request after authentication - loading saved data',
         );
@@ -252,6 +273,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       loadFormDataFromStorage,
       navigation,
       route?.params?.restoreData,
+      route?.params?.generatedPassword,
     ]),
   );
 
@@ -339,30 +361,25 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 
   const handleCancel = async () => {
     if (hasUnsavedChanges()) {
-      Alert.alert(
-        'Discard Changes?',
-        'You have unsaved changes. Are you sure you want to discard them?',
-        [
-          {
-            text: 'Keep Editing',
-            style: 'cancel',
-          },
-          {
-            text: 'Discard',
-            style: 'destructive',
-            onPress: async () => {
-              // Clear temporary data when discarding
-              try {
-                await navigationPersistence.clearScreenData('AddPassword');
-              } catch (error) {
-                console.error('Failed to clear temp form data:', error);
-              }
-              // Navigate back to PasswordsList specifically
-              navigation.navigate('PasswordsList');
-            },
-          },
-        ],
-      );
+      setConfirmDialog({
+        visible: true,
+        title: 'Discard Changes?',
+        message:
+          'You have unsaved changes. Are you sure you want to discard them?',
+        confirmText: 'Discard',
+        confirmStyle: 'destructive',
+        onConfirm: async () => {
+          setConfirmDialog(prev => ({ ...prev, visible: false }));
+          // Clear temporary data when discarding
+          try {
+            await navigationPersistence.clearScreenData('AddPassword');
+          } catch (error) {
+            console.error('Failed to clear temp form data:', error);
+          }
+          // Navigate back to PasswordsList specifically
+          navigation.navigate('PasswordsList');
+        },
+      });
     } else {
       // Clear any temporary data
       try {
@@ -388,10 +405,14 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 
   const handleSave = async () => {
     if (!isFormValid()) {
-      Alert.alert(
-        'Validation Error',
-        'Please enter at least a title for the password entry.',
-      );
+      setConfirmDialog({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please enter at least a title for the password entry.',
+        confirmText: 'OK',
+        onConfirm: () =>
+          setConfirmDialog(prev => ({ ...prev, visible: false })),
+      });
       return;
     }
 
@@ -490,7 +511,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.headerButton} onPress={handleCancel}>
-            <MaterialIcons name="close" size={24} color={theme.text} />
+            <Ionicons name="close-outline" size={24} color={theme.text} />
           </TouchableOpacity>
           <View style={styles.headerTitleContainer}>
             <Text style={styles.headerTitle}>Add Password</Text>
@@ -498,7 +519,11 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
           <View style={styles.headerButton} />
         </View>
         <View style={styles.loadingContainer}>
-          <MaterialIcons name="lock" size={48} color={theme.primary} />
+          <Ionicons
+            name="lock-closed-outline"
+            size={48}
+            color={theme.primary}
+          />
           <Text style={styles.loadingText}>
             {isSaving ? 'Saving password...' : 'Loading...'}
           </Text>
@@ -559,8 +584,8 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
           onPress={handleSave}
           disabled={!isFormValid() || isSaving}
         >
-          <MaterialIcons
-            name={isSaving ? 'hourglass-empty' : 'save'}
+          <Ionicons
+            name={isSaving ? 'timer-outline' : 'save-outline'}
             size={20}
             color="#FFFFFF"
           />
@@ -577,6 +602,17 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
         visible={showToast}
         onHide={() => setShowToast(false)}
         duration={2000}
+      />
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        visible={confirmDialog.visible}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        confirmStyle={confirmDialog.confirmStyle}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
       />
     </SafeAreaView>
   );

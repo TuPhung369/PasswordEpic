@@ -7,10 +7,10 @@ import {
   FirebaseUser,
 } from './firebase';
 import {
-  startNewDynamicMasterPasswordSession,
-  clearDynamicMasterPasswordData,
-  generateDynamicMasterPassword,
-} from './dynamicMasterPasswordService';
+  clearStaticMasterPasswordData,
+  generateStaticMasterPassword,
+  verifyStaticMasterPassword,
+} from './staticMasterPasswordService';
 
 // Initialize authentication services
 export const initializeAuth = () => {
@@ -66,57 +66,39 @@ export const signInWithGoogle = async () => {
       };
     }
 
-    // Step 3: Initialize Dynamic Master Password Session
-    console.log('🔐 [Auth] Initializing dynamic master password session...');
+    // Step 3: Initialize Static Master Password
+    console.log('🔐 [Auth] Initializing static master password...');
     try {
-      // 🔥 CRITICAL: Check if user already has existing session to preserve data continuity
-      const {
-        verifyDynamicMasterPasswordSession,
-      } = require('./dynamicMasterPasswordService');
-      const sessionCheck = await verifyDynamicMasterPasswordSession();
+      // Check if static password already exists
+      const verifyResult = await verifyStaticMasterPassword();
 
-      if (sessionCheck.success && sessionCheck.valid) {
-        console.log(
-          '🔄 [Auth] Valid session found - preserving existing session',
-        );
-        // Just regenerate password from existing session data (don't clear)
-        const dynamicResult = await generateDynamicMasterPassword();
-        if (dynamicResult.success) {
-          console.log(
-            `✅ [Auth] Existing session preserved: ${dynamicResult.sessionId?.substring(
-              0,
-              20,
-            )}...`,
-          );
+      if (verifyResult.success && verifyResult.valid) {
+        console.log('🔄 [Auth] Valid static password found - using existing');
+        // Just generate password from existing fixed salt
+        const staticResult = await generateStaticMasterPassword();
+        if (staticResult.success) {
+          console.log('✅ [Auth] Static password verified and ready');
         }
       } else {
-        console.log('🆕 [Auth] No valid session - creating new session');
-        // Only clear and create new session if no valid session exists
-        await startNewDynamicMasterPasswordSession();
+        console.log('🆕 [Auth] No valid static password - initializing new');
+        // Initialize new static password with fixed salt
+        const initResult = await generateStaticMasterPassword();
 
-        // Generate dynamic master password for this NEW session
-        const dynamicResult = await generateDynamicMasterPassword();
-
-        if (dynamicResult.success) {
-          console.log(
-            `✅ [Auth] NEW session created: ${dynamicResult.sessionId?.substring(
-              0,
-              20,
-            )}...`,
-          );
+        if (initResult.success) {
+          console.log('✅ [Auth] Static password initialized successfully');
         } else {
           console.warn(
-            `⚠️ [Auth] Dynamic master password generation warning: ${dynamicResult.error}`,
+            `⚠️ [Auth] Static password initialization warning: ${initResult.error}`,
           );
           // Don't fail the login, just log the warning
         }
       }
-    } catch (dynamicError) {
+    } catch (staticError) {
       console.error(
-        '❌ [Auth] Dynamic master password initialization failed:',
-        dynamicError,
+        '❌ [Auth] Static master password initialization failed:',
+        staticError,
       );
-      // Don't fail the login process for dynamic password issues
+      // Don't fail the login process for static password issues
     }
 
     console.log('✅ [Auth] Google Sign-In completed successfully');
@@ -133,7 +115,7 @@ export const signInWithGoogle = async () => {
   }
 };
 
-// Complete sign out flow with Dynamic Master Password cleanup
+// Complete sign out flow with Static Master Password cleanup
 export const signOut = async (options?: { clearSessionData?: boolean }) => {
   try {
     const clearSession = options?.clearSessionData ?? false; // Default: DON'T clear session
@@ -144,23 +126,23 @@ export const signOut = async (options?: { clearSessionData?: boolean }) => {
     // Import Google Sign-In functions
     const { googleSignOut } = require('./googleAuthNative');
 
-    // Step 1: Optionally clear dynamic master password data
+    // Step 1: Optionally clear static master password data
     // ⚠️ IMPORTANT: Only clear if explicitly requested (e.g., "Delete Account")
-    // For normal logout, preserve session to allow re-login with same passwords
+    // For normal logout, preserve fixed salt to allow re-login with same passwords
     if (clearSession) {
       try {
-        await clearDynamicMasterPasswordData();
-        console.log('🗑️ [Auth] Dynamic master password session cleared');
-      } catch (dynamicError) {
+        await clearStaticMasterPasswordData();
+        console.log('🗑️ [Auth] Static master password data cleared');
+      } catch (staticError) {
         console.warn(
-          '⚠️ [Auth] Failed to clear dynamic master password data:',
-          dynamicError,
+          '⚠️ [Auth] Failed to clear static master password data:',
+          staticError,
         );
         // Don't fail the sign out process
       }
     } else {
       console.log(
-        '🔒 [Auth] Preserving session data for re-login (passwords will remain accessible)',
+        '🔒 [Auth] Preserving fixed salt for re-login (passwords will remain accessible)',
       );
     }
 

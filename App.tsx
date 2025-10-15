@@ -16,6 +16,7 @@ import { restoreDynamicMasterPasswordSession } from './src/services/dynamicMaste
 import { ActivityIndicator, View, StyleSheet, AppState } from 'react-native';
 import { NavigationPersistenceService } from './src/services/navigationPersistenceService';
 import { sessionManager } from './src/utils/sessionManager';
+import { UserActivityService } from './src/services/userActivityService';
 
 // Import polyfills for crypto and URL
 import 'react-native-get-random-values';
@@ -25,11 +26,17 @@ const App: React.FC = () => {
   const navigationRef = useRef<any>(null);
   const appStateRef = useRef(AppState.currentState);
   const navigationPersistence = NavigationPersistenceService.getInstance();
+  const userActivityService = UserActivityService.getInstance();
 
   // Save navigation state when it changes (with debounce to avoid too many saves)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const handleNavigationStateChange = (state: NavigationState | undefined) => {
     if (state) {
+      // Record user activity on navigation change
+      // This ensures that navigating between screens counts as user interaction
+      userActivityService.recordUserInteraction();
+      console.log('🎯 User activity recorded: Navigation state changed');
+
       // Log the navigation state change immediately
       const path = navigationPersistence.getNavigationPath(state);
       console.log('🗺️ Navigation state changed:', {

@@ -22,6 +22,9 @@ class MainApplication : Application(), ReactApplication {
               
               // Add Screen Protection Module
               add(ScreenProtectionPackage())
+              
+              // Add File Picker Module
+              add(FilePickerPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

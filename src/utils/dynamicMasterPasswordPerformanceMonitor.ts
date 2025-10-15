@@ -1,6 +1,6 @@
-// Performance monitor for Dynamic Master Password vs Static Master Password
+// Performance monitor for Static Master Password
 import { getCurrentUser } from '../services/firebase';
-import { getEffectiveMasterPassword } from '../services/dynamicMasterPasswordService';
+import { getEffectiveMasterPassword } from '../services/staticMasterPasswordService';
 import { getMasterPasswordFromBiometric } from '../services/secureStorageService';
 
 export interface PerformanceMetrics {
@@ -45,7 +45,7 @@ class DynamicMasterPasswordPerformanceMonitor {
         operationType: 'dynamic',
         duration,
         success: result.success,
-        sessionId: result.sessionId,
+        sessionId: '',
         error: result.error,
         timestamp: Date.now(),
       };

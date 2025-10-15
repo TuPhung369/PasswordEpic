@@ -5,13 +5,13 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   BackHandler,
 } from 'react-native';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { useSession } from '../hooks/useSession';
 import { useTheme } from '../contexts/ThemeContext';
+import ConfirmDialog from './ConfirmDialog';
 
 interface SessionTimeoutModalProps {
   visible: boolean;
@@ -29,6 +29,10 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
   const { theme } = useTheme();
   const session = useSelector((state: RootState) => state.auth.session);
   const { extendSession, forceLogout } = useSession();
+  const [errorDialog, setErrorDialog] = React.useState({
+    visible: false,
+    message: '',
+  });
 
   React.useEffect(() => {
     if (visible) {
@@ -50,9 +54,10 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
       await extendSession(15); // Extend by 15 minutes
       onExtend();
     } catch (error) {
-      Alert.alert('Error', 'Failed to extend session. Please log in again.', [
-        { text: 'OK', onPress: onLogout },
-      ]);
+      setErrorDialog({
+        visible: true,
+        message: 'Failed to extend session. Please log in again.',
+      });
     }
   };
 
@@ -197,6 +202,22 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
           </Text>
         </View>
       </View>
+
+      <ConfirmDialog
+        visible={errorDialog.visible}
+        title="Error"
+        message={errorDialog.message}
+        confirmText="OK"
+        confirmStyle="destructive"
+        onConfirm={() => {
+          setErrorDialog({ visible: false, message: '' });
+          onLogout();
+        }}
+        onCancel={() => {
+          setErrorDialog({ visible: false, message: '' });
+          onLogout();
+        }}
+      />
     </Modal>
   );
 };

@@ -28,7 +28,7 @@ import {
 import CategoryService from '../services/categoryService';
 import SyncService from '../services/syncService';
 import { getMasterPasswordFromBiometric } from '../services/secureStorageService';
-import { getEffectiveMasterPassword } from '../services/dynamicMasterPasswordService';
+import { getEffectiveMasterPassword } from '../services/staticMasterPasswordService';
 import { sessionCache } from '../utils/sessionCache';
 
 export const usePasswordManagement = (masterPassword?: string) => {
@@ -90,47 +90,41 @@ export const usePasswordManagement = (masterPassword?: string) => {
       return cachedMasterPassword;
     }
 
-    // New approach: Use dynamic master password (UUID + login time)
-    console.log('🔐 [Dynamic] Generating dynamic master password...');
-    const dynamicStart = Date.now();
+    // New approach: Use static master password (UUID + email + fixed salt)
+    console.log('🔐 [Static] Generating static master password...');
+    const staticStart = Date.now();
 
     try {
-      const dynamicResult = await getEffectiveMasterPassword();
-      const dynamicDuration = Date.now() - dynamicStart;
+      const staticResult = await getEffectiveMasterPassword();
+      const staticDuration = Date.now() - staticStart;
 
-      if (dynamicResult.success && dynamicResult.password) {
-        // Cache the dynamic password in both caches
-        setCachedMasterPassword(dynamicResult.password);
+      if (staticResult.success && staticResult.password) {
+        // Cache the static password in both caches
+        setCachedMasterPassword(staticResult.password);
         setCacheTimestamp(now);
 
-        // Also cache in session for ultra-fast access (2 minutes)
+        // Also cache in session for ultra-fast access (30 minutes for static)
         sessionCache.set(
-          'dynamicMasterPassword',
-          dynamicResult.password,
-          2 * 60 * 1000,
+          'staticMasterPassword',
+          staticResult.password,
+          30 * 60 * 1000,
         );
 
         const totalDuration = Date.now() - authStartTime;
         console.log(
-          `✅ [Dynamic] Dynamic master password generated in ${dynamicDuration}ms (total: ${totalDuration}ms)`,
+          `✅ [Static] Static master password generated in ${staticDuration}ms (total: ${totalDuration}ms)`,
         );
-        console.log(
-          `� [Dynamic] Session ID: ${dynamicResult.sessionId?.substring(
-            0,
-            20,
-          )}...`,
-        );
-        return dynamicResult.password;
+        return staticResult.password;
       } else {
         console.log(
-          `❌ [Dynamic] Dynamic password failed after ${dynamicDuration}ms: ${dynamicResult.error}`,
+          `❌ [Static] Static password failed after ${staticDuration}ms: ${staticResult.error}`,
         );
       }
-    } catch (dynamicError) {
-      const dynamicDuration = Date.now() - dynamicStart;
+    } catch (staticError) {
+      const staticDuration = Date.now() - staticStart;
       console.error(
-        `💥 [Dynamic] Dynamic password error after ${dynamicDuration}ms:`,
-        dynamicError,
+        `💥 [Static] Static password error after ${staticDuration}ms:`,
+        staticError,
       );
     }
 

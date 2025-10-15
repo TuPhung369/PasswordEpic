@@ -251,11 +251,11 @@ export class PasswordValidationService {
       this.isCommonPassword(entry.password),
     );
 
-    // Old passwords (over 1 year without change)
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    // Old passwords (not changed in over 6 months)
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     const oldPasswords = entries.filter(
-      entry => entry.updatedAt < oneYearAgo && entry.createdAt < oneYearAgo,
+      entry => entry.updatedAt < sixMonthsAgo && entry.createdAt < sixMonthsAgo,
     );
 
     // Critical issues
@@ -405,9 +405,10 @@ export class PasswordValidationService {
   private static generateFeedback(analysis: any): string[] {
     const feedback: string[] = [];
 
+    // Chỉ cảnh báo nếu <12 ký tự và điểm strength <3
     if (analysis.length < 8) {
       feedback.push('Use at least 8 characters');
-    } else if (analysis.length < 12) {
+    } else if (analysis.length < 12 && analysis.score < 3) {
       feedback.push('Consider using 12+ characters for better security');
     }
 

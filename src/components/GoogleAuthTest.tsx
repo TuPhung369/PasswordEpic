@@ -1,13 +1,20 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import {
   signInWithGoogleNative,
   GoogleAuthResult,
 } from '../services/googleAuthNative';
+import ConfirmDialog from './ConfirmDialog';
 
 export const GoogleAuthTest: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string>('');
+  const [dialogState, setDialogState] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    confirmStyle: 'default' as 'default' | 'destructive',
+  });
 
   const testNativeGoogleAuth = async () => {
     setLoading(true);
@@ -20,14 +27,29 @@ export const GoogleAuthTest: React.FC = () => {
         setResult(
           `✅ Native Auth Success!\nUser: ${authResult.user?.name}\nEmail: ${authResult.user?.email}`,
         );
-        Alert.alert('Success!', `Welcome ${authResult.user?.name}!`);
+        setDialogState({
+          visible: true,
+          title: 'Success!',
+          message: `Welcome ${authResult.user?.name}!`,
+          confirmStyle: 'default',
+        });
       } else {
         setResult(`❌ Native Auth Failed: ${authResult.error}`);
-        Alert.alert('Error', authResult.error || 'Authentication failed');
+        setDialogState({
+          visible: true,
+          title: 'Error',
+          message: authResult.error || 'Authentication failed',
+          confirmStyle: 'destructive',
+        });
       }
     } catch (error: any) {
       setResult(`❌ Native Auth Error: ${error.message}`);
-      Alert.alert('Error', error.message);
+      setDialogState({
+        visible: true,
+        title: 'Error',
+        message: error.message,
+        confirmStyle: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
@@ -44,14 +66,29 @@ export const GoogleAuthTest: React.FC = () => {
         setResult(
           `✅ Native Auth Success!\nUser: ${authResult.user?.name}\nEmail: ${authResult.user?.email}`,
         );
-        Alert.alert('Success!', `Welcome ${authResult.user?.name}!`);
+        setDialogState({
+          visible: true,
+          title: 'Success!',
+          message: `Welcome ${authResult.user?.name}!`,
+          confirmStyle: 'default',
+        });
       } else {
         setResult(`❌ Native Auth Failed: ${authResult.error}`);
-        Alert.alert('Error', authResult.error || 'Authentication failed');
+        setDialogState({
+          visible: true,
+          title: 'Error',
+          message: authResult.error || 'Authentication failed',
+          confirmStyle: 'destructive',
+        });
       }
     } catch (error: any) {
       setResult(`❌ Native Auth Error: ${error.message}`);
-      Alert.alert('Error', error.message);
+      setDialogState({
+        visible: true,
+        title: 'Error',
+        message: error.message,
+        confirmStyle: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
@@ -87,6 +124,16 @@ export const GoogleAuthTest: React.FC = () => {
           <Text style={styles.resultText}>{result}</Text>
         </View>
       ) : null}
+
+      <ConfirmDialog
+        visible={dialogState.visible}
+        title={dialogState.title}
+        message={dialogState.message}
+        confirmText="OK"
+        confirmStyle={dialogState.confirmStyle}
+        onConfirm={() => setDialogState({ ...dialogState, visible: false })}
+        onCancel={() => setDialogState({ ...dialogState, visible: false })}
+      />
     </View>
   );
 };

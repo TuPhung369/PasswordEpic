@@ -7,7 +7,7 @@ import {
   Modal,
   ScrollView,
 } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface ThemeOption {
@@ -22,19 +22,19 @@ const themeOptions: ThemeOption[] = [
     key: 'light',
     label: 'Light',
     description: 'Always use light theme',
-    icon: 'wb-sunny',
+    icon: 'sunny-outline',
   },
   {
     key: 'dark',
     label: 'Dark',
     description: 'Always use dark theme',
-    icon: 'brightness-2',
+    icon: 'moon-outline',
   },
   {
     key: 'system',
     label: 'System Default',
     description: 'Follow system appearance',
-    icon: 'settings-brightness',
+    icon: 'phone-portrait-outline',
   },
 ];
 
@@ -62,7 +62,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({ visible, onClose }) => {
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <View style={styles.headerLeft}>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <MaterialIcons name="close" size={24} color={theme.text} />
+              <Ionicons name="close" size={24} color={theme.text} />
             </TouchableOpacity>
             <Text style={[styles.title, { color: theme.text }]}>
               Choose Theme
@@ -107,7 +107,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({ visible, onClose }) => {
                         },
                       ]}
                     >
-                      <MaterialIcons
+                      <Ionicons
                         name={option.icon}
                         size={24}
                         color={
@@ -130,8 +130,8 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({ visible, onClose }) => {
                     </View>
                   </View>
                   {themeMode === option.key && (
-                    <MaterialIcons
-                      name="check-circle"
+                    <Ionicons
+                      name="checkmark-circle"
                       size={24}
                       color={theme.primary}
                     />

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Text, StyleSheet, Animated } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 interface ToastProps {
   message: string;
@@ -74,13 +74,13 @@ const Toast: React.FC<ToastProps> = ({
   const getIconName = () => {
     switch (type) {
       case 'success':
-        return 'check-circle';
+        return 'checkmark-circle';
       case 'error':
-        return 'error';
+        return 'alert-circle';
       case 'info':
-        return 'info';
+        return 'information-circle';
       default:
-        return 'check-circle';
+        return 'checkmark-circle';
     }
   };
 
@@ -97,7 +97,7 @@ const Toast: React.FC<ToastProps> = ({
         },
       ]}
     >
-      <MaterialIcons
+      <Ionicons
         name={getIconName()}
         size={20}
         color="#FFFFFF"

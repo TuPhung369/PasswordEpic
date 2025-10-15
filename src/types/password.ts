@@ -3,6 +3,7 @@ export interface PasswordEntry {
   title: string;
   username: string;
   password: string;
+  isDecrypted?: boolean; // Flag to indicate if password field is decrypted (true) or encrypted (false/undefined)
   website?: string;
   notes?: string;
   category?: string;
@@ -37,6 +38,32 @@ export interface EncryptedPasswordEntry {
   authTag: string; // Authentication tag for integrity
   createdAt: Date;
   updatedAt: Date;
+}
+
+// NEW: Optimized storage format - metadata unencrypted, only password encrypted
+export interface OptimizedPasswordEntry {
+  id: string;
+  // Unencrypted metadata for fast loading
+  title: string;
+  username: string;
+  website?: string;
+  notes?: string;
+  category?: string;
+  tags?: string[];
+  isFavorite: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  lastUsed?: Date;
+  // Encrypted password field
+  encryptedPassword: string;
+  passwordSalt: string;
+  passwordIv: string;
+  passwordAuthTag: string;
+  // Storage format version for migration
+  storageVersion: number; // Version 1 = old format (full encryption), Version 2 = optimized format
+  // Enhanced fields
+  auditData?: AuditData;
+  breachStatus?: BreachStatus;
 }
 
 export interface PasswordCategory {

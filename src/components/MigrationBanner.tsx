@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface MigrationBannerProps {
@@ -104,8 +104,8 @@ export const MigrationBanner: React.FC<MigrationBannerProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <MaterialIcons
-          name="upgrade"
+        <Ionicons
+          name="arrow-up-circle-outline"
           size={24}
           color={theme.primary}
           style={styles.icon}
@@ -127,7 +127,7 @@ export const MigrationBanner: React.FC<MigrationBannerProps> = ({
 
       {onMigrate && (
         <TouchableOpacity style={styles.button} onPress={onMigrate}>
-          <MaterialIcons name="system-update" size={18} color="#FFFFFF" />
+          <Ionicons name="sync-outline" size={18} color="#FFFFFF" />
           <Text style={styles.buttonText}>Update Now</Text>
         </TouchableOpacity>
       )}

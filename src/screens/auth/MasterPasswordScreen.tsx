@@ -4,12 +4,12 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAppDispatch } from '../../hooks/redux';
 import { setMasterPasswordConfigured } from '../../store/slices/authSlice';
@@ -27,8 +27,8 @@ const RequirementItem: React.FC<RequirementItemProps> = ({
   theme,
 }) => (
   <View style={styles.requirementItem}>
-    <MaterialIcons
-      name={met ? 'check-circle' : 'radio-button-unchecked'}
+    <Ionicons
+      name={met ? 'checkmark-circle-outline' : 'radio-button-off-outline'}
       size={16}
       color={met ? '#00C851' : theme.textSecondary}
     />
@@ -64,6 +64,21 @@ export const MasterPasswordScreen: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    confirmStyle?: 'default' | 'destructive';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   // Calculate password strength
   const calculatePasswordStrength = (pwd: string): PasswordStrength => {
@@ -104,18 +119,27 @@ export const MasterPasswordScreen: React.FC = () => {
 
   const handleSetMasterPassword = async () => {
     if (!isPasswordValid) {
-      Alert.alert(
-        'Weak Password',
-        'Please create a stronger password with at least 4 of the 5 requirements.',
-      );
+      setConfirmDialog({
+        visible: true,
+        title: 'Weak Password',
+        message:
+          'Please create a stronger password with at least 4 of the 5 requirements.',
+        confirmText: 'OK',
+        onConfirm: () =>
+          setConfirmDialog(prev => ({ ...prev, visible: false })),
+      });
       return;
     }
 
     if (!doPasswordsMatch) {
-      Alert.alert(
-        'Password Mismatch',
-        'Passwords do not match. Please try again.',
-      );
+      setConfirmDialog({
+        visible: true,
+        title: 'Password Mismatch',
+        message: 'Passwords do not match. Please try again.',
+        confirmText: 'OK',
+        onConfirm: () =>
+          setConfirmDialog(prev => ({ ...prev, visible: false })),
+      });
       return;
     }
 
@@ -132,20 +156,26 @@ export const MasterPasswordScreen: React.FC = () => {
       // Mark as configured in Redux store
       dispatch(setMasterPasswordConfigured(true));
 
-      Alert.alert(
-        'Success',
-        'Master password has been set successfully. Your passwords will now be encrypted with this key.',
-        [
-          {
-            text: 'Continue',
-            onPress: () => {
-              // Navigation will be handled by AppNavigator based on auth state
-            },
-          },
-        ],
-      );
+      setConfirmDialog({
+        visible: true,
+        title: 'Success',
+        message:
+          'Master password has been set successfully. Your passwords will now be encrypted with this key.',
+        confirmText: 'Continue',
+        onConfirm: () => {
+          setConfirmDialog(prev => ({ ...prev, visible: false }));
+          // Navigation will be handled by AppNavigator based on auth state
+        },
+      });
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to set master password');
+      setConfirmDialog({
+        visible: true,
+        title: 'Error',
+        message: error.message || 'Failed to set master password',
+        confirmText: 'OK',
+        onConfirm: () =>
+          setConfirmDialog(prev => ({ ...prev, visible: false })),
+      });
     } finally {
       setIsLoading(false);
     }
@@ -188,8 +218,8 @@ export const MasterPasswordScreen: React.FC = () => {
               onPress={() => setShowPassword(!showPassword)}
               style={styles.eyeButton}
             >
-              <MaterialIcons
-                name={showPassword ? 'visibility-off' : 'visibility'}
+              <Ionicons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                 size={24}
                 color={theme.textSecondary}
               />
@@ -244,8 +274,8 @@ export const MasterPasswordScreen: React.FC = () => {
               onPress={() => setShowConfirmPassword(!showConfirmPassword)}
               style={styles.eyeButton}
             >
-              <MaterialIcons
-                name={showConfirmPassword ? 'visibility-off' : 'visibility'}
+              <Ionicons
+                name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
                 size={24}
                 color={theme.textSecondary}
               />
@@ -255,8 +285,12 @@ export const MasterPasswordScreen: React.FC = () => {
           {/* Password Match Indicator */}
           {confirmPassword.length > 0 && (
             <View style={styles.matchContainer}>
-              <MaterialIcons
-                name={doPasswordsMatch ? 'check-circle' : 'cancel'}
+              <Ionicons
+                name={
+                  doPasswordsMatch
+                    ? 'checkmark-circle-outline'
+                    : 'close-circle-outline'
+                }
                 size={16}
                 color={doPasswordsMatch ? '#00C851' : theme.error}
               />
@@ -337,13 +371,27 @@ export const MasterPasswordScreen: React.FC = () => {
 
         {/* Security Note */}
         <View style={styles.securityNote}>
-          <MaterialIcons name="security" size={20} color={theme.primary} />
+          <Ionicons
+            name="shield-checkmark-outline"
+            size={20}
+            color={theme.primary}
+          />
           <Text style={[styles.securityText, { color: theme.textSecondary }]}>
             Your master password cannot be recovered. Make sure to remember it
             or store it in a safe place.
           </Text>
         </View>
       </View>
+
+      <ConfirmDialog
+        visible={confirmDialog.visible}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        confirmStyle={confirmDialog.confirmStyle}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
+      />
     </SafeAreaView>
   );
 };

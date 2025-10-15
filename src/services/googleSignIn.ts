@@ -69,6 +69,10 @@ export const configureGoogleSignIn = () => {
       offlineAccess: true,
       hostedDomain: '',
       forceCodeForRefreshToken: true,
+      scopes: [
+        'https://www.googleapis.com/auth/drive.file', // Access to files created by the app
+        'https://www.googleapis.com/auth/drive.appdata', // Access to app data folder
+      ],
     });
 
     console.log('Google Sign-In configured successfully');

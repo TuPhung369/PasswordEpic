@@ -45,6 +45,10 @@ export const initializeGoogleSignIn = async (): Promise<boolean> => {
       offlineAccess: true, // Required to get refresh token
       hostedDomain: '', // Optional - specify a hosted domain restriction
       forceCodeForRefreshToken: true, // Force getting refresh token
+      scopes: [
+        'https://www.googleapis.com/auth/drive.appdata', // Access to app-specific folder in Drive
+        'https://www.googleapis.com/auth/drive.file', // Access to files created by the app
+      ],
     };
 
     // Configuring Google Sign-In

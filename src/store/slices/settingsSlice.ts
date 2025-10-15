@@ -101,6 +101,42 @@ const settingsSlice = createSlice({
     setMemoryProtectionEnabled: (state, action: PayloadAction<boolean>) => {
       state.security.memoryProtectionEnabled = action.payload;
     },
+    restoreSettings: (state, action: PayloadAction<Partial<SettingsState>>) => {
+      // Restore settings from backup
+      console.log(
+        '🔍 [settingsSlice] restoreSettings called with payload:',
+        JSON.stringify(action.payload, null, 2),
+      );
+      console.log(
+        '🔍 [settingsSlice] Current state before restore:',
+        JSON.stringify(state, null, 2),
+      );
+
+      if (action.payload.security) {
+        state.security = { ...state.security, ...action.payload.security };
+        console.log(
+          '✅ [settingsSlice] Security settings restored:',
+          JSON.stringify(state.security, null, 2),
+        );
+      }
+      if (action.payload.generator) {
+        state.generator = { ...state.generator, ...action.payload.generator };
+        console.log('✅ [settingsSlice] Generator settings restored');
+      }
+      if (action.payload.theme) {
+        state.theme = action.payload.theme;
+        console.log('✅ [settingsSlice] Theme restored:', state.theme);
+      }
+      if (action.payload.language) {
+        state.language = action.payload.language;
+        console.log('✅ [settingsSlice] Language restored:', state.language);
+      }
+
+      console.log(
+        '🔍 [settingsSlice] Final state after restore:',
+        JSON.stringify(state, null, 2),
+      );
+    },
   },
 });
 
@@ -116,5 +152,6 @@ export const {
   setRootDetectionEnabled,
   setAntiTamperingEnabled,
   setMemoryProtectionEnabled,
+  restoreSettings,
 } = settingsSlice.actions;
 export default settingsSlice.reducer;

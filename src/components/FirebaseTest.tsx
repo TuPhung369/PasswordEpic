@@ -1,11 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { initializeFirebase } from '../services/firebase';
 import { signInWithGoogle as authSignInWithGoogle } from '../services/authService';
+import ConfirmDialog from './ConfirmDialog';
 
 const FirebaseTest: React.FC = () => {
   const [firebaseStatus, setFirebaseStatus] = useState<string>('Checking...');
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [dialogState, setDialogState] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    confirmStyle: 'default' as 'default' | 'destructive',
+  });
 
   useEffect(() => {
     const checkFirebase = () => {
@@ -27,14 +34,29 @@ const FirebaseTest: React.FC = () => {
       const result = await authSignInWithGoogle();
 
       if (result.success) {
-        Alert.alert('Success', 'Google Sign-In successful!');
+        setDialogState({
+          visible: true,
+          title: 'Success',
+          message: 'Google Sign-In successful!',
+          confirmStyle: 'default',
+        });
         console.log('Sign-in successful:', result.user);
       } else {
-        Alert.alert('Error', result.error || 'Sign-in failed');
+        setDialogState({
+          visible: true,
+          title: 'Error',
+          message: result.error || 'Sign-in failed',
+          confirmStyle: 'destructive',
+        });
         console.log('Sign-in failed:', result.error);
       }
     } catch (error) {
-      Alert.alert('Error', 'Sign-in error: ' + (error as Error).message);
+      setDialogState({
+        visible: true,
+        title: 'Error',
+        message: 'Sign-in error: ' + (error as Error).message,
+        confirmStyle: 'destructive',
+      });
       console.log('Sign-in error:', error);
     } finally {
       setIsSigningIn(false);
@@ -68,6 +90,16 @@ const FirebaseTest: React.FC = () => {
           {isSigningIn ? 'Signing In...' : 'Test Google Sign-In'}
         </Text>
       </TouchableOpacity>
+
+      <ConfirmDialog
+        visible={dialogState.visible}
+        title={dialogState.title}
+        message={dialogState.message}
+        confirmText="OK"
+        confirmStyle={dialogState.confirmStyle}
+        onConfirm={() => setDialogState({ ...dialogState, visible: false })}
+        onCancel={() => setDialogState({ ...dialogState, visible: false })}
+      />
     </View>
   );
 };

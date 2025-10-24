@@ -2,6 +2,7 @@ import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
 import { PasswordEntry, PasswordCategory } from '../../types/password';
 import { encryptedDatabase } from '../../services/encryptedDatabaseService';
 import { migratePasswordEntries } from '../../utils/passwordMigration';
+import { autofillService } from '../../services/autofillService';
 
 interface PasswordsState {
   passwords: PasswordEntry[];
@@ -19,9 +20,27 @@ export const loadPasswords = createAsyncThunk(
   'passwords/loadPasswords',
   async (masterPassword: string, { rejectWithValue }) => {
     try {
+      console.log('📖 [Redux] Loading passwords (fully decrypted)');
       const passwords = await encryptedDatabase.getAllPasswordEntries(
         masterPassword,
       );
+
+      // Prepare autofill credentials when passwords are fully loaded and decrypted
+      try {
+        console.log('🔄 Preparing autofill credentials on full load...');
+        await autofillService.prepareCredentialsForAutofill(
+          passwords,
+          masterPassword,
+        );
+        console.log('✅ Autofill credentials prepared on full load');
+      } catch (autofillError) {
+        console.warn(
+          '⚠️ Non-critical: Failed to prepare autofill on load:',
+          autofillError,
+        );
+        // Don't fail password load if autofill prep fails
+      }
+
       return passwords;
     } catch (error: any) {
       return rejectWithValue(error.message);
@@ -37,8 +56,69 @@ export const loadPasswordsLazy = createAsyncThunk(
       console.log('📖 [Redux] Loading passwords (optimized format)');
       const passwords =
         await encryptedDatabase.getAllPasswordEntriesOptimized();
+
+      // Note: Don't prepare autofill here since passwords are loaded lazily
+      // (only metadata loaded, actual passwords not decrypted yet)
+      // Autofill prep will happen after all passwords are decrypted
+
       return passwords;
     } catch (error: any) {
+      return rejectWithValue(error.message);
+    }
+  },
+);
+
+// Decrypt all lazy-loaded passwords and prepare autofill
+// Call this after loadPasswordsLazy to populate autofill with all credentials
+export const decryptAllAndPrepareAutofill = createAsyncThunk(
+  'passwords/decryptAllAndPrepareAutofill',
+  async (masterPassword: string, { rejectWithValue, getState }) => {
+    try {
+      const state = getState() as any;
+      const lazyPasswords = state.passwords.passwords || [];
+
+      console.log(
+        `🔐 [Redux] Decrypting all ${lazyPasswords.length} passwords for autofill...`,
+      );
+
+      // Decrypt all passwords
+      const fullyDecryptedPasswords = await Promise.all(
+        lazyPasswords.map(async (pwd: PasswordEntry) => {
+          if (pwd.password && pwd.password.length > 0) {
+            // Already decrypted or has a value
+            return pwd;
+          }
+          // Decrypt the password field
+          const decrypted =
+            await encryptedDatabase.decryptPasswordFieldOptimized(
+              pwd.id,
+              masterPassword,
+            );
+          return { ...pwd, password: decrypted };
+        }),
+      );
+
+      console.log(`✅ All passwords decrypted for autofill`);
+
+      // Prepare autofill with fully decrypted passwords
+      try {
+        console.log('🔄 Preparing autofill with decrypted passwords...');
+        await autofillService.prepareCredentialsForAutofill(
+          fullyDecryptedPasswords,
+          masterPassword,
+        );
+        console.log('✅ Autofill credentials prepared successfully');
+      } catch (autofillError) {
+        console.warn(
+          '⚠️ Non-critical: Failed to prepare autofill after decryption:',
+          autofillError,
+        );
+        // Don't fail the operation if autofill prep fails
+      }
+
+      return null;
+    } catch (error: any) {
+      console.error('❌ Error decrypting passwords for autofill:', error);
       return rejectWithValue(error.message);
     }
   },
@@ -69,11 +149,29 @@ export const savePassword = createAsyncThunk(
   'passwords/savePassword',
   async (
     { entry, masterPassword }: { entry: PasswordEntry; masterPassword: string },
-    { rejectWithValue },
+    { rejectWithValue, getState },
   ) => {
     try {
       console.log('💾 [Redux] Saving password');
       await encryptedDatabase.savePasswordEntryOptimized(entry, masterPassword);
+
+      // Prepare credentials for autofill after saving
+      try {
+        console.log('🔄 Preparing autofill credentials...');
+        const state = getState() as any;
+        const allPasswords = state.passwords.passwords || [];
+        await autofillService.prepareCredentialsForAutofill(
+          allPasswords,
+          masterPassword,
+        );
+        console.log('✅ Autofill credentials prepared');
+      } catch (autofillError) {
+        console.warn(
+          '⚠️ Non-critical: Failed to prepare autofill:',
+          autofillError,
+        );
+        // Don't fail password save if autofill prep fails
+      }
 
       return entry;
     } catch (error: any) {

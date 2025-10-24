@@ -254,6 +254,7 @@ export class NavigationPersistenceService {
 
   /**
    * Restore navigation by navigating to the saved screen
+   * IMPROVED: Now restores immediately without delay to prevent interruption
    */
   public async restoreNavigation(navigationRef: any): Promise<boolean> {
     try {
@@ -277,69 +278,67 @@ export class NavigationPersistenceService {
         path.map(p => p.screenName).join(' -> '),
       );
 
-      // Try to restore using the full navigation state first (most accurate)
-      // Use setTimeout to ensure UI is ready
-      setTimeout(() => {
-        try {
-          console.log('🗺️ Attempting to restore with full state...');
-
-          // Option 1: Try to reset to the saved state directly (most accurate)
-          try {
-            navigationRef.current?.reset(savedState);
-            console.log('🗺️ Navigation restored using full state reset');
-            return;
-          } catch (resetError) {
-            console.log(
-              '🗺️ Full state reset failed, trying navigation path method',
-            );
-          }
-
-          // Option 2: Fallback to navigation path method
-          if (path.length === 1) {
-            // Simple navigation
-            navigationRef.current?.navigate(path[0].screenName, path[0].params);
-          } else {
-            // Nested navigation - build the navigation params
-            // For example: navigate('Main', { screen: 'Passwords', params: { screen: 'AddPassword' } })
-            let nestedParams: any;
-
-            // Build params from the end of the path backwards (skip the first one - it's the root)
-            for (let i = path.length - 1; i >= 1; i--) {
-              const current = path[i];
-              if (nestedParams === undefined) {
-                // Leaf screen - just use its params (if any)
-                nestedParams = {
-                  screen: current.screenName,
-                  params: current.params,
-                };
-              } else {
-                // Wrap the existing params
-                nestedParams = {
-                  screen: current.screenName,
-                  params: nestedParams,
-                };
-              }
-            }
-
-            console.log(
-              '🗺️ Built nested params:',
-              JSON.stringify(nestedParams, null, 2),
-            );
-
-            // Navigate to the root with nested params
-            navigationRef.current?.navigate(path[0].screenName, nestedParams);
-          }
-
-          console.log('🗺️ Navigation restored successfully using path method');
-        } catch (error) {
-          console.error('Failed to navigate to saved screen:', error);
+      // IMPROVED: Restore navigation IMMEDIATELY without delay
+      // This prevents React Navigation defaults from overriding the restore
+      try {
+        // Option 1: Try to reset to the saved state directly (most accurate)
+        if (navigationRef?.current?.reset) {
+          navigationRef.current.reset(savedState);
+          console.log(
+            '🗺️ ✅ Navigation restored IMMEDIATELY using full state reset',
+          );
+          return true;
         }
-      }, 300);
+      } catch (resetError) {
+        console.log(
+          '🗺️ Full state reset failed, trying navigation path method',
+        );
+      }
 
-      return true;
+      // Option 2: Fallback to immediate navigation path method (no delay)
+      try {
+        if (path.length === 1) {
+          // Simple navigation
+          navigationRef.current?.navigate(path[0].screenName, path[0].params);
+        } else {
+          // Nested navigation - build the navigation params
+          let nestedParams: any;
+
+          // Build params from the end of the path backwards (skip the first one - it's the root)
+          for (let i = path.length - 1; i >= 1; i--) {
+            const current = path[i];
+            if (nestedParams === undefined) {
+              nestedParams = {
+                screen: current.screenName,
+                params: current.params,
+              };
+            } else {
+              nestedParams = {
+                screen: current.screenName,
+                params: nestedParams,
+              };
+            }
+          }
+
+          // Navigate to the root with nested params - IMMEDIATELY
+          navigationRef.current?.navigate(path[0].screenName, nestedParams);
+        }
+
+        console.log('🗺️ ✅ Navigation restored IMMEDIATELY using path method');
+        return true;
+      } catch (error) {
+        console.error('Failed to navigate to saved screen:', error);
+        return false;
+      }
     } catch (error) {
       console.error('Failed to restore navigation:', error);
       return false;
     }
   }
 }
+
+// Export the class for testing and direct instantiation
+export { NavigationPersistenceService };
+
+// Export singleton instance as default
+export default NavigationPersistenceService.getInstance();

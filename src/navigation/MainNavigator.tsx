@@ -6,15 +6,15 @@ import {
   PasswordsNavigator,
   PasswordsStackParamList,
 } from './PasswordsNavigator';
+import { SettingsNavigator, SettingsStackParamList } from './SettingsNavigator';
 import { GeneratorScreen } from '../screens/main/GeneratorScreen';
-import { SettingsScreen } from '../screens/main/SettingsScreen';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 
 export type MainTabParamList = {
   Passwords: NavigatorScreenParams<PasswordsStackParamList> | undefined;
   Generator: undefined;
-  Settings: undefined;
+  Settings: NavigatorScreenParams<SettingsStackParamList> | undefined;
 };
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -49,10 +49,10 @@ import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 export const MainNavigator: React.FC = () => {
   const { theme } = useTheme();
 
-  // Hàm kiểm tra route con để ẩn tab bar khi ở AddPassword hoặc EditPassword
-  const getTabBarStyle = (route: any) => {
-    // Lấy tên route con đang active trong PasswordsNavigator
-    const routeName = getFocusedRouteNameFromRoute(route) ?? 'PasswordsList';
+  // Hàm kiểm tra route con để ẩn tab bar khi ở AddPassword, EditPassword, hoặc AutofillManagement
+  const getTabBarStyle = (route: any, defaultRouteName: string) => {
+    // Lấy tên route con đang active
+    const routeName = getFocusedRouteNameFromRoute(route) ?? defaultRouteName;
     // console.log('🔍 getTabBarStyle - routeName:', routeName); // Debug log
     const baseStyle = {
       ...styles.tabBar,
@@ -62,7 +62,9 @@ export const MainNavigator: React.FC = () => {
 
     // Kiểm tra trực tiếp mà không cần state
     const shouldHide =
-      routeName === 'AddPassword' || routeName === 'EditPassword';
+      routeName === 'AddPassword' ||
+      routeName === 'EditPassword' ||
+      routeName === 'AutofillManagement';
 
     if (shouldHide) {
       // console.log('🚫 Hiding tab bar for route:', routeName); // Debug log
@@ -90,7 +92,10 @@ export const MainNavigator: React.FC = () => {
         };
         if (route.name === 'Passwords') {
           // Lấy route con của PasswordsNavigator
-          tabBarStyle = getTabBarStyle(route);
+          tabBarStyle = getTabBarStyle(route, 'PasswordsList');
+        } else if (route.name === 'Settings') {
+          // Lấy route con của SettingsNavigator
+          tabBarStyle = getTabBarStyle(route, 'SettingsList');
         }
         return {
           tabBarIcon: renderTabBarIcon(route.name),
@@ -112,7 +117,7 @@ export const MainNavigator: React.FC = () => {
       />
       <Tab.Screen
         name="Settings"
-        component={SettingsScreen}
+        component={SettingsNavigator}
         options={{
           tabBarLabel: 'Settings',
         }}

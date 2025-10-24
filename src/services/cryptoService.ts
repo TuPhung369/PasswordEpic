@@ -15,6 +15,11 @@ export const CRYPTO_CONSTANTS = {
 // Generate cryptographically secure random bytes
 export const generateSecureRandom = (length: number): string => {
   try {
+    // Validate length
+    if (!length || length <= 0) {
+      throw new Error('Length must be a positive number');
+    }
+
     // Generate random words and convert to hex
     const randomWords = CryptoJS.lib.WordArray.random(length);
     return randomWords.toString(CryptoJS.enc.Hex);
@@ -45,7 +50,9 @@ export const deriveKeyFromPassword = (
   iterations: number = CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC, // STATIC default - DO NOT CHANGE
 ): string => {
   // const startTime = Date.now();
-  const cacheKey = `${password.slice(0, 8)}:${salt}:${iterations}`; // Safe cache key
+  // Create a hash of the password for cache key to avoid collisions
+  const passwordHash = CryptoJS.SHA256(password).toString().substring(0, 16);
+  const cacheKey = `${passwordHash}:${salt}:${iterations}`; // Safe cache key with password hash
 
   // Check cache first
   const cached = keyCache.get(cacheKey);

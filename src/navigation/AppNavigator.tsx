@@ -70,7 +70,7 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
   const { updateConfig: updateActivityConfig, panResponder } = useUserActivity(
     async () => {
       // Auto-lock callback when user is inactive
-      console.log('🎯 Auto-lock triggered due to user inactivity');
+      console.log('🎯 🔒 Auto-lock triggered due to user inactivity');
       if (
         isAuthenticated &&
         masterPasswordConfigured &&
@@ -78,17 +78,18 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
         biometricAvailable
       ) {
         // Save navigation state immediately to restore after unlock
+        // This ensures the current screen is preserved during lock/unlock
         try {
           const currentState = navigationRef?.current?.getRootState();
           if (currentState) {
-            console.log('🎯 Auto-lock: Saving navigation state for restore');
+            console.log('🎯 🔒 Auto-lock: Saving navigation state for restore');
             const path = navPersistence.getNavigationPath(currentState);
             console.log(
-              '🎯 Auto-lock navigation path:',
+              '🎯 🔒 Current route:',
               path?.map(p => p.screenName).join(' -> ') || 'Unknown',
             );
             await navPersistence.saveNavigationState(currentState);
-            console.log('🎯 Auto-lock: Navigation state saved successfully');
+            console.log('🎯 🔒 Auto-lock: Navigation state saved successfully');
           }
         } catch (error) {
           console.error(
@@ -99,7 +100,7 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
 
         // Trigger biometric authentication requirement (no session extension needed)
         // Session remains valid (7 days), only user interaction is locked
-        console.log('🎯 Auto-lock: Requiring biometric authentication');
+        console.log('🎯 🔒 Auto-lock: Requiring biometric authentication');
         setHasAuthenticatedInSession(false);
         setBiometricCancelled(false);
       }
@@ -371,32 +372,56 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
     initialAuthComplete,
   ]);
 
-  // Simple app state tracking (no auto-lock logic here)
+  // App state tracking - Save navigation when app resigns active
   useEffect(() => {
     const handleAppStateChange = (nextAppState: any) => {
       // console.log(
-      //   `� App state changed: ${appStateRef.current} → ${nextAppState}`,
+      //   `🔄 App state changed: ${appStateRef.current} → ${nextAppState}`,
       // );
 
-      // Just track app state, actual auto-lock is handled by UserActivityService
-      if (nextAppState === 'active' && appStateRef.current !== 'active') {
-        // console.log(
-        //   '� App became active - user activity will handle auto-lock logic',
-        // );
-        // Don't record interaction here - let UserActivityService handle it
-        // This prevents resetting the timer when app comes from background
-        // The service will check if enough time has passed and trigger lock if needed
-      }
-
-      // When app goes to background, prepare for session check on resume
+      // IMPROVED: Save navigation state when app goes to background
+      // This ensures we can restore it after biometric unlock
       if (nextAppState === 'background' || nextAppState === 'inactive') {
         if (
           stateRefs.current.isAuthenticated &&
           stateRefs.current.masterPasswordConfigured &&
           stateRefs.current.initialAuthComplete
         ) {
+          // Save navigation state BEFORE app goes background
+          try {
+            const currentState = navigationRef?.current?.getRootState();
+            if (currentState) {
+              console.log(
+                '🗺️ 📱 App resigning active - saving navigation state',
+              );
+              const path = navPersistence.getNavigationPath(currentState);
+              console.log(
+                '🗺️ Saved route:',
+                path?.map(p => p.screenName).join(' -> ') || 'Unknown',
+              );
+              navPersistence.saveNavigationState(currentState).catch(error => {
+                console.error(
+                  'Failed to save navigation on background:',
+                  error,
+                );
+              });
+            }
+          } catch (error) {
+            console.error('Error saving navigation on app background:', error);
+          }
+
           setIsCheckingSessionOnResume(true);
         }
+      }
+
+      // Just track app state, actual auto-lock is handled by UserActivityService
+      if (nextAppState === 'active' && appStateRef.current !== 'active') {
+        // console.log(
+        //   '🔄 App became active - user activity will handle auto-lock logic',
+        // );
+        // Don't record interaction here - let UserActivityService handle it
+        // This prevents resetting the timer when app comes from background
+        // The service will check if enough time has passed and trigger lock if needed
       }
 
       // Clear checking flag when app becomes active
@@ -729,28 +754,21 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
           }
 
           // Trigger navigation restoration using the new service
+          // IMPROVED: Restore IMMEDIATELY without delay to prevent navigation reset
           try {
             await navPersistence.markForRestore();
-            // console.log('🗺️ Biometric success - restoring navigation');
+            console.log(
+              '🗺️ 🔓 Biometric success - restoring navigation IMMEDIATELY',
+            );
 
-            // Delay restoration to allow navigation tree to stabilize
-            // This prevents conflict with default navigation behavior
-            setTimeout(async () => {
-              try {
-                if (navigationRef?.current) {
-                  // console.log('🗺️ Starting delayed navigation restoration...');
-                  await navPersistence.restoreNavigation(navigationRef);
-                } else {
-                  // console.log(
-                  //   '🗺️ navigationRef not available for delayed restoration',
-                  // );
-                }
-              } catch (error) {
-                console.error('Failed to restore navigation (delayed):', error);
-              }
-            }, 1000); // 1 second delay to allow navigation to settle
+            // Restore navigation IMMEDIATELY (no delay)
+            if (navigationRef?.current) {
+              await navPersistence.restoreNavigation(navigationRef);
+            } else {
+              console.warn('🗺️ navigationRef not available for restoration');
+            }
           } catch (error) {
-            console.error('Failed to prepare navigation restoration:', error);
+            console.error('Failed to restore navigation after unlock:', error);
           }
         }}
         onError={async _error => {

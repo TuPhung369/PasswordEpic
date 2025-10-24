@@ -832,29 +832,77 @@ export class PasswordGeneratorService {
       ];
       const year = years[Math.floor(Math.random() * years.length)];
 
-      password = `${adjective}${noun}${year}`;
+      const yearStr = year.toString();
+      const wordsLength = adjective.length + noun.length;
+
+      // Reserve space for numbers
+      const maxWordsLength = length - yearStr.length;
+      let adjPart = adjective;
+      let nounPart = noun;
+
+      // If words are too long, truncate them while preserving the year
+      if (wordsLength > maxWordsLength && maxWordsLength > 0) {
+        // Truncate adjective first, then noun if needed
+        const totalExcess = wordsLength - maxWordsLength;
+        if (adjPart.length > totalExcess) {
+          adjPart = adjPart.substring(0, adjPart.length - totalExcess);
+        } else {
+          const remaining = totalExcess - (adjPart.length - 1);
+          adjPart = adjPart.substring(
+            0,
+            Math.max(1, adjPart.length - totalExcess + 1),
+          );
+          nounPart = nounPart.substring(
+            0,
+            Math.max(1, nounPart.length - remaining),
+          );
+        }
+      }
+
+      password = `${adjPart}${nounPart}${yearStr}`;
     } else if (length >= 8) {
       // Medium password: Noun + 3-digit number
       const noun =
         memorableWords[Math.floor(Math.random() * memorableWords.length)];
       const number = Math.floor(Math.random() * 900) + 100; // 100-999
-      password = `${noun}${number}`;
+      const numberStr = number.toString();
+
+      // Reserve space for 3-digit number
+      const maxNounLength = length - numberStr.length;
+      let nounPart = noun;
+
+      if (nounPart.length > maxNounLength && maxNounLength > 0) {
+        nounPart = nounPart.substring(0, maxNounLength);
+      }
+
+      password = `${nounPart}${numberStr}`;
     } else {
       // Short password: Noun + 2-digit number
       const noun =
         memorableWords[Math.floor(Math.random() * memorableWords.length)];
       const number = Math.floor(Math.random() * 90) + 10; // 10-99
-      password = `${noun}${number}`;
+      const numberStr = number.toString();
+
+      // Reserve space for 2-digit number
+      const maxNounLength = length - numberStr.length;
+      let nounPart = noun;
+
+      if (nounPart.length > maxNounLength && maxNounLength > 0) {
+        nounPart = nounPart.substring(0, maxNounLength);
+      }
+
+      password = `${nounPart}${numberStr}`;
     }
 
-    // Adjust length if needed
-    if (password.length > length) {
-      password = password.substring(0, length);
-    } else if (password.length < length) {
+    // Adjust length if needed - pad with numbers only
+    if (password.length < length) {
       // Add additional numbers to reach target length
       while (password.length < length) {
         password += Math.floor(Math.random() * 10);
       }
+    } else if (password.length > length) {
+      // Should not happen with new logic, but keep as safety net
+      password = password.substring(0, length);
     }
 
     console.log(

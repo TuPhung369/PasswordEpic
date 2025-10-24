@@ -122,13 +122,13 @@ class SearchService {
     }
 
     // Apply boolean filters
-    if (filters.hasNotes !== null) {
+    if (filters.hasNotes != null) {
       filteredEntries = filteredEntries.filter(entry =>
         filters.hasNotes ? entry.notes && entry.notes.trim() : !entry.notes,
       );
     }
 
-    if (filters.hasCustomFields !== null) {
+    if (filters.hasCustomFields != null) {
       filteredEntries = filteredEntries.filter(entry =>
         filters.hasCustomFields
           ? entry.customFields.length > 0
@@ -136,13 +136,13 @@ class SearchService {
       );
     }
 
-    if (filters.isCompromised !== null) {
+    if (filters.isCompromised != null) {
       filteredEntries = filteredEntries.filter(
         entry => (entry as any).isCompromised === filters.isCompromised,
       );
     }
 
-    if (filters.isFavorite !== null) {
+    if (filters.isFavorite != null) {
       filteredEntries = filteredEntries.filter(
         entry => entry.isFavorite === filters.isFavorite,
       );

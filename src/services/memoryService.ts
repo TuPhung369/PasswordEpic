@@ -29,6 +29,7 @@ class MemoryService {
   private static instance: MemoryService;
   private secureDataStore: Map<string, SecureDataHandle> = new Map();
   private cleanupTimers: Map<string, NodeJS.Timeout> = new Map();
+  private cleanupInterval: NodeJS.Timeout | null = null;
   private readonly DEFAULT_CLEANUP_DELAY = 300000; // 5 minutes
   private readonly DEFAULT_OVERWRITE_COUNT = 3;
 
@@ -255,9 +256,27 @@ class MemoryService {
     // and clear memory when app goes to background
 
     // For now, we'll just setup periodic cleanup
-    setInterval(() => {
+    this.cleanupInterval = setInterval(() => {
       this.cleanupStaleData();
     }, 60000); // Check every minute
+  }
+
+  /**
+   * Destroy the service and clean up resources
+   */
+  public destroy(): void {
+    // Clear all cleanup timers
+    this.cleanupTimers.forEach(timer => clearTimeout(timer));
+    this.cleanupTimers.clear();
+
+    // Clear the periodic cleanup interval
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+
+    // Clear all stored data
+    this.secureDataStore.clear();
   }
 
   /**
@@ -384,4 +403,5 @@ export class SecureObject<T> {
   }
 }
 
+export { MemoryService };
 export default MemoryService.getInstance();

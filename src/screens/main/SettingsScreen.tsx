@@ -9,7 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useAppSelector, useAppDispatch } from '../../hooks/redux';
 import { RootState } from '../../store';
 import { logout } from '../../store/slices/authSlice';
@@ -83,6 +83,7 @@ const SettingItem = React.memo<{
 
 export const SettingsScreen: React.FC = () => {
   const dispatch = useAppDispatch();
+  const navigation = useNavigation();
   const { user } = useAppSelector((state: RootState) => state.auth);
   const { security } = useAppSelector((state: RootState) => state.settings);
   const { theme } = useTheme();
@@ -815,6 +816,18 @@ export const SettingsScreen: React.FC = () => {
                 }
               />
             }
+          />
+
+          <SettingItem
+            icon="key-outline"
+            title="Autofill Management"
+            subtitle="Configure autofill settings and trusted domains"
+            theme={theme}
+            onPress={() => {
+              // Navigate to Autofill Management Screen
+              // @ts-ignore - Navigation will be added
+              navigation.navigate('AutofillManagement');
+            }}
           />
 
           {/* Auto Lock Selector */}

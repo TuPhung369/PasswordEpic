@@ -6,16 +6,23 @@ import { generateSalt, hashPassword, verifyPassword } from './cryptoService';
 
 // Keychain service configuration
 const KEYCHAIN_SERVICE = 'PasswordEpic';
-const KEYCHAIN_OPTIONS = {
-  service: KEYCHAIN_SERVICE,
-  accessControl:
-    Keychain.ACCESS_CONTROL.BIOMETRY_CURRENT_SET_OR_DEVICE_PASSCODE,
-  authenticatePrompt: 'Authenticate to access your passwords',
-  accessGroup:
-    Platform.OS === 'ios' ? 'group.passwordepic.keychain' : undefined,
-  touchID: true,
-  showModal: true,
-  kLocalizedFallbackTitle: 'Use Passcode',
+
+// Get keychain options - lazy load to ensure mocks are ready
+const getKeychainOptions = () => {
+  const accessControl =
+    Keychain.ACCESS_CONTROL?.BIOMETRY_CURRENT_SET_OR_DEVICE_PASSCODE ||
+    'BiometryCurrentSetOrDevicePasscode';
+
+  return {
+    service: KEYCHAIN_SERVICE,
+    accessControl: accessControl,
+    authenticatePrompt: 'Authenticate to access your passwords',
+    accessGroup:
+      Platform.OS === 'ios' ? 'group.passwordepic.keychain' : undefined,
+    touchID: true,
+    showModal: true,
+    kLocalizedFallbackTitle: 'Use Passcode',
+  };
 };
 
 // Storage keys
@@ -50,9 +57,11 @@ export const storeMasterPassword = async (
 
     // Store actual password in secure keychain if biometric is enabled
     if (enableBiometric) {
+      const baseOptions = getKeychainOptions();
       const keychainOptions = {
-        ...KEYCHAIN_OPTIONS,
-        accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_CURRENT_SET,
+        ...baseOptions,
+        accessControl:
+          Keychain.ACCESS_CONTROL?.BIOMETRY_CURRENT_SET || 'BiometryCurrentSet',
       };
 
       await Keychain.setInternetCredentials(
@@ -117,6 +126,11 @@ let biometricSupportCache: { supported: boolean; timestamp: number } | null =
   null;
 const BIOMETRIC_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 const BIOMETRIC_TIMEOUT = 15 * 1000; // 15 seconds timeout
+
+// Reset cache - for testing purposes
+export const _resetBiometricCache = (): void => {
+  biometricSupportCache = null;
+};
 
 // Timeout wrapper for biometric operations
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
@@ -191,7 +205,7 @@ export const getMasterPasswordFromBiometric = async (): Promise<{
     const keychainStart = Date.now();
 
     const credentials = await withTimeout(
-      Keychain.getInternetCredentials(KEYCHAIN_SERVICE, KEYCHAIN_OPTIONS),
+      Keychain.getInternetCredentials(KEYCHAIN_SERVICE, getKeychainOptions()),
       BIOMETRIC_TIMEOUT,
     );
 
@@ -217,7 +231,9 @@ export const getMasterPasswordFromBiometric = async (): Promise<{
 
     let errorMessage = 'Biometric authentication failed';
 
-    if (error.message?.includes('UserCancel')) {
+    if (error.message?.includes('timeout')) {
+      errorMessage = 'Biometric authentication timeout';
+    } else if (error.message?.includes('UserCancel')) {
       errorMessage = 'Authentication was cancelled';
     } else if (error.message?.includes('UserFallback')) {
       errorMessage = 'User chose to enter password manually';
@@ -398,7 +414,7 @@ export const storeBiometricStatus = async (enabled: boolean): Promise<void> => {
     );
   } catch (error) {
     console.error('Failed to store biometric status:', error);
-    throw error;
+    // Silently fail - this is a non-critical operation
   }
 };
 
@@ -501,7 +517,46 @@ export class SecureStorageService {
   public async getBiometricStatus(): Promise<boolean> {
     return getBiometricStatus();
   }
+
+  /**
+   * Stores a generic item in AsyncStorage
+   */
+  public async setItem(key: string, value: string): Promise<void> {
+    try {
+      await AsyncStorage.setItem(key, value);
+    } catch (error) {
+      console.error(`Failed to set item ${key}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Retrieves a generic item from AsyncStorage
+   */
+  public async getItem(key: string): Promise<string | null> {
+    try {
+      return await AsyncStorage.getItem(key);
+    } catch (error) {
+      console.error(`Failed to get item ${key}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Removes a generic item from AsyncStorage
+   */
+  public async removeItem(key: string): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(key);
+    } catch (error) {
+      console.error(`Failed to remove item ${key}:`, error);
+      throw error;
+    }
+  }
 }
+
+// Export singleton instance for use throughout the app
+export const secureStorageService = SecureStorageService.getInstance();
 
 // Storage keys export for external use
 export { STORAGE_KEYS };

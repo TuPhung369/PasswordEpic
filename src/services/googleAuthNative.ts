@@ -271,6 +271,10 @@ export const signInWithGoogleNative = async (): Promise<GoogleAuthResult> => {
     if (userInfoAny.data) {
       idToken = userInfoAny.data.idToken;
       accessToken = userInfoAny.data.accessToken;
+    } else if (userInfoAny.idToken) {
+      // Check for idToken at top level
+      idToken = userInfoAny.idToken;
+      accessToken = userInfoAny.accessToken;
     } else {
       // Fallback: try to get tokens separately
       try {
@@ -388,6 +392,11 @@ export const revokeAccess = async (): Promise<{
       error: error.message || 'Revoke access failed',
     };
   }
+};
+
+// Reset initialization state (for testing purposes only)
+export const __resetInitializationState = (): void => {
+  isGoogleSignInInitialized = false;
 };
 
 // Export Google Sign-In Button component

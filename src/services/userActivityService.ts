@@ -387,3 +387,6 @@ export class UserActivityService {
     this.activityCallbacks.clear();
   }
 }
+
+// Export singleton instance
+export default UserActivityService.getInstance();

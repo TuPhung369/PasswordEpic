@@ -10,6 +10,7 @@ import com.facebook.react.ReactPackage
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.passwordepic.mobile.BuildConfig
+import com.passwordepic.mobile.autofill.AutofillBridgePackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -25,6 +26,9 @@ class MainApplication : Application(), ReactApplication {
               
               // Add File Picker Module
               add(FilePickerPackage())
+              
+              // Add Autofill Bridge Module
+              add(AutofillBridgePackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

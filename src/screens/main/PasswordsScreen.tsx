@@ -27,7 +27,10 @@ import { PasswordEntry as Password } from '../../types/password';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordManagement } from '../../hooks/usePasswordManagement';
 import { getEffectiveMasterPassword } from '../../services/staticMasterPasswordService';
-import { loadPasswordsLazy } from '../../store/slices/passwordsSlice';
+import {
+  loadPasswordsLazy,
+  decryptAllAndPrepareAutofill,
+} from '../../store/slices/passwordsSlice';
 import { restoreSettings as restoreSettingsAction } from '../../store/slices/settingsSlice';
 import PasswordEntryComponent from '../../components/PasswordEntry';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
@@ -197,6 +200,24 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             console.log(
               `✅ [PasswordsScreen] Passwords loaded (load: ${loadDuration}ms, total: ${totalDuration}ms)`,
             );
+
+            // Decrypt all passwords and prepare autofill in background (non-blocking)
+            console.log(
+              '🔄 [PasswordsScreen] Starting background autofill preparation...',
+            );
+            dispatch(decryptAllAndPrepareAutofill(result.password))
+              .unwrap()
+              .then(() =>
+                console.log(
+                  '✅ [PasswordsScreen] Autofill preparation completed',
+                ),
+              )
+              .catch((err: any) =>
+                console.warn(
+                  '⚠️ [PasswordsScreen] Autofill preparation failed:',
+                  err,
+                ),
+              );
           } else {
             // Don't show warning yet - auth might not be ready, try retry first
             console.log(
@@ -212,6 +233,24 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
               console.log(
                 `✅ [PasswordsScreen] Passwords loaded on retry (load: ${loadDuration}ms, total: ${totalDuration}ms)`,
               );
+
+              // Decrypt all passwords and prepare autofill in background (non-blocking)
+              console.log(
+                '🔄 [PasswordsScreen] Starting background autofill preparation on retry...',
+              );
+              dispatch(decryptAllAndPrepareAutofill(retryResult.password))
+                .unwrap()
+                .then(() =>
+                  console.log(
+                    '✅ [PasswordsScreen] Autofill preparation completed on retry',
+                  ),
+                )
+                .catch((err: any) =>
+                  console.warn(
+                    '⚠️ [PasswordsScreen] Autofill preparation failed on retry:',
+                    err,
+                  ),
+                );
             } else {
               // Only show warning if both attempts failed
               console.warn(

@@ -1,6 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.passwordepic.mobile">
 
+    <!-- Package visibility for Android 11+ (required for other apps to see this autofill service) -->
+    <queries>
+        <package android:name="com.android.chrome" />
+        <package android:name="com.google.android.gms" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
@@ -39,6 +49,39 @@
         <intent-filter>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+      </activity>
+
+      <!-- Autofill Service -->
+      <service
+        android:name=".autofill.PasswordEpicAutofillService"
+        android:label="PasswordEpic Autofill"
+        android:permission="android.permission.BIND_AUTOFILL_SERVICE"
+        android:exported="true">
+        <intent-filter>
+          <action android:name="android.service.autofill.AutofillService" />
+        </intent-filter>
+        <meta-data
+          android:name="android.autofill"
+          android:resource="@xml/autofill_service_config" />
+      </service>
+
+      <!-- Autofill Authentication Activity -->
+      <activity
+        android:name=".autofill.AutofillAuthActivity"
+        android:label="Autofill Authentication"
+        android:theme="@android:style/Theme.Translucent.NoTitleBar"
+        android:exported="false" />
+
+      <!-- Autofill Test Activity - for testing autofill service -->
+      <activity
+        android:name=".AutofillTestActivity"
+        android:label="Autofill Test"
+        android:exported="true"
+        android:importantForAutofill="noExcludeDescendants">
+        <intent-filter>
+          <action android:name="android.intent.action.VIEW" />
+          <category android:name="android.intent.category.DEFAULT" />
         </intent-filter>
       </activity>
     </application>

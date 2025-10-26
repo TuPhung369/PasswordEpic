@@ -3,14 +3,20 @@ package com.passwordepic.mobile.autofill
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.IntentSender
+import android.content.IntentFilter
 import android.os.Bundle
+import android.service.autofill.FillResponse
 import android.util.Log
+import android.view.autofill.AutofillId
 import android.view.autofill.AutofillManager
+import android.view.autofill.AutofillValue
+import android.widget.RemoteViews
 import android.widget.Toast
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import com.passwordepic.mobile.R
 import java.util.concurrent.Executor
 
 /**
@@ -41,6 +47,8 @@ class AutofillAuthActivity : FragmentActivity() {
     private var domain: String? = null
     private var packageName: String? = null
     private var credentialCount: Int = 0
+    private var credentialId: String? = null
+    private var credentialIndex: Int = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,8 +59,10 @@ class AutofillAuthActivity : FragmentActivity() {
         domain = intent.getStringExtra(EXTRA_DOMAIN)
         packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME)
         credentialCount = intent.getIntExtra(EXTRA_CREDENTIAL_COUNT, 0)
+        credentialId = intent.getStringExtra("credentialId")
+        credentialIndex = intent.getIntExtra("credentialIndex", -1)
 
-        Log.d(TAG, "Domain: $domain, Package: $packageName, Credentials: $credentialCount")
+        Log.d(TAG, "Domain: $domain, Package: $packageName, Credentials: $credentialCount, CredentialId: $credentialId")
 
         // Check if biometric authentication is available
         val biometricManager = BiometricManager.from(this)
@@ -166,7 +176,7 @@ class AutofillAuthActivity : FragmentActivity() {
 
         try {
             // Get credentials from data provider
-            val dataProvider = AutofillDataProvider()
+            val dataProvider = AutofillDataProvider(this)
             val credentials = dataProvider.getCredentialsForDomain(
                 domain ?: "",
                 packageName ?: ""
@@ -194,6 +204,8 @@ class AutofillAuthActivity : FragmentActivity() {
         }
     }
 
+
+
     /**
      * Shows credential selection UI
      * 
@@ -209,27 +221,34 @@ class AutofillAuthActivity : FragmentActivity() {
 
     /**
      * Delivers the selected credential back to the autofill service
+     * Caches the credential and finishes activity to trigger autofill again
      * 
      * @param credential The credential to deliver
      */
     private fun deliverCredential(credential: AutofillCredential) {
-        Log.d(TAG, "Delivering credential: ${credential.username}")
+        Log.d(TAG, "🔐 Delivering credential: ${credential.username}")
 
         try {
-            // Create the autofill response
-            val replyIntent = Intent().apply {
-                // Add credential data
+            // Cache the authenticated credential in the service
+            // When autofill is requested again, the service will use this cached credential
+            PasswordEpicAutofillService.setAuthenticatedCredential(credential.id, credential)
+            Log.d(TAG, "✅ Credential cached in service: ${credential.id}")
+            
+            // Set result for the activity
+            val resultIntent = Intent().apply {
                 putExtra("credential_id", credential.id)
                 putExtra("username", credential.username)
-                putExtra("password", credential.password)
                 putExtra("domain", credential.domain)
             }
-
-            setResult(RESULT_OK, replyIntent)
+            setResult(RESULT_OK, resultIntent)
+            
+            Log.d(TAG, "✅ Finishing auth activity with RESULT_OK")
+            // When this activity finishes, the autofill system will automatically
+            // request autofill again from the original view/field
             finish()
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error delivering credential", e)
+            Log.e(TAG, "❌ Error delivering credential", e)
             setResultAndFinish(RESULT_CANCELED)
         }
     }

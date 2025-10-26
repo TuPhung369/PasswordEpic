@@ -149,12 +149,20 @@ class ViewNodeParser {
         // Method 1: Check autofill hints (most reliable)
         val hintsType = AutofillHelper.getFieldTypeFromHints(node.autofillHints)
         if (hintsType != FieldType.OTHER) {
+            Log.d(TAG, "✅ Field classified as $hintsType from autofill hints: ${node.autofillHints?.joinToString()}")
             return hintsType
         }
 
-        // Method 2: Check input type for password fields
+        // Method 2: Check native Android input type (email first to avoid overlap with PASSWORD!)
         val inputType = node.inputType
+        // Check EMAIL FIRST - EMAIL check must come before PASSWORD to avoid misclassification
+        // because TYPE_TEXT_VARIATION_WEB_PASSWORD (0xe0) can match EMAIL fields (0x21)
+        if (AutofillHelper.isEmailInputType(inputType)) {
+            Log.d(TAG, "✅ Field classified as EMAIL from native input type (0x${inputType.toString(16)})")
+            return FieldType.EMAIL
+        }
         if (AutofillHelper.isPasswordInputType(inputType)) {
+            Log.d(TAG, "✅ Field classified as PASSWORD from native input type (0x${inputType.toString(16)})")
             return FieldType.PASSWORD
         }
 
@@ -167,6 +175,7 @@ class ViewNodeParser {
 
             val htmlType = AutofillHelper.getFieldTypeFromInputType(htmlInputType)
             if (htmlType != FieldType.OTHER) {
+                Log.d(TAG, "✅ Field classified as $htmlType from HTML input type: $htmlInputType")
                 return htmlType
             }
         }
@@ -174,21 +183,25 @@ class ViewNodeParser {
         // Method 4: Check resource ID entry name
         val idType = AutofillHelper.getFieldTypeFromId(node.idEntry)
         if (idType != FieldType.OTHER) {
+            Log.d(TAG, "✅ Field classified as $idType from resource ID: ${node.idEntry}")
             return idType
         }
 
         // Method 5: Check hint text
         val hintType = AutofillHelper.getFieldTypeFromId(node.hint)
         if (hintType != FieldType.OTHER) {
+            Log.d(TAG, "✅ Field classified as $hintType from hint text: ${node.hint}")
             return hintType
         }
 
         // Method 6: Check text content (for labels)
         val textType = AutofillHelper.getFieldTypeFromId(node.text?.toString())
         if (textType != FieldType.OTHER) {
+            Log.d(TAG, "✅ Field classified as $textType from text content: ${node.text}")
             return textType
         }
 
+        Log.d(TAG, "⚠️ Field classification failed - defaulting to OTHER (ID: ${node.idEntry}, InputType: 0x${inputType.toString(16)})")
         return FieldType.OTHER
     }
 

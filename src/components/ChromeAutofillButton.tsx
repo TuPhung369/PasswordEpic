@@ -1,174 +1,294 @@
 /**
  * Chrome Autofill Button Component
  *
- * Interactive button for triggering Chrome WebView autofill.
- * Shows when form is detected and credentials are available.
+ * Displays a button to trigger Chrome WebView autofill functionality.
+ * Handles form detection, credential selection, and biometric authentication.
+ *
+ * Usage:
+ * ```tsx
+ * <ChromeAutofillButton
+ *   credentials={credentials}
+ *   onSuccess={() => navigation.goBack()}
+ *   onError={(error) => showError(error)}
+ * />
+ * ```
  *
  * @author PasswordEpic Team
  * @since Week 10 - Chrome Integration Phase
  */
 
-import React, { useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Pressable,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
   View,
-  AccessibilityInfo,
+  TouchableOpacity,
+  ActivityIndicator,
+  StyleSheet,
+  Platform,
+  Alert,
+  Text,
 } from 'react-native';
 import { useChromeAutoFill } from '../hooks/useChromeAutoFill';
+import { chromeAutoFillService } from '../services/chromeAutoFillService';
 import type { AutofillCredential } from '../services/autofillService';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 
 export interface ChromeAutofillButtonProps {
-  credentials?: AutofillCredential[];
-  domain?: string;
-  currentUrl?: string;
+  credentials: AutofillCredential[];
   onSuccess?: () => void;
   onError?: (error: string) => void;
-  visible?: boolean;
-  variant?: 'primary' | 'secondary' | 'outline';
-  size?: 'small' | 'medium' | 'large';
-  disabled?: boolean;
-  biometricRequired?: boolean;
   style?: any;
-  testID?: string;
+  textColor?: string;
+  backgroundColor?: string;
+  size?: 'small' | 'medium' | 'large';
+  showLabel?: boolean;
+  biometricRequired?: boolean;
 }
 
+/**
+ * Chrome Autofill Button Component
+ */
 export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
   credentials,
-  domain,
-  currentUrl,
   onSuccess,
   onError,
-  visible = true,
-  variant = 'primary',
-  size = 'medium',
-  disabled = false,
-  biometricRequired = true,
   style,
-  testID,
+  textColor = '#FFFFFF',
+  backgroundColor = '#1E90FF',
+  size = 'medium',
+  showLabel = true,
+  biometricRequired = true,
 }) => {
+  const [showCredentialPicker, setShowCredentialPicker] = useState(false);
+  const [selectedCredential, setSelectedCredential] =
+    useState<AutofillCredential | null>(null);
+  const [detectedForms, setDetectedForms] = useState(0);
+
   const {
+    isSupported,
     isAvailable,
+    isLoading,
     isInjecting,
-    formDetected,
+    isDetecting,
     error,
+    formDetected,
     injectCredentials,
-    autoFillCurrentPage,
+    detectForm,
     resetError,
   } = useChromeAutoFill(credentials, {
+    autoDetect: true,
     biometricRequired,
     onSuccess,
     onError,
   });
 
-  const handlePress = useCallback(async () => {
+  // Detect forms on mount
+  useEffect(() => {
+    if (isAvailable) {
+      detectForms();
+    }
+  }, [isAvailable]);
+
+  // Detect forms and count them
+  const detectForms = async () => {
+    try {
+      const result = await chromeAutoFillService.detectAllForms();
+      if (result.success) {
+        setDetectedForms(result.formCount);
+        console.log(`✅ Detected ${result.formCount} forms on page`);
+      }
+    } catch (error) {
+      console.warn('Error detecting forms:', error);
+    }
+  };
+
+  // Handle autofill button press
+  const handleAutofill = async () => {
     resetError();
 
+    // Check if Chrome injection is available
     if (!isAvailable) {
-      onError?.('Chrome autofill not available');
+      Alert.alert(
+        'Not Available',
+        'Chrome autofill is not available on this device. This feature requires Android 8.0+.',
+      );
       return;
     }
 
-    if (currentUrl && currentUrl.startsWith('http')) {
-      // Use auto-fill with URL detection
-      await autoFillCurrentPage(currentUrl);
-    } else if (domain && credentials && credentials.length > 0) {
-      // Use manual injection with specific domain
-      const credential = credentials.find(
-        c => c.domain === domain || domain.includes(c.domain),
-      );
-
-      if (credential) {
-        const result = await injectCredentials({
-          domain: credential.domain,
-          username: credential.username,
-          password: credential.password,
-        });
-
-        if (!result) {
-          onError?.('Failed to inject credentials');
-        }
-      } else {
-        onError?.(`No credentials found for ${domain}`);
-      }
-    } else {
-      onError?.('Missing domain or credentials');
+    // Check if we have credentials
+    if (!credentials || credentials.length === 0) {
+      Alert.alert('No Credentials', 'Please add a password first.');
+      return;
     }
-  }, [
-    isAvailable,
-    currentUrl,
-    domain,
-    credentials,
-    autoFillCurrentPage,
-    injectCredentials,
-    onError,
-    resetError,
-  ]);
 
-  if (!visible || !isAvailable || !formDetected) {
+    // If only one credential, use it directly
+    if (credentials.length === 1) {
+      await performAutofill(credentials[0]);
+      return;
+    }
+
+    // Show credential picker if multiple credentials
+    setShowCredentialPicker(true);
+  };
+
+  // Perform autofill with selected credential
+  const performAutofill = async (credential: AutofillCredential) => {
+    try {
+      setShowCredentialPicker(false);
+
+      // Check if current page is HTTPS
+      const isHttps = await chromeAutoFillService.isCurrentPageHttps();
+      if (!isHttps) {
+        Alert.alert(
+          'Insecure Connection',
+          'Autofill only works on HTTPS pages for security reasons.',
+        );
+        return;
+      }
+
+      console.log(`🔐 Injecting credentials for domain: ${credential.domain}`);
+
+      // Perform injection
+      const success = await injectCredentials({
+        domain: credential.domain,
+        username: credential.username,
+        password: credential.password,
+      });
+
+      if (success) {
+        Alert.alert('Success', `Credentials injected for ${credential.domain}`);
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Autofill error:', err);
+      Alert.alert('Error', errorMsg);
+    }
+  };
+
+  // Get button size styles
+  const getButtonSize = () => {
+    const sizes = {
+      small: { width: 40, height: 40, fontSize: 14 },
+      medium: { width: 50, height: 50, fontSize: 16 },
+      large: { width: 60, height: 60, fontSize: 18 },
+    };
+    return sizes[size];
+  };
+
+  const buttonSize = getButtonSize();
+  const isLoaded = !isLoading;
+  const isReady = isAvailable && isLoaded && formDetected;
+
+  // Don't render on non-Android platforms
+  if (Platform.OS !== 'android') {
     return null;
   }
 
-  const isDisabled = disabled || isInjecting || !isAvailable || !formDetected;
-
   return (
     <View style={[styles.container, style]}>
-      <Pressable
-        style={({ pressed }) => [
+      {/* Main Autofill Button */}
+      <TouchableOpacity
+        style={[
           styles.button,
-          styles[`button_${variant}`],
-          styles[`button_${size}`],
-          isDisabled && styles.buttonDisabled,
-          pressed && !isDisabled && styles.buttonPressed,
+          {
+            width: buttonSize.width,
+            height: buttonSize.height,
+            backgroundColor,
+          },
+          !isReady && styles.buttonDisabled,
         ]}
-        onPress={handlePress}
-        disabled={isDisabled}
-        testID={testID || 'chrome-autofill-button'}
-        accessible
-        accessibilityLabel="Autofill credentials"
-        accessibilityHint="Tap to autofill the login form with saved credentials"
-        accessibilityRole="button"
-        accessibilityState={{ disabled: isDisabled, busy: isInjecting }}
+        onPress={handleAutofill}
+        disabled={!isReady || isInjecting || isDetecting}
+        activeOpacity={0.7}
       >
         {isInjecting ? (
-          <>
-            <ActivityIndicator
-              size="small"
-              color={variant === 'primary' ? '#FFF' : '#4CAF50'}
-              style={styles.activityIndicator}
-            />
-            <Text
-              style={[
-                styles.buttonText,
-                styles[`buttonText_${variant}`],
-                styles[`buttonText_${size}`],
-              ]}
-            >
-              Filling...
-            </Text>
-          </>
+          <ActivityIndicator size="small" color={textColor} />
         ) : (
           <>
-            <Text style={styles.buttonEmoji}>🔓</Text>
-            <Text
-              style={[
-                styles.buttonText,
-                styles[`buttonText_${variant}`],
-                styles[`buttonText_${size}`],
-              ]}
-            >
-              Autofill
-            </Text>
+            <Icon
+              name="security"
+              size={buttonSize.fontSize}
+              color={textColor}
+              style={styles.icon}
+            />
+            {showLabel && (
+              <Text style={[styles.label, { color: textColor, fontSize: 10 }]}>
+                Autofill
+              </Text>
+            )}
           </>
         )}
-      </Pressable>
+      </TouchableOpacity>
 
+      {/* Status Indicator */}
+      {isAvailable && formDetected && (
+        <View style={styles.statusBadge}>
+          <View style={styles.statusDot} />
+          <Text style={styles.statusText}>
+            {detectedForms > 0
+              ? `${detectedForms} form${detectedForms > 1 ? 's' : ''}`
+              : 'Ready'}
+          </Text>
+        </View>
+      )}
+
+      {/* Error Message */}
       {error && (
-        <Text style={styles.errorText} numberOfLines={2}>
-          {error}
-        </Text>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity onPress={resetError}>
+            <Text style={styles.errorDismiss}>Dismiss</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Credential Picker Modal */}
+      {showCredentialPicker && credentials.length > 0 && (
+        <View style={styles.credentialPickerContainer}>
+          <View style={styles.credentialPicker}>
+            <Text style={styles.pickerTitle}>Select Credential</Text>
+
+            {credentials.map((cred, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.credentialOption}
+                onPress={() => performAutofill(cred)}
+              >
+                <View style={styles.credentialInfo}>
+                  <Text style={styles.credentialDomain}>{cred.domain}</Text>
+                  <Text style={styles.credentialUsername}>{cred.username}</Text>
+                </View>
+                <Icon name="arrow-forward" size={20} color="#1E90FF" />
+              </TouchableOpacity>
+            ))}
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setShowCredentialPicker(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Loading State */}
+      {isLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={backgroundColor} />
+          <Text style={styles.loadingText}>
+            Initializing Chrome Autofill...
+          </Text>
+        </View>
+      )}
+
+      {/* Not Supported Message */}
+      {!isSupported && (
+        <View style={styles.notSupportedContainer}>
+          <Icon name="info" size={24} color="#FF6B6B" />
+          <Text style={styles.notSupportedText}>
+            Chrome autofill requires Android 8.0+
+          </Text>
+        </View>
       )}
     </View>
   );
@@ -176,73 +296,153 @@ export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: 8,
-    gap: 6,
-  },
-  button: {
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
   },
-  button_small: {
-    paddingVertical: 8,
-  },
-  button_medium: {
-    paddingVertical: 12,
-  },
-  button_large: {
-    paddingVertical: 16,
-  },
-  button_primary: {
-    backgroundColor: '#4CAF50',
-  },
-  button_secondary: {
-    backgroundColor: '#2196F3',
-  },
-  button_outline: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#4CAF50',
-  },
-  buttonPressed: {
-    opacity: 0.8,
+  button: {
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
   },
   buttonDisabled: {
     opacity: 0.5,
   },
-  buttonText: {
-    fontWeight: '600',
+  icon: {
+    marginBottom: 2,
   },
-  buttonText_small: {
+  label: {
+    marginTop: 2,
+    fontWeight: 'bold',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#E8F5E9',
+    borderRadius: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#4CAF50',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4CAF50',
+    marginRight: 6,
+  },
+  statusText: {
     fontSize: 12,
+    color: '#2E7D32',
+    fontWeight: '500',
   },
-  buttonText_medium: {
-    fontSize: 14,
-  },
-  buttonText_large: {
-    fontSize: 16,
-  },
-  buttonText_primary: {
-    color: '#FFF',
-  },
-  buttonText_secondary: {
-    color: '#FFF',
-  },
-  buttonText_outline: {
-    color: '#4CAF50',
-  },
-  buttonEmoji: {
-    fontSize: 16,
-  },
-  activityIndicator: {
-    marginRight: 4,
+  errorContainer: {
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#FFEBEE',
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#FF6B6B',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   errorText: {
     fontSize: 12,
-    color: '#D32F2F',
-    paddingHorizontal: 4,
+    color: '#C62828',
+    flex: 1,
+  },
+  errorDismiss: {
+    fontSize: 12,
+    color: '#1E90FF',
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  credentialPickerContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  credentialPicker: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    width: '80%',
+    maxHeight: '70%',
+  },
+  pickerTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+  },
+  credentialOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+    justifyContent: 'space-between',
+  },
+  credentialInfo: {
+    flex: 1,
+  },
+  credentialDomain: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 2,
+  },
+  credentialUsername: {
+    fontSize: 12,
+    color: '#666',
+  },
+  cancelButton: {
+    marginTop: 12,
+    paddingVertical: 10,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  loadingContainer: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#666',
+  },
+  notSupportedContainer: {
+    marginTop: 16,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  notSupportedText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#FF6B6B',
+    textAlign: 'center',
   },
 });
+
+export default ChromeAutofillButton;

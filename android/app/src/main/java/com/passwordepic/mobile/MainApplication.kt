@@ -29,6 +29,9 @@ class MainApplication : Application(), ReactApplication {
               
               // Add Autofill Bridge Module
               add(AutofillBridgePackage())
+              
+              // Add Launch Test Activity Module
+              add(LaunchTestActivityPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

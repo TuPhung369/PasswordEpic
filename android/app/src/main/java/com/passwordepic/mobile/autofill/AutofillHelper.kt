@@ -153,6 +153,19 @@ object AutofillHelper {
     }
 
     /**
+     * Checks if a field is likely an email field based on input type
+     * 
+     * @param inputType Android input type flags
+     * @return true if likely an email field
+     */
+    fun isEmailInputType(inputType: Int): Boolean {
+        val TYPE_TEXT_VARIATION_EMAIL_ADDRESS = 0x00000020
+        // Note: TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS doesn't exist in standard Android
+        // Only check EMAIL_ADDRESS variation
+        return (inputType and TYPE_TEXT_VARIATION_EMAIL_ADDRESS) != 0
+    }
+
+    /**
      * Extracts domain from a URL
      * 
      * @param url The full URL

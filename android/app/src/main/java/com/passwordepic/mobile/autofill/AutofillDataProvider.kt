@@ -46,11 +46,14 @@ class AutofillDataProvider(private val context: Context? = null) {
         try {
             // If context is available, try to get real credentials from SharedPreferences
             if (context != null) {
-                val credentials = getCredentialsFromSharedPreferences(domain)
+                Log.d(TAG, "✅ Context is available - attempting to read from SharedPreferences")
+                val credentials = getCredentialsFromSharedPreferences(domain, packageName)
                 Log.d(TAG, "📦 Retrieved ${credentials.size} credentials from SharedPreferences for domain: '$domain'")
                 if (credentials.isNotEmpty()) {
                     Log.d(TAG, "✅ Returning ${credentials.size} real credentials from SharedPreferences")
                     return credentials
+                } else {
+                    Log.d(TAG, "⚠️ SharedPreferences exists but returned 0 credentials")
                 }
             } else {
                 Log.w(TAG, "⚠️ Context is null - cannot access SharedPreferences!")
@@ -63,6 +66,7 @@ class AutofillDataProvider(private val context: Context? = null) {
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error getting credentials", e)
+            e.printStackTrace()
             return emptyList()
         }
     }
@@ -71,21 +75,36 @@ class AutofillDataProvider(private val context: Context? = null) {
      * Retrieves credentials from SharedPreferences
      * 
      * @param domain The domain to match
+     * @param packageName The package name (for debug matching)
      * @return List of matching credentials
      */
-    private fun getCredentialsFromSharedPreferences(domain: String): List<AutofillCredential> {
-        if (context == null) return emptyList()
+    private fun getCredentialsFromSharedPreferences(domain: String, packageName: String = ""): List<AutofillCredential> {
+        if (context == null) {
+            Log.e(TAG, "❌ CRITICAL: Context is null in AutofillDataProvider!")
+            return emptyList()
+        }
 
         try {
+            Log.d(TAG, "🔓 Accessing SharedPreferences with name: '$PREFS_NAME'")
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            
+            // List all keys in SharedPreferences for debugging
+            val allKeys = prefs.all.keys
+            Log.d(TAG, "🔑 All keys in SharedPreferences: ${allKeys.joinToString(", ")}")
+            Log.d(TAG, "🔑 Number of keys: ${allKeys.size}")
+            
             val credentialsJson = prefs.getString(CREDENTIALS_KEY, null)
             
             if (credentialsJson.isNullOrEmpty()) {
-                Log.w(TAG, "⚠️ No credentials stored in SharedPreferences for domain: $domain")
+                Log.w(TAG, "⚠️ No credentials stored in SharedPreferences (key: '$CREDENTIALS_KEY')")
+                Log.w(TAG, "💡 Available keys: ${allKeys.joinToString(", ")}")
+                Log.w(TAG, "💡 Looking for domain: '$domain', packageName: '$packageName'")
                 return emptyList()
             }
 
             Log.d(TAG, "✅ Found credentials in SharedPreferences")
+            Log.d(TAG, "📋 Credentials JSON length: ${credentialsJson.length} characters")
+            Log.d(TAG, "📋 JSON preview: ${credentialsJson.substring(0, minOf(150, credentialsJson.length))}...")
             
             // Parse and filter credentials
             val allCredentials = JSONArray(credentialsJson)
@@ -97,21 +116,26 @@ class AutofillDataProvider(private val context: Context? = null) {
                 val credential = allCredentials.getJSONObject(i)
                 val credDomain = credential.optString("domain", "")
                 val username = credential.optString("username", "")
+                val password = credential.optString("password", "")
                 
-                Log.d(TAG, "🔍 Checking credential: domain='$credDomain', username='$username'")
+                Log.d(TAG, "🔍 [${i+1}/${allCredentials.length()}] Credential:")
+                Log.d(TAG, "   domain='$credDomain'")
+                Log.d(TAG, "   username='$username'")
+                Log.d(TAG, "   password='${if (password.length > 20) password.substring(0, 20) + "..." else password}'")
+                Log.d(TAG, "   Requested domain='$domain'")
                 
                 if (domainsMatch(credDomain, domain)) {
-                    Log.d(TAG, "✅ MATCH FOUND! domain='$credDomain' matches '$domain'")
+                    Log.d(TAG, "✅ MATCH FOUND! credential domain='$credDomain' matches requested='$domain'")
                     matchingCredentials.add(
                         AutofillCredential(
                             id = credential.optString("id", ""),
                             username = username,
-                            password = credential.optString("password", ""),
+                            password = password,
                             domain = credDomain
                         )
                     )
                 } else {
-                    Log.d(TAG, "❌ NO MATCH: domain='$credDomain' does NOT match '$domain'")
+                    Log.d(TAG, "❌ NO MATCH: credential domain='$credDomain' does NOT match requested='$domain'")
                 }
             }
 
@@ -120,6 +144,9 @@ class AutofillDataProvider(private val context: Context? = null) {
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error retrieving credentials from SharedPreferences", e)
+            Log.e(TAG, "Exception message: ${e.message}")
+            Log.e(TAG, "Stack trace:")
+            e.printStackTrace()
             return emptyList()
         }
     }
@@ -249,16 +276,50 @@ class AutofillDataProvider(private val context: Context? = null) {
 
     /**
      * Check if two domains match
+     * Supports exact match, subdomain match, and package name match
      */
     private fun domainsMatch(domain1: String, domain2: String): Boolean {
         val normalized1 = normalizeDomain(domain1)
         val normalized2 = normalizeDomain(domain2)
         
-        Log.d(TAG, "Comparing domains: '$normalized1' vs '$normalized2'")
+        Log.d(TAG, "🔍 Comparing normalized domains: '$normalized1' vs '$normalized2'")
         
-        return normalized1 == normalized2 || 
-               normalized1.endsWith(".$normalized2") || 
-               normalized2.endsWith(".$normalized1")
+        // Exact match
+        if (normalized1 == normalized2) {
+            Log.d(TAG, "✅ EXACT MATCH: '$normalized1' == '$normalized2'")
+            return true
+        }
+        
+        // Subdomain match
+        if (normalized1.endsWith(".$normalized2") || normalized2.endsWith(".$normalized1")) {
+            Log.d(TAG, "✅ SUBDOMAIN MATCH: '$normalized1' contains or is contained in '$normalized2'")
+            return true
+        }
+        
+        // Special case: PasswordEpic app credentials
+        // Match "com.passwordepic.com" with "com.passwordepic.mobile" and vice versa
+        if ((normalized1.contains("com.passwordepic") && normalized2.contains("com.passwordepic")) &&
+            (normalized1 == "com.passwordepic.com" || normalized1 == "com.passwordepic.mobile") &&
+            (normalized2 == "com.passwordepic.com" || normalized2 == "com.passwordepic.mobile")) {
+            Log.d(TAG, "✅ PASSWORDEPIC APP MATCH: Both are PasswordEpic credentials (com.passwordepic.com or .mobile)")
+            return true
+        }
+        
+        // For package names like "com.passwordepic.mobile", also try matching the last part
+        val parts1 = normalized1.split(".")
+        val parts2 = normalized2.split(".")
+        
+        if (parts1.size >= 2 && parts2.size >= 2) {
+            // If both are package names and last part matches, consider it a match
+            if (parts1[parts1.size - 1] == parts2[parts2.size - 1] && 
+                parts1[parts1.size - 2] == parts2[parts2.size - 2]) {
+                Log.d(TAG, "✅ PACKAGE NAME MATCH: Last two parts match")
+                return true
+            }
+        }
+        
+        Log.d(TAG, "❌ NO MATCH between '$normalized1' and '$normalized2'")
+        return false
     }
 
     /**
@@ -266,6 +327,7 @@ class AutofillDataProvider(private val context: Context? = null) {
      */
     private fun normalizeDomain(domain: String): String {
         return domain.lowercase()
+            .trim()
             .removePrefix("http://")
             .removePrefix("https://")
             .removePrefix("www.")

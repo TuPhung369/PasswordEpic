@@ -16,7 +16,7 @@
  * @since Week 10 - Chrome Integration Phase
  */
 
-import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
+import { NativeModules, Platform, NativeAppEventEmitter } from 'react-native';
 import { domainVerificationService } from './domainVerificationService';
 import type { AutofillCredential } from './autofillService';
 
@@ -30,6 +30,12 @@ interface ChromeInjectBridgeModule {
     domain: string,
   ): Promise<InjectionResult>;
   clearInjectedContent(): Promise<{ success: boolean }>;
+  getCurrentPageUrl(): Promise<string>;
+  getCurrentPageTitle(): Promise<{
+    success: boolean;
+    title: string;
+    url: string;
+  }>;
 }
 
 // TypeScript interfaces
@@ -103,40 +109,48 @@ const ChromeInjectBridgeModule: ChromeInjectBridgeModule =
       error: 'Module not available',
     }),
     clearInjectedContent: async () => ({ success: false }),
+    getCurrentPageUrl: async () => '',
+    getCurrentPageTitle: async () => ({
+      success: false,
+      title: '',
+      url: '',
+    }),
   };
 
 class ChromeAutoFillService {
-  private eventEmitter: NativeEventEmitter | null = null;
   private detectionCache: Map<string, DetectionResult> = new Map();
   private cacheTTL = 5000; // 5 seconds
 
   constructor() {
     if (Platform.OS === 'android') {
       try {
-        this.eventEmitter = new NativeEventEmitter(
-          ChromeInjectBridgeModule as any,
-        );
         this.setupEventListeners();
       } catch (e) {
-        console.warn('ChromeInjectBridge not available:', e);
+        console.warn('ChromeInjectBridge event setup failed:', e);
       }
     }
   }
 
   private setupEventListeners() {
-    if (!this.eventEmitter) return;
+    try {
+      // Use NativeAppEventEmitter which is compatible with DeviceEventManager from native
+      NativeAppEventEmitter.addListener('onFormDetected', (event: any) => {
+        console.log('✅ [Native Event] Login form detected:', event);
+      });
 
-    this.eventEmitter.addListener('onFormDetected', event => {
-      console.log('✅ Login form detected:', event);
-    });
+      NativeAppEventEmitter.addListener('onInjectionSuccess', (event: any) => {
+        console.log(
+          '✅ [Native Event] Credentials injected successfully:',
+          event,
+        );
+      });
 
-    this.eventEmitter.addListener('onInjectionSuccess', event => {
-      console.log('✅ Credentials injected successfully:', event);
-    });
-
-    this.eventEmitter.addListener('onInjectionFailed', event => {
-      console.warn('❌ Injection failed:', event);
-    });
+      NativeAppEventEmitter.addListener('onInjectionFailed', (event: any) => {
+        console.warn('❌ [Native Event] Injection failed:', event);
+      });
+    } catch (e) {
+      console.warn('Failed to setup native event listeners:', e);
+    }
   }
 
   /**
@@ -237,6 +251,10 @@ class ChromeAutoFillService {
     try {
       const { domain, username, password, onSuccess, onError } = options;
 
+      console.log('🚀 [JS] injectCredentials called');
+      console.log(`  📧 Username: ${username}`);
+      console.log(`  🔐 Domain: ${domain}`);
+
       // Validate inputs
       if (!domain || !username || !password) {
         throw new Error(
@@ -253,7 +271,9 @@ class ChromeAutoFillService {
         return false;
       }
 
-      console.log(`📱 Injecting credentials for domain: ${domain}`);
+      console.log(
+        `📱 Calling native module: ChromeInjectBridge.injectCredentials()`,
+      );
 
       if (Platform.OS !== 'android') {
         onError?.('Chrome injection only supported on Android');
@@ -261,14 +281,17 @@ class ChromeAutoFillService {
       }
 
       // Perform injection
+      console.log('⏳ Waiting for native response...');
       const result = await ChromeInjectBridgeModule.injectCredentials(
         username,
         password,
         domain,
       );
 
+      console.log('📤 Native response:', result);
+
       if (result.success) {
-        console.log('✅ Credentials injected successfully');
+        console.log('✅✅✅ Credentials injected successfully!');
         onSuccess?.();
         return true;
       } else {
@@ -280,6 +303,7 @@ class ChromeAutoFillService {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error('❌ Error injecting credentials:', errorMsg);
+      console.error('   Stack:', error instanceof Error ? error.stack : '');
       options.onError?.(errorMsg);
       return false;
     }
@@ -375,16 +399,44 @@ class ChromeAutoFillService {
   }
 
   /**
-   * Gets the current page URL (requires platform-specific implementation)
+   * Gets the current page URL from WebView
    */
   async getCurrentPageUrl(): Promise<string> {
     try {
-      // This would need platform-specific implementation
-      // For now, return empty string
-      return '';
+      if (Platform.OS !== 'android') {
+        return '';
+      }
+
+      const url = await ChromeInjectBridgeModule.getCurrentPageUrl();
+      console.log('📱 Current page URL:', url);
+      return url;
     } catch (error) {
       console.error('Error getting current page URL:', error);
       return '';
+    }
+  }
+
+  /**
+   * Gets the current page title and URL
+   */
+  async getCurrentPageTitle(): Promise<{ title: string; url: string } | null> {
+    try {
+      if (Platform.OS !== 'android') {
+        return null;
+      }
+
+      const result = await ChromeInjectBridgeModule.getCurrentPageTitle();
+      if (result.success) {
+        console.log('📱 Current page title:', result.title);
+        return {
+          title: result.title,
+          url: result.url,
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting current page title:', error);
+      return null;
     }
   }
 
@@ -407,7 +459,9 @@ class ChromeAutoFillService {
   destroy() {
     try {
       if (this.eventEmitter) {
-        this.eventEmitter.removeAllListeners();
+        this.eventEmitter.removeAllListeners('onFormDetected');
+        this.eventEmitter.removeAllListeners('onInjectionSuccess');
+        this.eventEmitter.removeAllListeners('onInjectionFailed');
       }
       this.detectionCache.clear();
     } catch (error) {

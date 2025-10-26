@@ -61,6 +61,8 @@ import {
 import { encryptedDatabase } from '../../services/encryptedDatabaseService';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
+import { ChromeAutofillButton } from '../../components/ChromeAutofillButton';
+import type { AutofillCredential } from '../../services/autofillService';
 
 // Define local types for PasswordsScreen string-based filtering
 type SortOption =
@@ -106,6 +108,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   const [selectedPasswords, setSelectedPasswords] = useState<string[]>([]);
   const [bulkMode, setBulkMode] = useState(false);
   const [isLoadingPasswords, setIsLoadingPasswords] = useState(false);
+  const [showChromeAutofill, setShowChromeAutofill] = useState(false);
 
   // Toast state
   const [showToast, setShowToast] = useState(false);
@@ -2083,6 +2086,56 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
       {/* Confirm Dialog */}
       <ConfirmDialog {...confirmDialog} onCancel={hideConfirm} />
+
+      {/* Chrome Autofill Floating Button */}
+      {showChromeAutofill && passwords.length > 0 && (
+        <View style={styles.chromeAutofillContainer}>
+          <ChromeAutofillButton
+            credentials={passwords.map(
+              p =>
+                ({
+                  domain: p.domain || 'Unknown',
+                  username: p.username || '',
+                  password: p.password || '',
+                } as AutofillCredential),
+            )}
+            onSuccess={() => {
+              setShowChromeAutofill(false);
+              setToastMessage('✅ Credentials injected successfully!');
+              setToastType('success');
+              setShowToast(true);
+            }}
+            onError={error => {
+              setToastMessage(`❌ Autofill error: ${error}`);
+              setToastType('error');
+              setShowToast(true);
+            }}
+            size="large"
+            showLabel={true}
+          />
+        </View>
+      )}
+
+      {/* Chrome Autofill Toggle Button */}
+      {passwords.length > 0 && (
+        <TouchableOpacity
+          style={[
+            styles.chromeToggleButton,
+            {
+              backgroundColor: showChromeAutofill
+                ? theme.primary
+                : theme.surface,
+            },
+          ]}
+          onPress={() => setShowChromeAutofill(!showChromeAutofill)}
+        >
+          <Ionicons
+            name="phone-portrait-outline"
+            size={24}
+            color={showChromeAutofill ? '#FFFFFF' : theme.primary}
+          />
+        </TouchableOpacity>
+      )}
     </SafeAreaView>
   );
 };
@@ -2346,5 +2399,27 @@ const styles = StyleSheet.create({
   },
   importButtonLoading: {
     opacity: 0.6,
+  },
+  chromeToggleButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  chromeAutofillContainer: {
+    position: 'absolute',
+    bottom: 85,
+    right: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

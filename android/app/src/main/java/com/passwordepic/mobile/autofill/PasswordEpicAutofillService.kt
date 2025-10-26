@@ -29,6 +29,25 @@ class PasswordEpicAutofillService : AutofillService() {
     companion object {
         private const val TAG = "PasswordEpicAutofill"
         private const val AUTHENTICATION_REQUEST_CODE = 1001
+        
+        // DEBUG MODE: When true, bypass auth and fill directly (for testing)
+        private const val DEBUG_MODE = true  // ⚠️ SET TO FALSE IN PRODUCTION
+        
+        private val authenticatedCredentials = mutableMapOf<String, AutofillCredential>()
+        
+        fun setAuthenticatedCredential(credentialId: String, credential: AutofillCredential) {
+            authenticatedCredentials[credentialId] = credential
+            Log.d(TAG, "✅ Authenticated credential cached: $credentialId")
+        }
+        
+        fun getAuthenticatedCredential(credentialId: String): AutofillCredential? {
+            val credential = authenticatedCredentials[credentialId]
+            if (credential != null) {
+                authenticatedCredentials.remove(credentialId)
+                Log.d(TAG, "✅ Retrieved authenticated credential: $credentialId")
+            }
+            return credential
+        }
     }
 
     private val viewNodeParser = ViewNodeParser()
@@ -68,8 +87,10 @@ class PasswordEpicAutofillService : AutofillService() {
         cancellationSignal: CancellationSignal,
         callback: FillCallback
     ) {
+        Log.d(TAG, "┌─────────────────────────────────────────────")
         Log.d(TAG, "📥 onFillRequest: Autofill request received")
         Log.d(TAG, "📦 FillContexts count: ${request.fillContexts.size}")
+        Log.d(TAG, "🔐 Cached credentials count: ${authenticatedCredentials.size}")
 
         try {
             // Extract the view structure from the request
@@ -89,17 +110,60 @@ class PasswordEpicAutofillService : AutofillService() {
             
             if (parsedData.isEmpty()) {
                 Log.d(TAG, "❌ No autofillable fields found")
+                Log.d(TAG, "└─────────────────────────────────────────────")
                 callback.onSuccess(null)
                 return
             }
 
             Log.d(TAG, "✅ Found autofillable fields: ${parsedData.fields.size}")
+            parsedData.fields.forEach { field ->
+                Log.d(TAG, "   Field: ${field.type} (hint: ${field.hint})")
+            }
             Log.d(TAG, "🔗 Domain: '${parsedData.domain}', Package: '${parsedData.packageName}'")
 
             // Verify the domain to prevent phishing
             if (!domainVerifier.isValidDomain(parsedData.domain, parsedData.packageName)) {
                 Log.w(TAG, "⚠️ Domain verification failed: ${parsedData.domain}")
+                Log.d(TAG, "└─────────────────────────────────────────────")
                 callback.onFailure("Domain verification failed")
+                return
+            }
+
+            // Check if we have a cached credential from recent successful authentication
+            val cachedCredential = authenticatedCredentials.values.firstOrNull()
+            if (cachedCredential != null) {
+                Log.d(TAG, "🔑 Found cached authenticated credential, filling with values immediately")
+                Log.d(TAG, "   Credential: ${cachedCredential.username} for ${cachedCredential.domain}")
+                
+                // Build response with the cached credential WITH values (no auth needed)
+                val responseBuilder = FillResponse.Builder()
+                val datasetBuilder = Dataset.Builder()
+                
+                // Fill all fields with actual values from the cached credential
+                parsedData.fields.forEach { field ->
+                    when (field.type) {
+                        FieldType.USERNAME, FieldType.EMAIL -> {
+                            Log.d(TAG, "✍️ Filling USERNAME/EMAIL with: '${cachedCredential.username}'")
+                            datasetBuilder.setValue(
+                                field.autofillId,
+                                AutofillValue.forText(cachedCredential.username)
+                            )
+                        }
+                        FieldType.PASSWORD -> {
+                            Log.d(TAG, "🔒 Filling PASSWORD field")
+                            datasetBuilder.setValue(
+                                field.autofillId,
+                                AutofillValue.forText(cachedCredential.password)
+                            )
+                        }
+                        else -> {}
+                    }
+                }
+                
+                responseBuilder.addDataset(datasetBuilder.build())
+                Log.d(TAG, "✅ Sending response with cached credential FILLED VALUES")
+                Log.d(TAG, "└─────────────────────────────────────────────")
+                callback.onSuccess(responseBuilder.build())
                 return
             }
 
@@ -112,6 +176,11 @@ class PasswordEpicAutofillService : AutofillService() {
 
             if (credentials.isEmpty()) {
                 Log.d(TAG, "❌ No credentials found for domain: '${parsedData.domain}'")
+                Log.w(TAG, "⚠️ Possible causes:")
+                Log.w(TAG, "   1. No test credentials set up in SharedPreferences")
+                Log.w(TAG, "   2. Domain mismatch between stored and requested")
+                Log.w(TAG, "   3. AutofillDataProvider context is null or invalid")
+                Log.d(TAG, "└─────────────────────────────────────────────")
                 callback.onSuccess(null)
                 return
             }
@@ -123,10 +192,18 @@ class PasswordEpicAutofillService : AutofillService() {
 
             // Build the autofill response
             val response = buildFillResponse(parsedData, credentials)
+            if (response != null) {
+                Log.d(TAG, "✅ Sending response for ${credentials.size} credentials")
+                Log.d(TAG, "📤 Response created successfully")
+            } else {
+                Log.e(TAG, "❌ CRITICAL: buildFillResponse returned null!")
+            }
+            Log.d(TAG, "└─────────────────────────────────────────────")
             callback.onSuccess(response)
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error processing autofill request", e)
+            Log.d(TAG, "└─────────────────────────────────────────────")
             callback.onFailure("Error: ${e.message}")
         }
     }
@@ -209,25 +286,27 @@ class PasswordEpicAutofillService : AutofillService() {
     private fun buildFillResponse(
         parsedData: ParsedStructureData,
         credentials: List<AutofillCredential>
-    ): FillResponse {
+    ): FillResponse? {
         val responseBuilder = FillResponse.Builder()
 
-        // Create an authentication intent
-        val authIntent = Intent(this, AutofillAuthActivity::class.java).apply {
-            putExtra("domain", parsedData.domain)
-            putExtra("packageName", parsedData.packageName)
-            putExtra("credentialCount", credentials.size)
-        }
-
-        val authIntentSender = android.app.PendingIntent.getActivity(
-            this,
-            AUTHENTICATION_REQUEST_CODE,
-            authIntent,
-            android.app.PendingIntent.FLAG_CANCEL_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-        ).intentSender
-
         // Create datasets for each credential
-        credentials.forEach { credential ->
+        credentials.forEachIndexed { index, credential ->
+            // Create a unique authentication intent for each credential
+            val authIntent = Intent(this, AutofillAuthActivity::class.java).apply {
+                putExtra("domain", parsedData.domain)
+                putExtra("packageName", parsedData.packageName)
+                putExtra("credentialCount", credentials.size)
+                putExtra("credentialId", credential.id)
+                putExtra("credentialIndex", index)
+            }
+
+            val authIntentSender = android.app.PendingIntent.getActivity(
+                this,
+                AUTHENTICATION_REQUEST_CODE + index,
+                authIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            ).intentSender
+
             val dataset = buildDataset(parsedData, credential, authIntentSender)
             responseBuilder.addDataset(dataset)
         }
@@ -255,6 +334,8 @@ class PasswordEpicAutofillService : AutofillService() {
 
     /**
      * Builds a Dataset for a single credential.
+     * In DEBUG_MODE: Fills values directly for testing
+     * In PRODUCTION: Sets authentication requirement with presentation only
      * 
      * @param parsedData The parsed view structure data
      * @param credential The credential to fill
@@ -268,48 +349,81 @@ class PasswordEpicAutofillService : AutofillService() {
     ): Dataset {
         val datasetBuilder = Dataset.Builder()
 
-        // Debug logging
         Log.d(TAG, "🏗️ Building dataset for credential:")
         Log.d(TAG, "   id: ${credential.id}")
         Log.d(TAG, "   domain: ${credential.domain}")
         Log.d(TAG, "   username: ${credential.username}")
-        Log.d(TAG, "   password: ${if (credential.password.length > 10) credential.password.take(5) + "..." else "*"}")
+        Log.d(TAG, "   DEBUG_MODE: $DEBUG_MODE")
 
-        // Create presentation for the dataset (what the user sees)
+        // Create presentation for the dataset (what the user sees in the dropdown)
         val presentation = RemoteViews(packageName, android.R.layout.simple_list_item_1).apply {
             setTextViewText(android.R.id.text1, credential.username)
             Log.d(TAG, "📄 Presentation set to display: '${credential.username}'")
         }
 
-        // Set authentication requirement
-        datasetBuilder.setAuthentication(authIntentSender)
-
-        // Add values for each field
-        parsedData.fields.forEach { field ->
-            when (field.type) {
-                FieldType.USERNAME, FieldType.EMAIL -> {
-                    Log.d(TAG, "✍️ Setting USERNAME field: '${credential.username}'")
-                    datasetBuilder.setValue(
-                        field.autofillId,
-                        AutofillValue.forText(credential.username),
-                        presentation
-                    )
-                }
-                FieldType.PASSWORD -> {
-                    Log.d(TAG, "🔒 Setting PASSWORD field")
-                    datasetBuilder.setValue(
-                        field.autofillId,
-                        AutofillValue.forText(credential.password),
-                        presentation
-                    )
-                }
-                else -> {
-                    // Handle other field types if needed
+        // DEBUG MODE: Fill values directly without authentication
+        if (DEBUG_MODE) {
+            Log.d(TAG, "🔧 DEBUG_MODE ENABLED - Filling values directly without authentication")
+            
+            parsedData.fields.forEach { field ->
+                when (field.type) {
+                    FieldType.USERNAME, FieldType.EMAIL -> {
+                        Log.d(TAG, "✍️ [DEBUG] Filling USERNAME/EMAIL with: '${credential.username}'")
+                        datasetBuilder.setValue(
+                            field.autofillId,
+                            AutofillValue.forText(credential.username),
+                            presentation
+                        )
+                    }
+                    FieldType.PASSWORD -> {
+                        Log.d(TAG, "🔒 [DEBUG] Filling PASSWORD with value")
+                        datasetBuilder.setValue(
+                            field.autofillId,
+                            AutofillValue.forText(credential.password),
+                            presentation
+                        )
+                    }
+                    else -> {
+                        Log.d(TAG, "⏭️ Skipping field type: ${field.type}")
+                    }
                 }
             }
+            Log.d(TAG, "✅ Dataset built in DEBUG_MODE with DIRECT VALUES (no auth required)")
+        } else {
+            // PRODUCTION MODE: Require authentication first
+            Log.d(TAG, "🔐 PRODUCTION_MODE - Requiring authentication before filling")
+            
+            // Set authentication requirement with presentation
+            datasetBuilder.setAuthentication(authIntentSender)
+            
+            // Add presentation to show the username in the dropdown
+            // but don't set any field values yet (will be filled after auth)
+            parsedData.fields.forEach { field ->
+                when (field.type) {
+                    FieldType.USERNAME, FieldType.EMAIL -> {
+                        Log.d(TAG, "📍 Adding presentation for USERNAME/EMAIL field (auth required)")
+                        datasetBuilder.setValue(
+                            field.autofillId,
+                            null,
+                            presentation
+                        )
+                    }
+                    FieldType.PASSWORD -> {
+                        Log.d(TAG, "📍 Adding presentation for PASSWORD field (auth required)")
+                        datasetBuilder.setValue(
+                            field.autofillId,
+                            null,
+                            presentation
+                        )
+                    }
+                    else -> {
+                        Log.d(TAG, "⏭️ Skipping field type: ${field.type}")
+                    }
+                }
+            }
+            Log.d(TAG, "✅ Dataset built with authentication requirement (values will be filled after auth)")
         }
-
-        Log.d(TAG, "✅ Dataset built successfully")
+        
         return datasetBuilder.build()
     }
 
@@ -318,7 +432,7 @@ class PasswordEpicAutofillService : AutofillService() {
      */
     override fun onConnected() {
         super.onConnected()
-        Log.d(TAG, "Autofill service connected")
+        Log.d(TAG, "✅ Autofill service connected and bound to system!")
     }
 
     /**

@@ -8,6 +8,7 @@ import android.util.Log
 import android.webkit.WebView
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import org.json.JSONObject
 
 /**
  * Chrome Inject Bridge - JavaScript Injection for Chrome AutoFill
@@ -165,19 +166,32 @@ class ChromeInjectBridge(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun detectLoginForm(promise: Promise) {
         try {
-            val currentActivity = currentActivity ?: run {
+            val activity = reactContext.currentActivity ?: run {
                 promise.reject("ACTIVITY_NOT_FOUND", "Current activity is null")
                 return
             }
 
-            executeJavaScript(currentActivity, DETECT_LOGIN_FORM_JS) { result ->
+            executeJavaScript(activity, DETECT_LOGIN_FORM_JS) { result ->
                 try {
-                    val json = ReadableNativeMap.nativeMapToWritableMap(
-                        Arguments.fromJavaMap(
-                            JSONObjectToMap(org.json.JSONObject(result))
-                        ) as ReadableNativeMap
-                    )
-                    promise.resolve(json)
+                    val json = JSONObject(result)
+                    val response = WritableNativeMap().apply {
+                        putBoolean("success", json.optBoolean("success", false))
+                        putBoolean("hasUserField", json.optBoolean("hasUserField", false))
+                        putBoolean("hasPassField", json.optBoolean("hasPassField", false))
+                        putBoolean("isLoginForm", json.optBoolean("isLoginForm", false))
+                        
+                        val fieldIds = json.optJSONObject("fieldIds")
+                        if (fieldIds != null) {
+                            val fieldsMap = WritableNativeMap().apply {
+                                putString("userFieldId", fieldIds.optString("userFieldId", ""))
+                                putString("userFieldName", fieldIds.optString("userFieldName", ""))
+                                putString("passFieldId", fieldIds.optString("passFieldId", ""))
+                                putString("passFieldName", fieldIds.optString("passFieldName", ""))
+                            }
+                            putMap("fieldIds", fieldsMap)
+                        }
+                    }
+                    promise.resolve(response)
                 } catch (e: Exception) {
                     promise.reject("JSON_PARSE_ERROR", "Failed to parse result: ${e.message}")
                 }
@@ -203,10 +217,17 @@ class ChromeInjectBridge(private val reactContext: ReactApplicationContext) :
         promise: Promise
     ) {
         try {
-            val currentActivity = currentActivity ?: run {
+            Log.d(TAG, "🔍 DEBUG: injectCredentials called")
+            Log.d(TAG, "📱 Username: $username")
+            Log.d(TAG, "🔐 Domain: $domain")
+            
+            val activity = reactContext.currentActivity ?: run {
+                Log.e(TAG, "❌ Current activity is NULL!")
                 promise.reject("ACTIVITY_NOT_FOUND", "Current activity is null")
                 return
             }
+            
+            Log.d(TAG, "✅ Current Activity: ${activity.javaClass.simpleName}")
 
             // Escape special characters to prevent injection attacks
             val safeUsername = escapeJavaScript(username)
@@ -214,23 +235,33 @@ class ChromeInjectBridge(private val reactContext: ReactApplicationContext) :
             val safeDomain = escapeJavaScript(domain)
 
             // Verify HTTPS (security requirement)
-            if (!isHttpsPage(currentActivity)) {
+            if (!isHttpsPage(activity)) {
+                Log.w(TAG, "⚠️ Page is not HTTPS - rejecting injection")
                 promise.reject(
                     "INSECURE_PAGE",
                     "Autofill only works on HTTPS pages for security"
                 )
                 return
             }
+            
+            Log.d(TAG, "✅ HTTPS verified")
 
             val injectionScript = INJECT_CREDENTIALS_JS_TEMPLATE
                 .replace("%USERNAME%", safeUsername)
                 .replace("%PASSWORD%", safePassword)
                 .replace("%DOMAIN%", safeDomain)
 
-            executeJavaScript(currentActivity, injectionScript) { result ->
+            executeJavaScript(activity, injectionScript) { result ->
                 try {
+                    Log.d(TAG, "📊 Injection result: $result")
                     val json = org.json.JSONObject(result)
                     val success = json.optBoolean("success", false)
+                    
+                    if (success) {
+                        Log.d(TAG, "✅✅✅ INJECTION SUCCESSFUL!")
+                    } else {
+                        Log.e(TAG, "❌ Injection failed: ${json.optString("error")}")
+                    }
 
                     val response = WritableNativeMap().apply {
                         putBoolean("success", success)
@@ -264,12 +295,12 @@ class ChromeInjectBridge(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun detectAllForms(promise: Promise) {
         try {
-            val currentActivity = currentActivity ?: run {
+            val activity = reactContext.currentActivity ?: run {
                 promise.reject("ACTIVITY_NOT_FOUND", "Current activity is null")
                 return
             }
 
-            executeJavaScript(currentActivity, FORM_DETECTION_JS) { result ->
+            executeJavaScript(activity, FORM_DETECTION_JS) { result ->
                 try {
                     val json = org.json.JSONObject(result)
                     val success = json.optBoolean("success", false)
@@ -327,18 +358,85 @@ class ChromeInjectBridge(private val reactContext: ReactApplicationContext) :
                 })();
             """
 
-            val currentActivity = currentActivity ?: run {
+            val activity = reactContext.currentActivity ?: run {
                 promise.reject("ACTIVITY_NOT_FOUND", "Current activity is null")
                 return
             }
 
-            executeJavaScript(currentActivity, clearScript) { result ->
+            executeJavaScript(activity, clearScript) { result ->
                 promise.resolve(WritableNativeMap().apply {
                     putBoolean("success", true)
                 })
             }
         } catch (e: Exception) {
             promise.reject("CLEAR_ERROR", "Error clearing content: ${e.message}")
+        }
+    }
+
+    /**
+     * Gets the current page URL from the WebView
+     */
+    @ReactMethod
+    fun getCurrentPageUrl(promise: Promise) {
+        try {
+            val activity = reactContext.currentActivity ?: run {
+                promise.reject("ACTIVITY_NOT_FOUND", "Current activity is null")
+                return
+            }
+
+            Handler(Looper.getMainLooper()).post {
+                try {
+                    val webView = findWebView(activity.window.decorView)
+                    if (webView != null) {
+                        val url = webView.url ?: ""
+                        promise.resolve(url)
+                    } else {
+                        promise.reject("WEBVIEW_NOT_FOUND", "WebView not found in current activity")
+                    }
+                } catch (e: Exception) {
+                    promise.reject("GET_URL_ERROR", "Error getting current page URL: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            promise.reject("GET_URL_ERROR", "Error getting current page URL: ${e.message}")
+        }
+    }
+
+    /**
+     * Gets the current page title from the WebView
+     */
+    @ReactMethod
+    fun getCurrentPageTitle(promise: Promise) {
+        try {
+            val activity = reactContext.currentActivity ?: run {
+                promise.reject("ACTIVITY_NOT_FOUND", "Current activity is null")
+                return
+            }
+
+            val getTitleScript = """
+                (function() {
+                    return JSON.stringify({
+                        success: true,
+                        title: document.title,
+                        url: window.location.href
+                    });
+                })();
+            """
+
+            executeJavaScript(activity, getTitleScript) { result ->
+                try {
+                    val json = org.json.JSONObject(result)
+                    promise.resolve(WritableNativeMap().apply {
+                        putBoolean("success", json.optBoolean("success", false))
+                        putString("title", json.optString("title", ""))
+                        putString("url", json.optString("url", ""))
+                    })
+                } catch (e: Exception) {
+                    promise.reject("JSON_PARSE_ERROR", "Failed to parse title result: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            promise.reject("GET_TITLE_ERROR", "Error getting page title: ${e.message}")
         }
     }
 
@@ -352,13 +450,22 @@ class ChromeInjectBridge(private val reactContext: ReactApplicationContext) :
     ) {
         Handler(Looper.getMainLooper()).post {
             try {
+                Log.d(TAG, "🔎 Searching for WebView in activity: ${activity.javaClass.simpleName}")
                 val webView = findWebView(activity.window.decorView)
+                
                 if (webView != null) {
+                    Log.d(TAG, "✅ WebView found! URL: ${webView.url}")
+                    Log.d(TAG, "📝 Executing JavaScript...")
                     webView.evaluateJavascript(script) { result ->
+                        Log.d(TAG, "📤 JavaScript callback result: $result")
                         callback.invoke(result ?: "")
                     }
                 } else {
-                    Log.w(TAG, "WebView not found in current activity")
+                    Log.e(TAG, "❌ WebView NOT FOUND in current activity!")
+                    Log.w(TAG, "ℹ️ This might happen because:")
+                    Log.w(TAG, "  1. App switched to Chrome (different process)")
+                    Log.w(TAG, "  2. Current activity is not a WebView")
+                    Log.w(TAG, "  3. Chrome is opened but not active in this process")
                     callback.invoke("""{"success": false, "error": "WebView not found"}""")
                 }
             } catch (e: Exception) {
@@ -373,12 +480,15 @@ class ChromeInjectBridge(private val reactContext: ReactApplicationContext) :
      */
     private fun findWebView(view: android.view.View): WebView? {
         if (view is WebView) {
+            Log.d(TAG, "🎯 Found WebView: ${view.javaClass.simpleName}")
             return view
         }
 
         if (view is android.view.ViewGroup) {
+            Log.d(TAG, "🔎 Searching in ViewGroup: ${view.javaClass.simpleName} (children: ${view.childCount})")
             for (i in 0 until view.childCount) {
                 val child = view.getChildAt(i)
+                Log.d(TAG, "  └─ Child [$i]: ${child.javaClass.simpleName}")
                 val webView = findWebView(child)
                 if (webView != null) {
                     return webView
@@ -418,16 +528,16 @@ class ChromeInjectBridge(private val reactContext: ReactApplicationContext) :
     /**
      * Converts JSONObject to Map for ReadableMap conversion
      */
-    private fun JSONObjectToMap(json: org.json.JSONObject): Map<String, Any> {
-        val map = mutableMapOf<String, Any>()
+    private fun JSONObjectToMap(json: JSONObject): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>()
         val keys = json.keys()
         while (keys.hasNext()) {
             val key = keys.next()
             val value = json.opt(key)
             when (value) {
-                is org.json.JSONObject -> map[key] = JSONObjectToMap(value)
+                is JSONObject -> map[key] = JSONObjectToMap(value)
                 is org.json.JSONArray -> map[key] = JSONArrayToList(value)
-                else -> map[key] = value ?: JSONObject.NULL
+                else -> map[key] = value
             }
         }
         return map
@@ -436,14 +546,14 @@ class ChromeInjectBridge(private val reactContext: ReactApplicationContext) :
     /**
      * Converts JSONArray to List for ReadableArray conversion
      */
-    private fun JSONArrayToList(json: org.json.JSONArray): List<Any> {
-        val list = mutableListOf<Any>()
+    private fun JSONArrayToList(json: org.json.JSONArray): List<Any?> {
+        val list = mutableListOf<Any?>()
         for (i in 0 until json.length()) {
             val value = json.opt(i)
             when (value) {
-                is org.json.JSONObject -> list.add(JSONObjectToMap(value))
+                is JSONObject -> list.add(JSONObjectToMap(value))
                 is org.json.JSONArray -> list.add(JSONArrayToList(value))
-                else -> list.add(value ?: JSONObject.NULL)
+                else -> list.add(value)
             }
         }
         return list

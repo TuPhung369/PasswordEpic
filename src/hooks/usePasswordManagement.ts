@@ -30,6 +30,7 @@ import SyncService from '../services/syncService';
 import { getMasterPasswordFromBiometric } from '../services/secureStorageService';
 import { getEffectiveMasterPassword } from '../services/staticMasterPasswordService';
 import { sessionCache } from '../utils/sessionCache';
+import { autofillService } from '../services/autofillService';
 
 export const usePasswordManagement = (masterPassword?: string) => {
   const dispatch = useAppDispatch();
@@ -229,6 +230,18 @@ export const usePasswordManagement = (masterPassword?: string) => {
 
       // Sync category stats
       await CategoryService.syncCategoryStats(passwords);
+
+      // Prepare autofill credentials for Android autofill service
+      try {
+        await autofillService.prepareCredentialsForAutofill(
+          passwords,
+          masterPassword,
+        );
+        console.log('✅ Autofill credentials prepared on initial load');
+      } catch (autofillError) {
+        console.warn('Failed to prepare autofill credentials:', autofillError);
+        // Don't throw - autofill is a secondary feature
+      }
     } catch (loadError) {
       console.error('Failed to load initial data:', loadError);
     }
@@ -273,6 +286,21 @@ export const usePasswordManagement = (masterPassword?: string) => {
             : Promise.resolve(),
           // Add to sync queue in background
           SyncService.addPendingOperation('create', newEntry.id, newEntry),
+          // Update autofill cache with all current passwords
+          (async () => {
+            try {
+              // Get current passwords from store
+              const allPasswords = [...passwords, newEntry];
+              await autofillService.prepareCredentialsForAutofill(
+                allPasswords,
+                currentMasterPassword,
+              );
+              console.log('✅ Autofill credentials updated');
+            } catch (autofillError) {
+              console.warn('Failed to update autofill cache:', autofillError);
+              // Don't throw - autofill is a secondary feature
+            }
+          })(),
         ]).catch(bgError => {
           console.warn('Background operations failed:', bgError);
           // Don't throw - these are non-critical
@@ -326,6 +354,21 @@ export const usePasswordManagement = (masterPassword?: string) => {
           }),
         ).unwrap();
 
+        // Update autofill cache with all passwords including the updated one
+        try {
+          const updatedPasswordsList = passwords.map(p =>
+            p.id === id ? updatedEntry : p,
+          );
+          await autofillService.prepareCredentialsForAutofill(
+            updatedPasswordsList,
+            currentMasterPassword,
+          );
+          console.log('✅ Autofill credentials updated');
+        } catch (autofillError) {
+          console.warn('Failed to update autofill cache:', autofillError);
+          // Don't throw - autofill is a secondary feature
+        }
+
         return updatedEntry;
       } catch (updateError) {
         console.error('Failed to update password:', updateError);
@@ -354,13 +397,30 @@ export const usePasswordManagement = (masterPassword?: string) => {
         // Add to sync queue
         await SyncService.addPendingOperation('delete', id);
 
+        // Update autofill cache with remaining passwords
+        try {
+          const currentMasterPassword = await getMasterPassword();
+          const remainingPasswords = passwords.filter(p => p.id !== id);
+          await autofillService.prepareCredentialsForAutofill(
+            remainingPasswords,
+            currentMasterPassword,
+          );
+          console.log('✅ Autofill credentials updated after delete');
+        } catch (autofillError) {
+          console.warn(
+            'Failed to update autofill cache after delete:',
+            autofillError,
+          );
+          // Don't throw - autofill is a secondary feature
+        }
+
         return true;
       } catch (deleteError) {
         console.error('Failed to delete password:', deleteError);
         throw deleteError;
       }
     },
-    [dispatch, passwords],
+    [dispatch, passwords, getMasterPassword],
   );
 
   // Toggle favorite status

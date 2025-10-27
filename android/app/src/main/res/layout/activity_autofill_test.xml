@@ -102,7 +102,54 @@
                 android:layout_height="wrap_content"
                 android:text="Result will appear here"
                 android:textSize="14sp"
-                android:textColor="#0066cc" />
+                android:textColor="#0066cc"
+                android:layout_marginBottom="24dp" />
+
+            <!-- Encrypted Password Display -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🔒 Encrypted Password (from autofill):"
+                android:textStyle="bold"
+                android:textColor="#D32F2F"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/encryptedPasswordText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="(Will show encrypted hex here)"
+                android:textSize="12sp"
+                android:textColor="#B71C1C"
+                android:padding="12dp"
+                android:background="#FFEBEE"
+                android:layout_marginBottom="24dp"
+                android:textIsSelectable="true"
+                android:fontFamily="monospace" />
+
+            <!-- Decrypted Password Display -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🔓 Decrypted Password (after biometric):"
+                android:textStyle="bold"
+                android:textColor="#228B22"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/decryptedPasswordText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="(Will show here after login)"
+                android:textSize="12sp"
+                android:textColor="#1B5E20"
+                android:padding="12dp"
+                android:background="#E8F5E9"
+                android:layout_marginBottom="24dp"
+                android:textIsSelectable="true"
+                android:fontFamily="monospace" />
         </LinearLayout>
     </ScrollView>
 </LinearLayout>

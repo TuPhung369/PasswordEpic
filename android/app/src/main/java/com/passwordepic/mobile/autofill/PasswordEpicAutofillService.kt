@@ -134,6 +134,25 @@ class PasswordEpicAutofillService : AutofillService() {
             if (cachedCredential != null) {
                 Log.d(TAG, "🔑 Found cached authenticated credential, filling with values immediately")
                 Log.d(TAG, "   Credential: ${cachedCredential.username} for ${cachedCredential.domain}")
+                Log.d(TAG, "   Encrypted: ${cachedCredential.isEncrypted}, has IV: ${cachedCredential.iv.isNotEmpty()}, has TAG: ${cachedCredential.tag.isNotEmpty()}")
+                
+                // Check if password is encrypted - if so, we need to handle it specially
+                if (cachedCredential.isEncrypted && cachedCredential.iv.isNotEmpty() && cachedCredential.tag.isNotEmpty()) {
+                    Log.e(TAG, "❌ CRITICAL: Password is ENCRYPTED but autofill cannot decrypt it!")
+                    Log.e(TAG, "🔐 Password is encrypted with:")
+                    Log.e(TAG, "   - Ciphertext: ${cachedCredential.password.substring(0, minOf(50, cachedCredential.password.length))}...")
+                    Log.e(TAG, "   - IV: ${cachedCredential.iv}")
+                    Log.e(TAG, "   - TAG: ${cachedCredential.tag}")
+                    Log.e(TAG, "🚨 SECURITY ISSUE: Encrypted password cannot be decrypted in autofill service context")
+                    Log.e(TAG, "💡 Solution: Decrypt password through React Native before caching credential")
+                    Log.e(TAG, "💡 Or: Implement secure decryption endpoint in the app")
+                    
+                    // Don't fill encrypted passwords - this is a security issue
+                    Log.d(TAG, "⚠️ Aborting autofill - refusing to fill encrypted password directly")
+                    Log.d(TAG, "└─────────────────────────────────────────────")
+                    callback.onSuccess(null)
+                    return
+                }
                 
                 // Build response with the cached credential WITH values (no auth needed)
                 val responseBuilder = FillResponse.Builder()
@@ -150,7 +169,7 @@ class PasswordEpicAutofillService : AutofillService() {
                             )
                         }
                         FieldType.PASSWORD -> {
-                            Log.d(TAG, "🔒 Filling PASSWORD field")
+                            Log.d(TAG, "🔒 Filling PASSWORD field with plaintext password")
                             datasetBuilder.setValue(
                                 field.autofillId,
                                 AutofillValue.forText(cachedCredential.password)
@@ -364,11 +383,13 @@ class PasswordEpicAutofillService : AutofillService() {
         // DEBUG MODE: Fill values directly without authentication
         if (DEBUG_MODE) {
             Log.d(TAG, "🔧 DEBUG_MODE ENABLED - Filling values directly without authentication")
+            Log.d(TAG, "📦 Credential status: encrypted=${credential.isEncrypted}, password=${credential.password}")
             
+            // Fill all available fields - encrypted passwords will be decrypted by React Native after login
             parsedData.fields.forEach { field ->
                 when (field.type) {
                     FieldType.USERNAME, FieldType.EMAIL -> {
-                        Log.d(TAG, "✍️ [DEBUG] Filling USERNAME/EMAIL with: '${credential.username}'")
+                        Log.d(TAG, "✍️ Filling USERNAME/EMAIL with: '${credential.username}'")
                         datasetBuilder.setValue(
                             field.autofillId,
                             AutofillValue.forText(credential.username),
@@ -376,7 +397,11 @@ class PasswordEpicAutofillService : AutofillService() {
                         )
                     }
                     FieldType.PASSWORD -> {
-                        Log.d(TAG, "🔒 [DEBUG] Filling PASSWORD with value")
+                        if (credential.isEncrypted) {
+                            Log.d(TAG, "🔐 Filling PASSWORD field with encrypted value (will be decrypted on login)")
+                        } else {
+                            Log.d(TAG, "🔒 Filling PASSWORD field with plaintext value")
+                        }
                         datasetBuilder.setValue(
                             field.autofillId,
                             AutofillValue.forText(credential.password),
@@ -388,40 +413,80 @@ class PasswordEpicAutofillService : AutofillService() {
                     }
                 }
             }
-            Log.d(TAG, "✅ Dataset built in DEBUG_MODE with DIRECT VALUES (no auth required)")
+            Log.d(TAG, "✅ Dataset built in DEBUG_MODE with all values (encryption handled by React Native)")
         } else {
-            // PRODUCTION MODE: Require authentication first
-            Log.d(TAG, "🔐 PRODUCTION_MODE - Requiring authentication before filling")
+            // PRODUCTION MODE: Check for cached plaintext first, otherwise require authentication
+            Log.d(TAG, "🔐 PRODUCTION_MODE - Checking for cached plaintext...")
             
-            // Set authentication requirement with presentation
-            datasetBuilder.setAuthentication(authIntentSender)
+            // 🔑 Check if we have cached plaintext password
+            var cachedPlaintextPassword: String? = null
+            if (credential.isEncrypted && credential.iv.isNotEmpty() && credential.tag.isNotEmpty()) {
+                Log.d(TAG, "🔍 Encrypted password detected - checking plaintext cache...")
+                val dataProvider = AutofillDataProvider(this)
+                cachedPlaintextPassword = dataProvider.getDecryptedPasswordForAutofill(credential.id)
+            }
             
-            // Add presentation to show the username in the dropdown
-            // but don't set any field values yet (will be filled after auth)
-            parsedData.fields.forEach { field ->
-                when (field.type) {
-                    FieldType.USERNAME, FieldType.EMAIL -> {
-                        Log.d(TAG, "📍 Adding presentation for USERNAME/EMAIL field (auth required)")
-                        datasetBuilder.setValue(
-                            field.autofillId,
-                            null,
-                            presentation
-                        )
-                    }
-                    FieldType.PASSWORD -> {
-                        Log.d(TAG, "📍 Adding presentation for PASSWORD field (auth required)")
-                        datasetBuilder.setValue(
-                            field.autofillId,
-                            null,
-                            presentation
-                        )
-                    }
-                    else -> {
-                        Log.d(TAG, "⏭️ Skipping field type: ${field.type}")
+            // If we have cached plaintext, fill it directly without auth
+            if (cachedPlaintextPassword != null) {
+                Log.d(TAG, "✅ PRODUCTION_MODE: Found cached plaintext - filling without auth requirement")
+                parsedData.fields.forEach { field ->
+                    when (field.type) {
+                        FieldType.USERNAME, FieldType.EMAIL -> {
+                            Log.d(TAG, "✍️ Filling USERNAME/EMAIL with cached credentials")
+                            datasetBuilder.setValue(
+                                field.autofillId,
+                                AutofillValue.forText(credential.username),
+                                presentation
+                            )
+                        }
+                        FieldType.PASSWORD -> {
+                            Log.d(TAG, "✅ Filling PASSWORD with cached plaintext")
+                            datasetBuilder.setValue(
+                                field.autofillId,
+                                AutofillValue.forText(cachedPlaintextPassword),
+                                presentation
+                            )
+                        }
+                        else -> {
+                            Log.d(TAG, "⏭️ Skipping field type: ${field.type}")
+                        }
                     }
                 }
+                Log.d(TAG, "✅ Dataset built with cached plaintext values (no auth required)")
+            } else {
+                // No cached plaintext - require authentication
+                Log.d(TAG, "🔐 PRODUCTION_MODE - No cached plaintext, requiring authentication before filling")
+                
+                // Set authentication requirement with presentation
+                datasetBuilder.setAuthentication(authIntentSender)
+                
+                // Add presentation to show the username in the dropdown
+                // but don't set any field values yet (will be filled after auth)
+                parsedData.fields.forEach { field ->
+                    when (field.type) {
+                        FieldType.USERNAME, FieldType.EMAIL -> {
+                            Log.d(TAG, "📍 Adding presentation for USERNAME/EMAIL field (auth required)")
+                            datasetBuilder.setValue(
+                                field.autofillId,
+                                null,
+                                presentation
+                            )
+                        }
+                        FieldType.PASSWORD -> {
+                            Log.d(TAG, "📍 Adding presentation for PASSWORD field (auth required)")
+                            datasetBuilder.setValue(
+                                field.autofillId,
+                                null,
+                                presentation
+                            )
+                        }
+                        else -> {
+                            Log.d(TAG, "⏭️ Skipping field type: ${field.type}")
+                        }
+                    }
+                }
+                Log.d(TAG, "✅ Dataset built with authentication requirement (values will be filled after auth)")
             }
-            Log.d(TAG, "✅ Dataset built with authentication requirement (values will be filled after auth)")
         }
         
         return datasetBuilder.build()
@@ -483,5 +548,9 @@ data class AutofillCredential(
     val id: String,
     val username: String,
     val password: String,
-    val domain: String
+    val domain: String,
+    val salt: String = "",  // 🔑 CRITICAL: Salt for PBKDF2 key derivation during decryption
+    val iv: String = "",  // Initialization vector for AES decryption
+    val tag: String = "",  // Authentication tag for AES-GCM decryption
+    val isEncrypted: Boolean = false  // Whether password is encrypted
 )

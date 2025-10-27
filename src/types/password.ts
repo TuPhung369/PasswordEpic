@@ -4,6 +4,9 @@ export interface PasswordEntry {
   username: string;
   password: string;
   isDecrypted?: boolean; // Flag to indicate if password field is decrypted (true) or encrypted (false/undefined)
+  passwordSalt?: string; // Salt for key derivation during password decryption
+  passwordIv?: string; // Initialization vector for password decryption
+  passwordTag?: string; // Authentication tag for password decryption
   website?: string;
   notes?: string;
   category?: string;

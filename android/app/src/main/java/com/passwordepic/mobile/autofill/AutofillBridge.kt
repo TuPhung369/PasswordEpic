@@ -45,6 +45,21 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
         private const val REQUEST_CODE_ENABLE_AUTOFILL = 1001
     }
 
+    init {
+        // Store React context globally so AutofillTestActivity can access it
+        try {
+            val mainApp = reactContext.baseContext.applicationContext as? com.passwordepic.mobile.MainApplication
+            if (mainApp != null) {
+                com.passwordepic.mobile.MainApplication.setReactContext(reactContext)
+                Log.d(TAG, "✅ React context stored globally for autofill activities")
+            } else {
+                Log.w(TAG, "⚠️ Could not cast to MainApplication")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error storing React context", e)
+        }
+    }
+
     override fun getName(): String = MODULE_NAME
 
     /**
@@ -350,6 +365,68 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
     }
 
     /**
+     * Decrypt autofill password
+     * Called when user clicks Login - decrypts the encrypted password using master key
+     * 
+     * Encrypted password format stored in autofill field:
+     * {
+     *   "encryptedPassword": "...",
+     *   "passwordSalt": "...",
+     *   "passwordIv": "...",
+     *   "passwordAuthTag": "..."
+     * }
+     */
+    @ReactMethod
+    fun decryptAutofillPassword(encryptedPasswordJson: String, masterKey: String, promise: Promise) {
+        try {
+            Log.d(TAG, "🔓 Decrypting autofill password...")
+            
+            // Parse encrypted password data
+            val encryptedData = JSONObject(encryptedPasswordJson)
+            val ciphertext = encryptedData.optString("encryptedPassword", "")
+            val salt = encryptedData.optString("passwordSalt", "")
+            val iv = encryptedData.optString("passwordIv", "")
+            val tag = encryptedData.optString("passwordAuthTag", "")
+            
+            if (ciphertext.isEmpty() || salt.isEmpty() || iv.isEmpty() || tag.isEmpty()) {
+                Log.w(TAG, "⚠️ Invalid encrypted password data - missing components")
+                promise.reject("INVALID_DATA", "Missing encryption components (ciphertext, salt, iv, tag)")
+                return
+            }
+            
+            Log.d(TAG, "✅ Encrypted password components extracted")
+            
+            // Send to React Native for decryption (it has access to master password and crypto service)
+            val eventData = Arguments.createMap().apply {
+                putString("encryptedPassword", ciphertext)
+                putString("salt", salt)
+                putString("iv", iv)
+                putString("tag", tag)
+                putString("masterKey", masterKey)
+            }
+            
+            // Create listener for response
+            var responseReceived = false
+            var decryptedPassword = ""
+            var decryptError: String? = null
+            
+            // Emit event to React Native
+            Log.d(TAG, "📤 Sending decrypt request to React Native...")
+            reactContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit("onDecryptAutofillPasswordRequest", eventData)
+            
+            // Note: In a real implementation, we'd use a callback mechanism
+            // For now, we're calling this synchronously from native side
+            promise.reject("NOT_IMPLEMENTED", "Decryption must be called from React Native side")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error during autofill password decryption", e)
+            promise.reject("ERROR", "Failed to decrypt password: ${e.message}", e)
+        }
+    }
+
+    /**
      * Record autofill usage
      */
     @ReactMethod
@@ -383,7 +460,209 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    /**
+     * Callback from React Native after decryption
+     * Called by React Native when it has successfully decrypted the password
+     * Passes the plaintext password back to AutofillTestActivity
+     * 
+     * @param plainTextPassword The decrypted plaintext password (empty if failed)
+     * @param success Whether decryption was successful
+     * @param errorMessage Error message if decryption failed
+     */
+    @ReactMethod
+    fun updateAutofillDecryptResult(
+        plainTextPassword: String,
+        success: Boolean,
+        errorMessage: String,
+        promise: Promise
+    ) {
+        try {
+            Log.d(TAG, "📥 [AutofillBridge] Received decrypt result from React Native: success=$success")
+            
+            // Try to get the AutofillTestActivity from static instance first
+            // This allows callback even if Activity is backgrounded
+            var targetActivity: com.passwordepic.mobile.AutofillTestActivity? = 
+                com.passwordepic.mobile.AutofillTestActivity.getInstance()
+            
+            // Fall back to current activity if static instance not available
+            if (targetActivity == null) {
+                val currentActivity = reactContext.currentActivity
+                if (currentActivity is com.passwordepic.mobile.AutofillTestActivity) {
+                    targetActivity = currentActivity
+                }
+            }
+            
+            if (success && plainTextPassword.isNotEmpty()) {
+                Log.d(TAG, "✅ [AutofillBridge] Password successfully decrypted - forwarding to AutofillTestActivity")
+                
+                if (targetActivity != null) {
+                    // Call the activity's method to update with decrypted password
+                    targetActivity.updateAutofillDecryptResult(plainTextPassword, true, "")
+                    Log.d(TAG, "✅ [AutofillBridge] Decrypted password forwarded to AutofillTestActivity")
+                    promise.resolve(true)
+                } else {
+                    Log.w(TAG, "⚠️ [AutofillBridge] AutofillTestActivity not found (neither active nor in static instance)")
+                    promise.resolve(false)
+                }
+            } else {
+                Log.e(TAG, "❌ [AutofillBridge] Decryption failed: $errorMessage")
+                
+                if (targetActivity != null) {
+                    targetActivity.updateAutofillDecryptResult("", false, errorMessage)
+                    Log.d(TAG, "✅ [AutofillBridge] Error forwarded to AutofillTestActivity")
+                } else {
+                    Log.w(TAG, "⚠️ [AutofillBridge] Cannot forward error to AutofillTestActivity - not found")
+                }
+                promise.resolve(false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [AutofillBridge] Error processing decrypt result", e)
+            promise.reject("ERROR", "Failed to process decrypt result: ${e.message}", e)
+        }
+    }
+
     // ==================== Helper Methods ====================
+
+    /**
+     * Store decrypted (plaintext) password for autofill with time-limited cache
+     * After successful biometric authentication and decryption, store plaintext
+     * in a temporary cache that expires in 60 seconds for security
+     * 
+     * This allows the autofill service to retrieve plaintext passwords without
+     * accessing React Native's master key
+     */
+    @ReactMethod
+    fun storeDecryptedPasswordForAutofill(passwordId: String, plaintextPassword: String, promise: Promise) {
+        try {
+            Log.d(TAG, "📦 Storing decrypted password for autofill (ID: $passwordId)")
+            
+            val prefs = reactContext.getSharedPreferences("autofill_plaintext_cache", Context.MODE_PRIVATE)
+            val currentTime = System.currentTimeMillis()
+            val expiryTime = currentTime + 60_000  // 60-second expiry for security
+            
+            val cacheEntry = JSONObject().apply {
+                put("password", plaintextPassword)
+                put("storedAt", currentTime)
+                put("expiresAt", expiryTime)
+                put("passwordId", passwordId)
+            }
+            
+            prefs.edit().apply {
+                putString("plaintext_$passwordId", cacheEntry.toString())
+                putLong("stored_at_$passwordId", currentTime)
+                apply()
+            }
+            
+            Log.d(TAG, "✅ Plaintext password cached for 60 seconds")
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error storing decrypted password", e)
+            promise.reject("ERROR", "Failed to store plaintext password: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Retrieve cached plaintext password from autofill cache
+     * Checks expiry time and returns plaintext only if not expired
+     */
+    @ReactMethod
+    fun getDecryptedPasswordForAutofill(passwordId: String, promise: Promise) {
+        try {
+            Log.d(TAG, "🔓 Retrieving cached plaintext password (ID: $passwordId)")
+            
+            val prefs = reactContext.getSharedPreferences("autofill_plaintext_cache", Context.MODE_PRIVATE)
+            val cacheEntryJson = prefs.getString("plaintext_$passwordId", null)
+            
+            if (cacheEntryJson == null) {
+                Log.w(TAG, "⚠️ No cached plaintext password found for: $passwordId")
+                promise.resolve(null)
+                return
+            }
+            
+            try {
+                val cacheEntry = JSONObject(cacheEntryJson)
+                val expiryTime = cacheEntry.getLong("expiresAt")
+                val currentTime = System.currentTimeMillis()
+                
+                if (currentTime > expiryTime) {
+                    Log.w(TAG, "⏰ Cached password expired - clearing cache")
+                    prefs.edit().remove("plaintext_$passwordId").apply()
+                    promise.resolve(null)
+                    return
+                }
+                
+                val plaintextPassword = cacheEntry.getString("password")
+                Log.d(TAG, "✅ Cached plaintext password retrieved (valid for ${(expiryTime - currentTime) / 1000}s more)")
+                
+                val result = Arguments.createMap().apply {
+                    putString("password", plaintextPassword)
+                    putDouble("expiresIn", (expiryTime - currentTime).toDouble())
+                }
+                promise.resolve(result)
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error parsing cached password entry", e)
+                promise.resolve(null)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error retrieving cached plaintext password", e)
+            promise.reject("ERROR", "Failed to retrieve cached password: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Clear cached plaintext password manually
+     * Called after autofill completes or for security cleanup
+     */
+    @ReactMethod
+    fun clearDecryptedPasswordForAutofill(passwordId: String, promise: Promise) {
+        try {
+            Log.d(TAG, "🗑️ Clearing cached plaintext password (ID: $passwordId)")
+            
+            val prefs = reactContext.getSharedPreferences("autofill_plaintext_cache", Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                remove("plaintext_$passwordId")
+                remove("stored_at_$passwordId")
+                apply()
+            }
+            
+            Log.d(TAG, "✅ Cached password cleared")
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error clearing cached password", e)
+            promise.reject("ERROR", "Failed to clear cached password: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Decrypt autofill password by password ID
+     * Calls React Native to decrypt using master password
+     * Android cannot decrypt directly as it doesn't have the master password
+     */
+    @ReactMethod
+    fun decryptAutofillPasswordById(passwordId: String, promise: Promise) {
+        try {
+            Log.d(TAG, "🔐 [AutofillBridge] Requesting password decryption from React Native...")
+            Log.d(TAG, "🔑 Password ID: $passwordId")
+            
+            // Call the autofillService module in React Native
+            // This will use the master password stored in React Native to decrypt
+            val autofillServiceModule = reactContext.getNativeModule("AutofillService")
+            
+            if (autofillServiceModule == null) {
+                Log.w(TAG, "⚠️ AutofillService module not found")
+                promise.reject("ERROR", "AutofillService module not available")
+                return
+            }
+            
+            // We would call the React Native method here, but React Native
+            // modules need to be called from React side. For now, return error.
+            promise.reject("ERROR", "Direct decrypt from native is not supported - use React Native method instead")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error requesting decryption: ${e.message}", e)
+            promise.reject("ERROR", "Failed to request decryption: ${e.message}", e)
+        }
+    }
 
     /**
      * Check if our autofill service is the enabled one

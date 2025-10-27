@@ -113,15 +113,14 @@ export const encryptData = (
     });
 
     // Generate authentication tag using HMAC-SHA256
-    const tag = CryptoJS.HmacSHA256(
-      encrypted.ciphertext.toString() + initVector,
-      keyWordArray,
-    )
+    // CRITICAL: Must use the same format as decryption (hex-encoded ciphertext + IV)
+    const ciphertextHex = encrypted.ciphertext.toString(CryptoJS.enc.Hex);
+    const tag = CryptoJS.HmacSHA256(ciphertextHex + initVector, keyWordArray)
       .toString(CryptoJS.enc.Hex)
       .substring(0, CRYPTO_CONSTANTS.TAG_LENGTH * 2);
 
     return {
-      ciphertext: encrypted.ciphertext.toString(CryptoJS.enc.Hex),
+      ciphertext: ciphertextHex,
       iv: initVector,
       tag: tag,
     };

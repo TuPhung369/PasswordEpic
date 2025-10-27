@@ -78,39 +78,29 @@ export const decryptAllAndPrepareAutofill = createAsyncThunk(
       const lazyPasswords = state.passwords.passwords || [];
 
       console.log(
-        `🔐 [Redux] Decrypting all ${lazyPasswords.length} passwords for autofill...`,
+        `🔐 [Redux] Preparing autofill with ${lazyPasswords.length} passwords (encrypted format)...`,
       );
 
-      // Decrypt all passwords
-      const fullyDecryptedPasswords = await Promise.all(
-        lazyPasswords.map(async (pwd: PasswordEntry) => {
-          if (pwd.password && pwd.password.length > 0) {
-            // Already decrypted or has a value
-            return pwd;
-          }
-          // Decrypt the password field
-          const decrypted =
-            await encryptedDatabase.decryptPasswordFieldOptimized(
-              pwd.id,
-              masterPassword,
-            );
-          return { ...pwd, password: decrypted };
-        }),
-      );
+      // 🔐 SECURITY: Do NOT decrypt passwords in Redux!
+      // Instead, send lazy-loaded encrypted passwords directly to autofill.
+      // autofillService.prepareCredentialsForAutofill will:
+      // - If password is encrypted (isDecrypted=false): use as-is
+      // - If password is plaintext (isDecrypted=true): encrypt it
+      // This way, all credentials sent to Android are encrypted and require
+      // biometric verification + decryption in React Native before use.
 
-      console.log(`✅ All passwords decrypted for autofill`);
-
-      // Prepare autofill with fully decrypted passwords
       try {
-        console.log('🔄 Preparing autofill with decrypted passwords...');
+        console.log('🔄 Preparing autofill with encrypted passwords...');
         await autofillService.prepareCredentialsForAutofill(
-          fullyDecryptedPasswords,
+          lazyPasswords,
           masterPassword,
         );
-        console.log('✅ Autofill credentials prepared successfully');
+        console.log(
+          '✅ Autofill credentials prepared successfully (all encrypted)',
+        );
       } catch (autofillError) {
         console.warn(
-          '⚠️ Non-critical: Failed to prepare autofill after decryption:',
+          '⚠️ Non-critical: Failed to prepare autofill credentials:',
           autofillError,
         );
         // Don't fail the operation if autofill prep fails
@@ -118,7 +108,7 @@ export const decryptAllAndPrepareAutofill = createAsyncThunk(
 
       return null;
     } catch (error: any) {
-      console.error('❌ Error decrypting passwords for autofill:', error);
+      console.error('❌ Error preparing autofill:', error);
       return rejectWithValue(error.message);
     }
   },
@@ -155,13 +145,31 @@ export const savePassword = createAsyncThunk(
       console.log('💾 [Redux] Saving password');
       await encryptedDatabase.savePasswordEntryOptimized(entry, masterPassword);
 
+      // 🔐 CRITICAL: Reload entry from database to get IV/TAG for autofill
+      // The entry we saved has IV/TAG in database, but the `entry` object
+      // passed in doesn't have those fields populated yet.
+      console.log('🔄 Loading saved entry from database to get IV/TAG...');
+      const allEntries = await encryptedDatabase.getAllPasswordEntries(
+        masterPassword,
+      );
+      const savedEntry = allEntries.find(e => e.id === entry.id);
+      if (!savedEntry) {
+        throw new Error('Failed to reload saved password entry');
+      }
+      console.log(
+        `✅ Reloaded entry with IV=${!!savedEntry.passwordIv} TAG=${!!savedEntry.passwordTag}`,
+      );
+
       // Prepare credentials for autofill after saving
       try {
         console.log('🔄 Preparing autofill credentials...');
         const state = getState() as any;
         const allPasswords = state.passwords.passwords || [];
+        // Include the newly saved entry with full IV/TAG context
+        const allPasswordsWithNew = allPasswords.filter(p => p.id !== entry.id);
+        allPasswordsWithNew.push(savedEntry);
         await autofillService.prepareCredentialsForAutofill(
-          allPasswords,
+          allPasswordsWithNew,
           masterPassword,
         );
         console.log('✅ Autofill credentials prepared');
@@ -173,7 +181,7 @@ export const savePassword = createAsyncThunk(
         // Don't fail password save if autofill prep fails
       }
 
-      return entry;
+      return savedEntry;
     } catch (error: any) {
       return rejectWithValue(error.message);
     }

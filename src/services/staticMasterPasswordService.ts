@@ -7,6 +7,7 @@ import {
   CRYPTO_CONSTANTS,
 } from './cryptoService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { sessionCache } from '../utils/sessionCache';
 
 // Storage keys for static master password
 export const STATIC_MP_KEYS = {
@@ -83,6 +84,17 @@ export const generateStaticMasterPassword =
         );
         staticMPCache = null; // Clear invalid cache
       } else {
+        // Re-cache in sessionCache to ensure autofill can access it
+        sessionCache.set<string>(
+          'masterPassword',
+          staticMPCache.password,
+          24 * 60 * 60 * 1000,
+        );
+        sessionCache.set<string>(
+          'encryptionKey',
+          staticMPCache.derivedKey,
+          24 * 60 * 60 * 1000,
+        );
         return {
           success: true,
           password: staticMPCache.password,
@@ -160,6 +172,22 @@ export const generateStaticMasterPassword =
           timestamp: Date.now(),
           userId: currentUser.uid,
         };
+
+        // Step 4f: Also store in sessionCache for autofill service access
+        // This allows autofillService to retrieve the master password even when app is backgrounded
+        sessionCache.set<string>(
+          'masterPassword',
+          staticPassword,
+          24 * 60 * 60 * 1000,
+        ); // 24 hours TTL
+        sessionCache.set<string>(
+          'encryptionKey',
+          derivedKey,
+          24 * 60 * 60 * 1000,
+        ); // 24 hours TTL
+        console.log(
+          '🔐 [StaticMP] Master password cached in sessionCache for autofill access',
+        );
 
         const duration = Date.now() - startTime;
         console.log(

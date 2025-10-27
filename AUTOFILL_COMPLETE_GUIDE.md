@@ -161,6 +161,10 @@ private fun normalizeDomain(domain: String): String {
 
 ```powershell
 npm run android
+Build to see error
+Set-Location "e:\IT\Mobile\PasswordEpic\android"; ./gradlew.bat clean assembleDebug 2>&1 | Select-Object -Last 50
+Install APK
+adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
 ### Step 2: Clear Device (1 min)

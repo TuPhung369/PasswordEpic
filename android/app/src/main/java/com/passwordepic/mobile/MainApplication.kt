@@ -1,18 +1,39 @@
 package com.passwordepic.mobile
 
 import android.app.Application
+import android.util.Log
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.ReactNativeHost
 import com.facebook.react.ReactPackage
+import com.facebook.react.bridge.ReactContext
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.passwordepic.mobile.BuildConfig
 import com.passwordepic.mobile.autofill.AutofillBridgePackage
 
 class MainApplication : Application(), ReactApplication {
+
+  companion object {
+    private const val TAG = "MainApplication"
+    
+    /**
+     * Static reference to React context for autofill activities
+     * Since AutofillTestActivity runs as a separate activity outside the main RN stack,
+     * we need a static reference to communicate back to React Native
+     */
+    @Volatile
+    private var reactContext: ReactContext? = null
+    
+    fun getReactContext(): ReactContext? = reactContext
+    
+    fun setReactContext(context: ReactContext?) {
+      Log.d(TAG, "Setting React context: ${if (context != null) "Available" else "Null"}")
+      reactContext = context
+    }
+  }
 
   override val reactNativeHost: ReactNativeHost =
       object : DefaultReactNativeHost(this) {

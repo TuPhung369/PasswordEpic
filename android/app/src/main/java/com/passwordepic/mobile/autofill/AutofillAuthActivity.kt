@@ -223,12 +223,29 @@ class AutofillAuthActivity : FragmentActivity() {
      * Delivers the selected credential back to the autofill service
      * Caches the credential and finishes activity to trigger autofill again
      * 
+     * ⚠️ SECURITY NOTE: If password is encrypted (iv and tag present), it needs decryption
+     * before being filled into forms. The password must be decrypted through React Native
+     * using the master key or obtained from the app session.
+     * 
      * @param credential The credential to deliver
      */
     private fun deliverCredential(credential: AutofillCredential) {
         Log.d(TAG, "🔐 Delivering credential: ${credential.username}")
+        Log.d(TAG, "📦 Credential encrypted: ${credential.isEncrypted}")
+        Log.d(TAG, "🔑 Has IV: ${credential.iv.isNotEmpty()}, Has TAG: ${credential.tag.isNotEmpty()}")
 
         try {
+            // Check if password needs decryption
+            if (credential.isEncrypted && credential.iv.isNotEmpty() && credential.tag.isNotEmpty()) {
+                Log.d(TAG, "🔒 Password is encrypted - it will need to be decrypted before filling")
+                Log.d(TAG, "📝 Encrypted password length: ${credential.password.length} chars")
+                // Store the encrypted credential as-is
+                // The PasswordEpicAutofillService will handle decryption during fill
+                // OR a separate mechanism should decrypt and provide plaintext
+            } else {
+                Log.d(TAG, "✅ Password is plaintext - ready for immediate autofill")
+            }
+
             // Cache the authenticated credential in the service
             // When autofill is requested again, the service will use this cached credential
             PasswordEpicAutofillService.setAuthenticatedCredential(credential.id, credential)
@@ -239,6 +256,7 @@ class AutofillAuthActivity : FragmentActivity() {
                 putExtra("credential_id", credential.id)
                 putExtra("username", credential.username)
                 putExtra("domain", credential.domain)
+                putExtra("isEncrypted", credential.isEncrypted)
             }
             setResult(RESULT_OK, resultIntent)
             

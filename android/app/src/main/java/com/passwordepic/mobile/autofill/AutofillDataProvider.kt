@@ -72,6 +72,61 @@ class AutofillDataProvider(private val context: Context? = null) {
     }
 
     /**
+     * Tries to get plaintext password from React Native decryption cache
+     * This is used after the app has decrypted the password via biometric auth
+     * 
+     * The plaintext password is stored with a 60-second expiry for security
+     * 
+     * @param credentialId The credential ID
+     * @return Plaintext password if found and not expired, null otherwise
+     */
+    fun getDecryptedPasswordForAutofill(credentialId: String): String? {
+        try {
+            if (context == null) {
+                Log.w(TAG, "⚠️ Context is null - cannot access plaintext cache")
+                return null
+            }
+            
+            // Use the correct SharedPreferences name for plaintext cache
+            val prefs = context.getSharedPreferences("autofill_plaintext_cache", Context.MODE_PRIVATE)
+            val passwordJson = prefs.getString("plaintext_$credentialId", null)
+            
+            if (passwordJson == null) {
+                Log.w(TAG, "⚠️ No cached plaintext password for $credentialId")
+                return null
+            }
+            
+            try {
+                val obj = JSONObject(passwordJson)
+                val expiryTime = obj.optLong("expiresAt", 0)
+                val currentTime = System.currentTimeMillis()
+                
+                // Check if expired
+                if (currentTime > expiryTime) {
+                    Log.w(TAG, "⏰ Plaintext password for $credentialId has EXPIRED - clearing cache")
+                    prefs.edit().remove("plaintext_$credentialId").apply()
+                    return null
+                }
+                
+                val password = obj.optString("password", null)
+                if (password != null) {
+                    val remainingSeconds = (expiryTime - currentTime) / 1000
+                    Log.d(TAG, "✅ Found cached plaintext password for $credentialId (expires in ${remainingSeconds}s)")
+                } else {
+                    Log.w(TAG, "⚠️ Password field is missing in cache for $credentialId")
+                }
+                return password
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error parsing cached password JSON for $credentialId: ${e.message}")
+                return null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error retrieving decrypted password for autofill: ${e.message}", e)
+            return null
+        }
+    }
+
+    /**
      * Retrieves credentials from SharedPreferences
      * 
      * @param domain The domain to match
@@ -126,12 +181,44 @@ class AutofillDataProvider(private val context: Context? = null) {
                 
                 if (domainsMatch(credDomain, domain)) {
                     Log.d(TAG, "✅ MATCH FOUND! credential domain='$credDomain' matches requested='$domain'")
+                    
+                    val credentialId = credential.optString("id", "")
+                    
+                    // Try to get plaintext password from decryption cache first
+                    var passwordToUse = password
+                    var isEncrypted = credential.optBoolean("encrypted", false)
+                    
+                    val decryptedPassword = getDecryptedPasswordForAutofill(credentialId)
+                    if (decryptedPassword != null) {
+                        Log.d(TAG, "🔓 Using cached plaintext password for autofill (decrypted by app)")
+                        passwordToUse = decryptedPassword
+                        isEncrypted = false  // Now it's plaintext
+                    }
+                    
+                    // Extract encryption metadata for reference (in case we need it later)
+                    val salt = credential.optString("salt", "")  // 🔑 CRITICAL: Salt for key derivation
+                    val iv = credential.optString("iv", "")
+                    val tag = credential.optString("tag", "")
+                    
+                    if (isEncrypted) {
+                        Log.d(TAG, "🔐 Credential encrypted: $isEncrypted")
+                        Log.d(TAG, "   ✓ has SALT: ${salt.isNotEmpty()} (${salt.length} chars)")
+                        Log.d(TAG, "   ✓ has IV: ${iv.isNotEmpty()} (${iv.length} chars)")
+                        Log.d(TAG, "   ✓ has TAG: ${tag.isNotEmpty()} (${tag.length} chars)")
+                    } else {
+                        Log.d(TAG, "✅ Credential is plaintext - ready for autofill")
+                    }
+                    
                     matchingCredentials.add(
                         AutofillCredential(
-                            id = credential.optString("id", ""),
+                            id = credentialId,
                             username = username,
-                            password = password,
-                            domain = credDomain
+                            password = passwordToUse,
+                            domain = credDomain,
+                            salt = salt,  // 🔑 CRITICAL: Include salt for decryption
+                            iv = iv,
+                            tag = tag,
+                            isEncrypted = isEncrypted
                         )
                     )
                 } else {

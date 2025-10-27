@@ -151,24 +151,35 @@ export class EncryptedDatabaseService {
 
   /**
    * Get all password entries
-   * Returns instantly with metadata, password field contains encrypted data
+   * When masterPassword provided: Returns with decrypted passwords (isDecrypted=true)
+   * When masterPassword empty: Returns with encrypted passwords for lazy loading (isDecrypted=false)
    */
   public async getAllPasswordEntries(
-    _masterPassword: string,
+    masterPassword: string,
   ): Promise<PasswordEntry[]> {
     const startTime = Date.now();
-    console.log('📖 [Load] Loading passwords...');
+    const shouldDecrypt = masterPassword && masterPassword.length > 0;
+    console.log(`📖 [Load] Loading passwords...`);
+    console.log(
+      `📖 [Load] masterPassword length: ${
+        masterPassword ? masterPassword.length : 'undefined'
+      }`,
+    );
+    console.log(`📖 [Load] shouldDecrypt: ${shouldDecrypt}`);
 
     try {
       const optimizedEntries = await this.getAllOptimizedEntries();
 
-      // Convert to PasswordEntry format with encrypted password
+      // Convert to PasswordEntry format
       const entries: PasswordEntry[] = optimizedEntries.map(entry => ({
         id: entry.id,
         title: entry.title,
         username: entry.username,
-        password: entry.encryptedPassword, // Store encrypted password - will be decrypted on demand
-        isDecrypted: false, // Password is encrypted
+        password: entry.encryptedPassword, // Initially set to encrypted password
+        passwordSalt: entry.passwordSalt, // ✅ Include SALT for key derivation during autofill decryption
+        passwordIv: entry.passwordIv, // ✅ Include IV for autofill decryption
+        passwordTag: entry.passwordAuthTag, // ✅ Include TAG (mapped from authTag) for autofill decryption
+        isDecrypted: false, // Will be updated if decryption happens
         website: entry.website,
         notes: entry.notes,
         category: entry.category,
@@ -181,9 +192,37 @@ export class EncryptedDatabaseService {
         breachStatus: entry.breachStatus,
       }));
 
+      // Decrypt all password fields if masterPassword provided
+      if (shouldDecrypt) {
+        console.log(`🔓 [Load] Decrypting ${entries.length} passwords...`);
+        for (let i = 0; i < entries.length; i++) {
+          try {
+            const optimizedEntry = optimizedEntries[i];
+            const derivedKey = deriveKeyFromPassword(
+              masterPassword,
+              optimizedEntry.passwordSalt,
+            );
+            const decryptedPassword = decryptData(
+              optimizedEntry.encryptedPassword,
+              derivedKey,
+              optimizedEntry.passwordIv,
+              optimizedEntry.passwordAuthTag,
+            );
+
+            entries[i].password = decryptedPassword;
+            entries[i].isDecrypted = true; // 🔓 Mark as decrypted!
+          } catch (error) {
+            console.warn(`⚠️ [Load] Failed to decrypt password ${i}:`, error);
+            // Keep encrypted password if decryption fails
+            entries[i].isDecrypted = false;
+          }
+        }
+        console.log(`✅ [Load] Decryption complete`);
+      }
+
       const duration = Date.now() - startTime;
       console.log(
-        `✅ [Load] Loaded ${entries.length} passwords in ${duration}ms`,
+        `✅ [Load] Loaded ${entries.length} passwords in ${duration}ms (decrypted: ${shouldDecrypt})`,
       );
 
       return entries.sort(

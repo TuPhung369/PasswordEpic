@@ -21,6 +21,7 @@ import {
   setRootDetectionEnabled,
   setAntiTamperingEnabled,
   setMemoryProtectionEnabled,
+  restoreSettings,
 } from '../../store/slices/settingsSlice';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { ThemeSelector } from '../../components/ThemeSelector';
@@ -401,8 +402,10 @@ export const SettingsScreen: React.FC = () => {
       }
       console.log('✅ [SettingsScreen] Master password retrieved');
 
-      // Get passwords from store
-      const { passwords } = require('../../store').store.getState().passwords;
+      // Get passwords and settings from store
+      const store = require('../../store').store;
+      const { passwords } = store.getState().passwords;
+      const settings = store.getState().settings;
 
       // Prepare backup data with master password encryption
       const backupOptions = {
@@ -432,11 +435,17 @@ export const SettingsScreen: React.FC = () => {
         updatedAt: new Date(),
       }));
 
+      // Debug: Log settings before backup
+      console.log(
+        '🔍 [SettingsScreen] Settings to backup:',
+        JSON.stringify(settings, null, 2),
+      );
+
       // Create backup in memory (temporary file for upload)
       const result = await backupService.createBackup(
         passwords,
         backupCategories,
-        {}, // settings
+        settings, // Use actual settings from Redux store
         backupOptions,
       );
 
@@ -590,15 +599,30 @@ export const SettingsScreen: React.FC = () => {
 
       if (result.result.success) {
         console.log('✅ [SettingsScreen] Restore successful');
-        showAlert(
-          'Success',
-          `✅ Successfully restored ${result.result.restoredEntries} passwords`,
-        );
+
+        // Restore settings if requested and available
+        if (options.restoreSettings && result.data?.settings) {
+          console.log(
+            '🔵 [SettingsScreen] Restoring settings from backup...',
+            JSON.stringify(result.data.settings, null, 2),
+          );
+          dispatch(restoreSettings(result.data.settings));
+          console.log('✅ [SettingsScreen] Settings restored');
+        }
 
         // Reload passwords after restore
         await dispatch(
           loadPasswordsLazy(masterPasswordResult.password),
         ).unwrap();
+
+        showAlert(
+          'Success',
+          `✅ Successfully restored ${result.result.restoredEntries} passwords${
+            options.restoreSettings && result.data?.settings
+              ? ' and settings'
+              : ''
+          }`,
+        );
 
         // Close the modal
         setShowBackupModal(false);

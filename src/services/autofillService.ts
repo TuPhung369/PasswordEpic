@@ -143,7 +143,8 @@ class AutofillService {
   constructor() {
     if (Platform.OS === 'android') {
       // Initialize event emitter for autofill events
-      this.eventEmitter = new NativeEventEmitter(AutofillBridge);
+      // Pass null since AutofillBridge doesn't implement addListener/removeListeners
+      this.eventEmitter = new NativeEventEmitter(null);
       this.setupDecryptRequestListener();
     }
   }
@@ -663,7 +664,7 @@ class AutofillService {
 
                 if (!password.isDecrypted) {
                   // Password is encrypted, need to decrypt before caching
-                  console.warn(
+                  console.log(
                     `⚠️ [Cache] Password for ${password.id} is encrypted, attempting to decrypt before cache...`,
                   );
 

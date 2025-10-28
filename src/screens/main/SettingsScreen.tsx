@@ -7,6 +7,11 @@ import {
   Switch,
   ScrollView,
   Platform,
+  Modal,
+  FlatList,
+  Image,
+  ActionSheetIOS,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -45,6 +50,7 @@ import {
   isGoogleDriveAvailable,
 } from '../../services/googleDriveService';
 import AutofillTestService from '../../services/autofillTestService';
+import FilePicker from '../../modules/FilePicker';
 
 // Memoized SettingItem để tránh re-render
 const SettingItem = React.memo<{
@@ -100,9 +106,23 @@ export const SettingsScreen: React.FC = () => {
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
 
+  // Icon Report Modal state
+  const [showIconReportModal, setShowIconReportModal] = useState(false);
+  const [iconReportData, setIconReportData] = useState<{
+    summary: string;
+    details: string[];
+    isValid: boolean;
+  }>({ summary: '', details: [], isValid: false });
+
   // Autofill state
   const [isAutofillEnabled, setIsAutofillEnabled] = useState(false);
   const [isCheckingAutofill, setIsCheckingAutofill] = useState(false);
+
+  // Avatar state
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
+  const [avatarEmoji, setAvatarEmoji] = useState('😊');
+  const [avatarImageUri, setAvatarImageUri] = useState<string | null>(null);
+  const [avatarTab, setAvatarTab] = useState<'emoji' | 'image'>('emoji');
 
   // Confirm dialog hook
   const { confirmDialog, showAlert, showDestructive, hideConfirm } =
@@ -585,6 +605,7 @@ export const SettingsScreen: React.FC = () => {
         decryptionPassword: masterPasswordResult.password, // Use master password
         restoreSettings: options.restoreSettings,
         restoreCategories: options.restoreCategories,
+        restoreDomains: options.restoreDomains || false,
         overwriteDuplicates: options.overwriteDuplicates || false,
       };
 
@@ -610,19 +631,42 @@ export const SettingsScreen: React.FC = () => {
           console.log('✅ [SettingsScreen] Settings restored');
         }
 
+        // Restore trusted domains if requested and available
+        if (options.restoreDomains && result.data?.domains) {
+          console.log(
+            '🔵 [SettingsScreen] Restoring trusted domains from backup...',
+            `${result.data.domains.length} domains found`,
+          );
+          const domainsRestored = await backupService.restoreTrustedDomains(
+            result.data.domains,
+          );
+          if (domainsRestored) {
+            console.log(
+              '✅ [SettingsScreen] Trusted domains restored successfully',
+            );
+          } else {
+            console.warn(
+              '⚠️ [SettingsScreen] Failed to restore trusted domains',
+            );
+          }
+        }
+
         // Reload passwords after restore
         await dispatch(
           loadPasswordsLazy(masterPasswordResult.password),
         ).unwrap();
 
-        showAlert(
-          'Success',
-          `✅ Successfully restored ${result.result.restoredEntries} passwords${
-            options.restoreSettings && result.data?.settings
-              ? ' and settings'
-              : ''
-          }`,
-        );
+        const restoreInfo = [
+          `${result.result.restoredEntries} passwords`,
+          options.restoreSettings && result.data?.settings && 'settings',
+          options.restoreDomains &&
+            result.data?.domains &&
+            `${result.data.domains.length} trusted domains`,
+        ]
+          .filter(Boolean)
+          .join(', ');
+
+        showAlert('Success', `✅ Successfully restored ${restoreInfo}`);
 
         // Close the modal
         setShowBackupModal(false);
@@ -842,6 +886,47 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
+  // Image picker handler
+  const handlePickImage = async () => {
+    try {
+      if (Platform.OS === 'android') {
+        const hasPermission = await requestStoragePermission();
+        if (!hasPermission) {
+          showAlert(
+            'Permission Denied',
+            'Storage permission is required to pick images.',
+          );
+          return;
+        }
+      }
+
+      const filePath = await FilePicker.pickFile();
+      if (filePath) {
+        console.log('📸 Image picked:', filePath);
+        setAvatarImageUri(filePath);
+        // Don't close modal, let user see the preview
+      }
+    } catch (error) {
+      console.error('Failed to pick image:', error);
+      showAlert('Error', 'Failed to pick image. Please try again.');
+    }
+  };
+
+  // Camera capture handler (for future implementation with react-native-camera)
+  const handleCapturePhoto = () => {
+    Alert.alert(
+      'Coming Soon',
+      'Camera capture feature will be available in a future update.',
+      [{ text: 'OK' }],
+    );
+  };
+
+  // Clear avatar handler
+  const handleClearAvatar = () => {
+    setAvatarImageUri(null);
+    setAvatarEmoji('😊');
+  };
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.background }]}
@@ -862,9 +947,25 @@ export const SettingsScreen: React.FC = () => {
               { backgroundColor: theme.card, borderColor: theme.border },
             ]}
           >
-            <View style={[styles.avatar, { backgroundColor: theme.surface }]}>
-              <Ionicons name="person-outline" size={32} color={theme.primary} />
-            </View>
+            <TouchableOpacity
+              onPress={() => setShowAvatarModal(true)}
+              style={[styles.avatar, { backgroundColor: theme.surface }]}
+              activeOpacity={0.7}
+            >
+              {avatarImageUri ? (
+                <Image
+                  source={{ uri: avatarImageUri }}
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <Text style={styles.avatarEmoji}>{avatarEmoji}</Text>
+              )}
+              <View
+                style={[styles.cameraIcon, { backgroundColor: theme.primary }]}
+              >
+                <Ionicons name="camera" size={12} color="#fff" />
+              </View>
+            </TouchableOpacity>
             <View style={styles.userInfo}>
               <Text style={[styles.userName, { color: theme.text }]}>
                 {user?.displayName || 'User'}
@@ -1088,11 +1189,11 @@ export const SettingsScreen: React.FC = () => {
 
           <SettingItem
             icon="cloud-upload-outline"
-            title="Backup & Sync"
+            title="Backup & Restore"
             subtitle="Manage your encrypted backups"
             theme={theme}
             onPress={() => {
-              console.log('🚀 Backup & Sync button pressed!');
+              console.log('🚀 Backup & Restore button pressed!');
               console.log('📊 Current state:', {
                 showBackupModal,
                 availableBackups: availableBackups.length,
@@ -1158,7 +1259,7 @@ export const SettingsScreen: React.FC = () => {
             <SettingItem
               icon="bug-outline"
               title="Test Category Icons"
-              subtitle="Debug: Test if category icons are valid (Console output)"
+              subtitle="Debug: Test if category icons are valid"
               theme={theme}
               onPress={async () => {
                 try {
@@ -1167,8 +1268,9 @@ export const SettingsScreen: React.FC = () => {
                   );
                   await CompleteIconFixScript.testAllCategoryIcons();
                   const report =
-                    await CompleteIconFixScript.generateDetailedReport();
-                  showAlert('🔍 Category Icons Status', report);
+                    await CompleteIconFixScript.generateCompactReport();
+                  setIconReportData(report);
+                  setShowIconReportModal(true);
                 } catch (error: any) {
                   showAlert('❌ Error', `Debug failed: ${error.message}`);
                 }
@@ -1251,29 +1353,22 @@ export const SettingsScreen: React.FC = () => {
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity
-              style={[
-                styles.settingItem,
-                { backgroundColor: theme.card, borderColor: theme.primary },
-              ]}
+            <SettingItem
+              icon="flask-outline"
+              title="Test Autofill"
+              subtitle="Open test screen with login form to verify autofill works"
               onPress={handleLaunchAutofillTest}
-              disabled={isCheckingAutofill}
-            >
-              <Ionicons name="flask-outline" size={24} color={theme.primary} />
-              <View style={styles.settingContent}>
-                <Text style={[styles.settingTitle, { color: theme.text }]}>
-                  Test Autofill
-                </Text>
-                <Text
-                  style={[
-                    styles.settingSubtitle,
-                    { color: theme.textSecondary },
-                  ]}
-                >
-                  Open test screen with login form to verify autofill works
-                </Text>
-              </View>
-            </TouchableOpacity>
+              theme={theme}
+              rightElement={
+                <Ionicons
+                  name="play-outline"
+                  size={24}
+                  color={
+                    isCheckingAutofill ? theme.textSecondary : theme.primary
+                  }
+                />
+              }
+            />
           </View>
         )}
 
@@ -1331,6 +1426,299 @@ export const SettingsScreen: React.FC = () => {
       />
 
       <ConfirmDialog {...confirmDialog} onCancel={hideConfirm} />
+
+      {/* Icon Report Modal */}
+      <Modal
+        visible={showIconReportModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowIconReportModal(false)}
+      >
+        <View
+          style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.7)' }]}
+        >
+          <View
+            style={[
+              styles.modalContent,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}
+          >
+            {/* Header */}
+            <View
+              style={[styles.modalHeader, { borderBottomColor: theme.border }]}
+            >
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
+                📋 Category Icons Status
+              </Text>
+              <TouchableOpacity onPress={() => setShowIconReportModal(false)}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Summary */}
+            <View
+              style={[
+                styles.summarySectionModal,
+                {
+                  backgroundColor: iconReportData.isValid
+                    ? theme.success
+                    : theme.error,
+                },
+              ]}
+            >
+              <Text style={[styles.summaryText, { color: '#fff' }]}>
+                {iconReportData.summary}
+              </Text>
+            </View>
+
+            {/* Details List */}
+            <FlatList
+              data={iconReportData.details}
+              keyExtractor={(item, index) => `icon-${index}`}
+              renderItem={({ item }) => (
+                <View
+                  style={[
+                    styles.detailItem,
+                    { borderBottomColor: theme.border },
+                  ]}
+                >
+                  <Text style={[styles.detailText, { color: theme.text }]}>
+                    {item}
+                  </Text>
+                </View>
+              )}
+              scrollEnabled={true}
+              style={styles.detailsList}
+            />
+
+            {/* Footer */}
+            <TouchableOpacity
+              style={[styles.closeButton, { backgroundColor: theme.primary }]}
+              onPress={() => setShowIconReportModal(false)}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Avatar Selection Modal */}
+      <Modal
+        visible={showAvatarModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowAvatarModal(false)}
+      >
+        <View
+          style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.7)' }]}
+        >
+          <View
+            style={[
+              styles.modalContent,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}
+          >
+            {/* Header */}
+            <View
+              style={[styles.modalHeader, { borderBottomColor: theme.border }]}
+            >
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
+                👤 Choose Avatar
+              </Text>
+              <TouchableOpacity onPress={() => setShowAvatarModal(false)}>
+                <Ionicons
+                  name="close-outline"
+                  size={24}
+                  color={theme.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Tab Buttons */}
+            <View
+              style={[styles.tabContainer, { borderBottomColor: theme.border }]}
+            >
+              <TouchableOpacity
+                onPress={() => setAvatarTab('emoji')}
+                style={[
+                  styles.tabButton,
+                  avatarTab === 'emoji' && {
+                    backgroundColor: theme.primary + '20',
+                    borderBottomColor: theme.primary,
+                    borderBottomWidth: 2,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.tabButtonText,
+                    {
+                      color:
+                        avatarTab === 'emoji'
+                          ? theme.primary
+                          : theme.textSecondary,
+                    },
+                  ]}
+                >
+                  😊 Emoji
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setAvatarTab('image')}
+                style={[
+                  styles.tabButton,
+                  avatarTab === 'image' && {
+                    backgroundColor: theme.primary + '20',
+                    borderBottomColor: theme.primary,
+                    borderBottomWidth: 2,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.tabButtonText,
+                    {
+                      color:
+                        avatarTab === 'image'
+                          ? theme.primary
+                          : theme.textSecondary,
+                    },
+                  ]}
+                >
+                  🖼️ Photo
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Emoji Tab Content */}
+            {avatarTab === 'emoji' && (
+              <View style={styles.emojiGridContainer}>
+                <FlatList
+                  data={[
+                    '😊',
+                    '😎',
+                    '🤓',
+                    '😍',
+                    '🥰',
+                    '😂',
+                    '🤔',
+                    '😜',
+                    '🧠',
+                    '💪',
+                    '🚀',
+                    '⭐',
+                    '🎓',
+                    '👨‍💼',
+                    '👩‍💼',
+                    '🐱',
+                    '🐶',
+                    '🦊',
+                    '🌟',
+                    '💎',
+                    '🔥',
+                    '🎨',
+                    '🎭',
+                    '🎵',
+                  ]}
+                  numColumns={6}
+                  scrollEnabled={true}
+                  nestedScrollEnabled={true}
+                  keyExtractor={(item, index) => `emoji-${index}`}
+                  renderItem={({ item: emoji }) => (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setAvatarEmoji(emoji);
+                        setAvatarImageUri(null); // Clear image when selecting emoji
+                        setShowAvatarModal(false);
+                      }}
+                      style={[
+                        styles.emojiItem,
+                        avatarEmoji === emoji &&
+                          avatarImageUri === null && {
+                            backgroundColor: theme.primary,
+                            borderColor: theme.primary,
+                          },
+                      ]}
+                    >
+                      <Text style={styles.emoji}>{emoji}</Text>
+                    </TouchableOpacity>
+                  )}
+                />
+              </View>
+            )}
+
+            {/* Image Tab Content */}
+            {avatarTab === 'image' && (
+              <View style={styles.imageTabContainer}>
+                {avatarImageUri && (
+                  <View style={styles.imagePreviewContainer}>
+                    <Text style={[styles.previewLabel, { color: theme.text }]}>
+                      Preview:
+                    </Text>
+                    <Image
+                      source={{ uri: avatarImageUri }}
+                      style={[
+                        styles.imagePreview,
+                        { borderColor: theme.border },
+                      ]}
+                    />
+                  </View>
+                )}
+
+                <View style={styles.imageButtonsContainer}>
+                  <TouchableOpacity
+                    onPress={handlePickImage}
+                    style={[
+                      styles.imageActionButton,
+                      { backgroundColor: theme.primary },
+                    ]}
+                  >
+                    <Ionicons name="image-outline" size={20} color="#fff" />
+                    <Text style={styles.imageActionButtonText}>
+                      Choose from Gallery
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={handleCapturePhoto}
+                    style={[
+                      styles.imageActionButton,
+                      { backgroundColor: theme.primary + '70' },
+                    ]}
+                  >
+                    <Ionicons name="camera-outline" size={20} color="#fff" />
+                    <Text style={styles.imageActionButtonText}>Take Photo</Text>
+                  </TouchableOpacity>
+
+                  {avatarImageUri && (
+                    <TouchableOpacity
+                      onPress={handleClearAvatar}
+                      style={[
+                        styles.imageActionButton,
+                        { backgroundColor: '#EF4444' },
+                      ]}
+                    >
+                      <Ionicons name="trash-outline" size={20} color="#fff" />
+                      <Text style={styles.imageActionButtonText}>
+                        Clear Avatar
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Close Button */}
+            <TouchableOpacity
+              style={[styles.closeButton, { backgroundColor: theme.primary }]}
+              onPress={() => setShowAvatarModal(false)}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -1389,6 +1777,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
+    position: 'relative',
+  },
+  avatarEmoji: {
+    fontSize: 32,
+  },
+  cameraIcon: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emojiGridContainer: {
+    flex: 1,
+    padding: 16,
+  },
+  emojiItem: {
+    flex: 1 / 6,
+    aspectRatio: 1,
+    margin: 6,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  emoji: {
+    fontSize: 28,
   },
   userInfo: {
     flex: 1,
@@ -1476,5 +1895,128 @@ const styles = StyleSheet.create({
     zIndex: 1001,
     borderRadius: 20,
     padding: 8,
+  },
+  // Icon Report Modal Styles
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    flex: 1,
+    minHeight: 500,
+    maxHeight: '85%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 0.5,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 0.5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  summarySectionModal: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 8,
+  },
+  summaryText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  detailsList: {
+    maxHeight: 300,
+    marginTop: 12,
+  },
+  detailItem: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: 0.5,
+  },
+  detailText: {
+    fontSize: 13,
+    fontFamily: 'monospace',
+  },
+  closeButton: {
+    marginHorizontal: 16,
+    marginVertical: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  // Avatar Image Styles
+  avatarImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    resizeMode: 'cover',
+  },
+  // Tab Styles
+  tabContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Image Tab Styles
+  imageTabContainer: {
+    flex: 1,
+    padding: 16,
+    justifyContent: 'space-between',
+  },
+  imagePreviewContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  previewLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  imagePreview: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 2,
+    resizeMode: 'cover',
+  },
+  imageButtonsContainer: {
+    gap: 12,
+  },
+  imageActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  imageActionButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
   },
 });

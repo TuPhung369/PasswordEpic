@@ -58,6 +58,7 @@ export interface RestoreOptions {
   overwriteDuplicates: boolean;
   restoreCategories: boolean;
   restoreSettings: boolean;
+  restoreDomains: boolean;
   encryptionPassword?: string;
 }
 
@@ -134,6 +135,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
     overwriteDuplicates: false,
     restoreCategories: true,
     restoreSettings: true, // Enable by default to restore app settings
+    restoreDomains: true, // Enable by default to restore trusted domains
     encryptionPassword: '',
   });
 
@@ -854,6 +856,13 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                 'Restore application preferences and settings',
                 restoreOptions.restoreSettings,
                 value => handleRestoreOptionChange('restoreSettings', value),
+              )}
+
+              {renderSwitchOption(
+                'Restore Trusted Domains',
+                'Restore your trusted domains list for autofill',
+                restoreOptions.restoreDomains,
+                value => handleRestoreOptionChange('restoreDomains', value),
               )}
             </View>
 

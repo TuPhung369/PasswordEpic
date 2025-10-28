@@ -17,6 +17,7 @@ export interface BackupData {
   entries: PasswordEntry[];
   categories: PasswordCategory[];
   settings: any;
+  domains: any[]; // Trusted domains list
   metadata: BackupMetadata;
 }
 
@@ -26,6 +27,7 @@ export interface BackupMetadata {
   deviceId: string;
   entryCount: number;
   categoryCount: number;
+  domainCount: number;
   encryptionMethod: string;
   compressionMethod: string;
   backupSize: number;
@@ -47,6 +49,7 @@ export interface RestoreOptions {
   decryptionPassword?: string;
   restoreSettings: boolean;
   restoreCategories: boolean;
+  restoreDomains: boolean;
   overwriteDuplicates: boolean;
   categoryMapping?: { [oldId: string]: string };
 }
@@ -66,6 +69,7 @@ export interface RestoreResult {
   skippedEntries: number;
   errorEntries: number;
   restoredCategories: number;
+  restoredDomains: number;
   errors: string[];
   warnings: string[];
 }
@@ -221,6 +225,7 @@ class BackupService {
               skippedEntries: 0,
               errorEntries: 0,
               restoredCategories: 0,
+              restoredDomains: 0,
               errors: ['Invalid decryption password'] as string[],
               warnings: [],
             },
@@ -246,6 +251,7 @@ class BackupService {
             skippedEntries: 0,
             errorEntries: 0,
             restoredCategories: 0,
+            restoredDomains: 0,
             errors: validationResult.errors as string[],
             warnings: [],
           },
@@ -262,6 +268,20 @@ class BackupService {
         options,
       );
 
+      // Process restored domains
+      let processedDomains = backupData.domains || [];
+      if (processedDomains.length > 0) {
+        processedDomains = this.processRestoredDomains(
+          processedDomains,
+          options,
+        );
+      }
+
+      console.log(
+        '🟣 [BackupService] Restore - processed domains count:',
+        processedDomains.length,
+      );
+
       return {
         result: {
           success: true,
@@ -269,6 +289,7 @@ class BackupService {
           skippedEntries: 0,
           errorEntries: 0,
           restoredCategories: processedCategories.length,
+          restoredDomains: processedDomains.length,
           errors: [],
           warnings: [],
         },
@@ -276,6 +297,7 @@ class BackupService {
           ...backupData,
           entries: processedEntries,
           categories: processedCategories,
+          domains: processedDomains,
         },
       };
     } catch (error) {
@@ -286,6 +308,7 @@ class BackupService {
           skippedEntries: 0,
           errorEntries: 0,
           restoredCategories: 0,
+          restoredDomains: 0,
           errors: [
             error instanceof Error ? error.message : 'Restore failed',
           ] as string[],
@@ -395,6 +418,34 @@ class BackupService {
       return true;
     } catch (error) {
       console.error('Failed to delete backup:', error);
+      return false;
+    }
+  }
+
+  // Restore trusted domains from backup data
+  async restoreTrustedDomains(domains: any[]): Promise<boolean> {
+    try {
+      if (!domains || domains.length === 0) {
+        console.log('🟣 [BackupService] No domains to restore');
+        return true;
+      }
+
+      const { domainVerificationService } = await import(
+        './domainVerificationService'
+      );
+
+      // Save the domains to storage
+      await domainVerificationService.saveTrustedDomains(domains);
+
+      console.log(
+        `✅ [BackupService] Successfully restored ${domains.length} trusted domains`,
+      );
+      return true;
+    } catch (error) {
+      console.error(
+        '❌ [BackupService] Failed to restore trusted domains:',
+        error,
+      );
       return false;
     }
   }
@@ -512,6 +563,20 @@ class BackupService {
       }));
     }
 
+    // Load trusted domains for backup
+    let backupDomains: any[] = [];
+    try {
+      const { domainVerificationService } = await import(
+        './domainVerificationService'
+      );
+      backupDomains = await domainVerificationService.getTrustedDomains();
+      console.log(
+        `🟣 [BackupService] Loaded ${backupDomains.length} trusted domains for backup`,
+      );
+    } catch (error) {
+      console.warn('⚠️ [BackupService] Failed to load trusted domains:', error);
+    }
+
     // Get device information
     const appVersion = await DeviceInfo.getVersion();
     const deviceId = await DeviceInfo.getUniqueId();
@@ -526,6 +591,7 @@ class BackupService {
       deviceId,
       entryCount: entries.length,
       categoryCount: categories.length,
+      domainCount: backupDomains.length,
       encryptionMethod: options.encryptBackup ? 'AES-256-GCM' : 'none',
       compressionMethod: options.compressBackup ? 'gzip' : 'none',
       backupSize: 0, // Will be calculated after compression/encryption
@@ -557,12 +623,17 @@ class BackupService {
       entries: processedEntries,
       categories,
       settings: backupSettings,
+      domains: backupDomains,
       metadata,
     };
 
     console.log(
       '🟣 [BackupService] prepareBackupData - includeSettings:',
       options.includeSettings,
+    );
+    console.log(
+      '🟣 [BackupService] prepareBackupData - domains count:',
+      backupData.domains.length,
     );
     console.log(
       '🟣 [BackupService] prepareBackupData - final backupData entries count:',
@@ -797,6 +868,25 @@ class BackupService {
     });
   }
 
+  private processRestoredDomains(
+    domains: any[],
+    _options: RestoreOptions,
+  ): any[] {
+    // Domains are preserved as-is since they contain timestamps
+    // that should be maintained during restore
+    return domains.map(domain => ({
+      ...domain,
+      addedAt:
+        typeof domain.addedAt === 'string'
+          ? parseInt(domain.addedAt, 10)
+          : domain.addedAt,
+      lastUsed:
+        typeof domain.lastUsed === 'string'
+          ? parseInt(domain.lastUsed, 10)
+          : domain.lastUsed,
+    }));
+  }
+
   private async cleanupOldBackups(
     maxBackups: number,
     customPath?: string,
@@ -881,6 +971,7 @@ class BackupService {
         decryptionPassword: password,
         restoreSettings: false,
         restoreCategories: false,
+        restoreDomains: false,
         overwriteDuplicates: false,
       });
 

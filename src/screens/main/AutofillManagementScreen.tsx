@@ -34,6 +34,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { autofillService } from '../../services/autofillService';
 import { domainVerificationService } from '../../services/domainVerificationService';
 import AutofillSettingsPanel from '../../components/AutofillSettingsPanel';
+import { DEFAULT_DOMAINS } from '../../constants/defaultDomains';
 
 interface TrustedDomain {
   domain: string;
@@ -51,6 +52,10 @@ export const AutofillManagementScreen: React.FC = () => {
   const [newDomain, setNewDomain] = useState('');
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [suggestedDomainsExpanded, setSuggestedDomainsExpanded] =
+    useState(false);
+  const [cleanDomain, setCleanDomain] = useState('');
+  const [showCleanDomainPreview, setShowCleanDomainPreview] = useState(false);
 
   useEffect(() => {
     loadTrustedDomains();
@@ -76,18 +81,144 @@ export const AutofillManagementScreen: React.FC = () => {
     }
 
     try {
-      const success = await domainVerificationService.addTrustedDomain(
+      const clean = domainVerificationService.extractCleanDomain(
         newDomain.trim(),
       );
-      if (success) {
-        setNewDomain('');
-        loadTrustedDomains();
-        Alert.alert('Success', 'Domain added to trusted list');
+
+      // Validate the extracted domain
+      if (!clean || clean.length === 0) {
+        Alert.alert(
+          'Error',
+          'Invalid domain format. Please enter a valid domain.',
+        );
+        clearInputField();
+        return;
+      }
+
+      // Check if domain exists in trusted domains
+      const existsInTrusted = trustedDomains.some(
+        d => d.domain.toLowerCase() === clean.toLowerCase(),
+      );
+
+      if (existsInTrusted) {
+        Alert.alert(
+          'Already Added',
+          `${clean} is already in your trusted domains`,
+        );
+        clearInputField();
+        return;
+      }
+
+      // Check if domain exists in popular/suggested domains
+      const existsInPopular = DEFAULT_DOMAINS.some(
+        d => d.toLowerCase() === clean.toLowerCase(),
+      );
+
+      if (existsInPopular) {
+        Alert.alert(
+          'Popular Domain',
+          `${clean} is already available in our suggested domains list.\n\nClick the "+" button next to it to add it.`,
+        );
+        clearInputField();
+        return;
+      }
+
+      // Show confirmation if user entered something different from clean domain
+      // (e.g., URL with protocol, path, port)
+      const userInput = newDomain.trim();
+      if (userInput !== clean) {
+        // Show confirmation dialog showing what was entered vs what will be saved
+        Alert.alert(
+          'Confirm Domain',
+          `You entered: ${userInput}\n\nWill save as: ${clean}`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Add',
+              onPress: async () => {
+                await performAddDomain(clean);
+              },
+            },
+          ],
+        );
+      } else {
+        // User entered exactly what we'll save, no confirmation needed
+        await performAddDomain(clean);
       }
     } catch (error) {
       console.error('Error adding domain:', error);
       Alert.alert('Error', 'Failed to add domain');
+      clearInputField();
     }
+  };
+
+  const clearInputField = () => {
+    setNewDomain('');
+    setCleanDomain('');
+    setShowCleanDomainPreview(false);
+  };
+
+  const performAddDomain = async (domainToAdd: string) => {
+    try {
+      const success = await domainVerificationService.addTrustedDomain(
+        domainToAdd,
+      );
+      if (success) {
+        clearInputField();
+        loadTrustedDomains();
+        Alert.alert('Success', `${domainToAdd} added to trusted list`);
+      }
+    } catch (error) {
+      console.error('Error adding domain:', error);
+      Alert.alert('Error', 'Failed to add domain');
+      clearInputField();
+    }
+  };
+
+  const handleDomainInputChange = (text: string) => {
+    setNewDomain(text);
+    if (text.trim()) {
+      const clean = domainVerificationService.extractCleanDomain(text.trim());
+      setCleanDomain(clean);
+      setShowCleanDomainPreview(text.trim() !== clean);
+    } else {
+      setCleanDomain('');
+      setShowCleanDomainPreview(false);
+    }
+  };
+
+  const handleAddSuggestedDomain = async (domain: string) => {
+    // Check if domain already exists
+    const alreadyExists = trustedDomains.some(
+      d => d.domain.toLowerCase() === domain.toLowerCase(),
+    );
+
+    if (alreadyExists) {
+      Alert.alert(
+        'Already Added',
+        `${domain} is already in your trusted domains`,
+      );
+      return;
+    }
+
+    try {
+      const success = await domainVerificationService.addTrustedDomain(domain);
+      if (success) {
+        loadTrustedDomains();
+        Alert.alert('Success', `${domain} added to trusted list`);
+      }
+    } catch (error) {
+      console.error('Error adding suggested domain:', error);
+      Alert.alert('Error', `Failed to add ${domain}`);
+    }
+  };
+
+  // Get suggested domains that haven't been added yet
+  const getAvailableSuggestedDomains = () => {
+    const addedDomains = trustedDomains.map(d => d.domain.toLowerCase());
+    return DEFAULT_DOMAINS.filter(
+      domain => !addedDomains.includes(domain.toLowerCase()),
+    );
   };
 
   const handleRemoveDomain = async (domain: string) => {
@@ -214,10 +345,10 @@ export const AutofillManagementScreen: React.FC = () => {
                 borderColor: theme.border,
               },
             ]}
-            placeholder="example.com"
+            placeholder="example.com or https://example.com/login"
             placeholderTextColor={theme.textSecondary}
             value={newDomain}
-            onChangeText={setNewDomain}
+            onChangeText={handleDomainInputChange}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
@@ -229,8 +360,37 @@ export const AutofillManagementScreen: React.FC = () => {
             <Ionicons name="add" size={24} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
+
+        {/* Preview of clean domain */}
+        {showCleanDomainPreview && cleanDomain && (
+          <View
+            style={[
+              styles.cleanDomainPreview,
+              { backgroundColor: theme.background, borderColor: theme.primary },
+            ]}
+          >
+            <Ionicons
+              name="checkmark-circle-outline"
+              size={18}
+              color={theme.success}
+              style={{ marginRight: 8 }}
+            />
+            <View style={{ flex: 1 }}>
+              <Text
+                style={[styles.previewLabel, { color: theme.textSecondary }]}
+              >
+                Will save as:
+              </Text>
+              <Text style={[styles.previewDomain, { color: theme.text }]}>
+                {cleanDomain}
+              </Text>
+            </View>
+          </View>
+        )}
+
         <Text style={[styles.helpText, { color: theme.textSecondary }]}>
           Add domains you trust to allow autofill without verification prompts.
+          Path, port, and protocol are automatically removed.
         </Text>
       </View>
 
@@ -261,6 +421,77 @@ export const AutofillManagementScreen: React.FC = () => {
             </TouchableOpacity>
           )}
         </View>
+      </View>
+
+      {/* Suggested Domains Section */}
+      <View style={[styles.section, { backgroundColor: theme.surface }]}>
+        <TouchableOpacity
+          style={styles.sectionHeader}
+          onPress={() => setSuggestedDomainsExpanded(!suggestedDomainsExpanded)}
+        >
+          <Ionicons name="sparkles-outline" size={24} color={theme.primary} />
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            Popular Domains
+          </Text>
+          <Ionicons
+            name={
+              suggestedDomainsExpanded
+                ? 'chevron-up-outline'
+                : 'chevron-down-outline'
+            }
+            size={20}
+            color={theme.textSecondary}
+            style={{ marginLeft: 'auto' }}
+          />
+        </TouchableOpacity>
+
+        {suggestedDomainsExpanded && (
+          <>
+            <Text
+              style={[
+                styles.helpText,
+                { color: theme.textSecondary, marginBottom: 12 },
+              ]}
+            >
+              Click to quickly add popular domains from major companies and
+              services
+            </Text>
+            <View style={styles.suggestedDomainsGrid}>
+              {getAvailableSuggestedDomains().map(domain => (
+                <TouchableOpacity
+                  key={domain}
+                  style={[
+                    styles.suggestedDomainTag,
+                    { borderColor: theme.primary },
+                  ]}
+                  onPress={() => handleAddSuggestedDomain(domain)}
+                >
+                  <Ionicons
+                    name="add-circle-outline"
+                    size={14}
+                    color={theme.primary}
+                  />
+                  <Text
+                    style={[
+                      styles.suggestedDomainText,
+                      { color: theme.primary },
+                    ]}
+                  >
+                    {domain}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text
+              style={[
+                styles.suggestedDomainsCount,
+                { color: theme.textSecondary },
+              ]}
+            >
+              {getAvailableSuggestedDomains().length} domains available
+            </Text>
+          </>
+        )}
       </View>
 
       {/* Domains List */}
@@ -297,7 +528,7 @@ export const AutofillManagementScreen: React.FC = () => {
           <FlatList
             data={filteredDomains}
             renderItem={renderDomainItem}
-            keyExtractor={item => item.domain}
+            keyExtractor={item => `${item.domain}-${item.addedAt}`}
             scrollEnabled={false}
           />
         )}
@@ -607,6 +838,49 @@ const styles = StyleSheet.create({
   helpText: {
     fontSize: 12,
     lineHeight: 18,
+  },
+  suggestedDomainsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  suggestedDomainTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 6,
+  },
+  suggestedDomainText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  suggestedDomainsCount: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  cleanDomainPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1.5,
+  },
+  previewLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  previewDomain: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

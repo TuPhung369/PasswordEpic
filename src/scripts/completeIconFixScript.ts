@@ -92,7 +92,7 @@ export class CompleteIconFixScript {
   }
 
   /**
-   * Tạo báo cáo chi tiết cho user
+   * Tạo báo cáo chi tiết cho user (full version)
    */
   static async generateDetailedReport(): Promise<string> {
     try {
@@ -125,6 +125,48 @@ export class CompleteIconFixScript {
       return report;
     } catch (error) {
       return `❌ Failed to generate report: ${error}`;
+    }
+  }
+
+  /**
+   * Tạo báo cáo ngắn gọn (compact) cho user - hiển thị chỉ icon status
+   */
+  static async generateCompactReport(): Promise<{
+    summary: string;
+    details: string[];
+    isValid: boolean;
+  }> {
+    try {
+      const categories = await CategoryService.getAllCategories();
+      const invalidCount = categories.filter(
+        cat => !this.isValidIoniconName(cat.icon),
+      ).length;
+
+      const details = categories.map((cat, index) => {
+        const isValid = this.isValidIoniconName(cat.icon);
+        return `${index + 1}. ${isValid ? '✅' : '❌'} ${cat.name} (${
+          cat.icon
+        })`;
+      });
+
+      let summary = `Total: ${categories.length} | ✅ Valid: ${
+        categories.length - invalidCount
+      }`;
+      if (invalidCount > 0) {
+        summary += ` | ❌ Invalid: ${invalidCount}`;
+      }
+
+      return {
+        summary,
+        details,
+        isValid: invalidCount === 0,
+      };
+    } catch (error) {
+      return {
+        summary: `❌ Error: ${error}`,
+        details: [],
+        isValid: false,
+      };
     }
   }
 }

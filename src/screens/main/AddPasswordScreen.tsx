@@ -132,20 +132,17 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       (formData.customFields && formData.customFields.length > 0)
     );
 
-    console.log('🔍 hasUnsavedChanges check:', {
-      hasChanges,
-      title: formData.title,
-      username: formData.username,
-      password: formData.password,
-      website: formData.website,
-      notes: formData.notes,
-      category: formData.category,
-      tags: formData.tags,
-      customFields: formData.customFields,
-    });
+    // Reduced logging for performance
+    // console.log('🔍 hasUnsavedChanges check:', { hasChanges });
 
     return hasChanges;
-  }, [formData]);
+  }, [
+    formData?.title,
+    formData?.username,
+    formData?.password,
+    formData?.website,
+    formData?.notes,
+  ]); // Only depend on actual data fields
 
   // Load saved data only when restoring after unlock
   React.useEffect(() => {
@@ -392,16 +389,13 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     }
   };
 
+  // Memoize form validation to prevent excessive re-renders
   const isFormValid = useCallback((): boolean => {
-    console.log('🔍 isFormValid check:', {
-      formData,
-      hasFormData: !!formData,
-      title: formData?.title,
-      titleLength: formData?.title?.trim()?.length,
-      isValid: !!(formData?.title && formData.title.trim().length > 0),
-    });
-    return !!(formData?.title && formData.title.trim().length > 0);
-  }, [formData]);
+    const isValid = !!(formData?.title && formData.title.trim().length > 0);
+    // Only log validation errors in development/debug
+    // console.log('🔍 isFormValid check:', isValid);
+    return isValid;
+  }, [formData?.title]); // Only depend on title field for validation
 
   const handleSave = async () => {
     if (!isFormValid()) {

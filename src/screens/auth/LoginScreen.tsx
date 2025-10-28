@@ -5,12 +5,14 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { useAppDispatch } from '../../hooks/redux';
+import { useAppDispatch, useAppSelector } from '../../hooks/redux';
 import {
   loginStart,
   loginSuccess,
@@ -21,6 +23,7 @@ import { signInWithGoogle } from '../../services/authService';
 import { isGoogleSignInModuleAvailable } from '../../services/googleSignIn';
 import { isGoogleSignInReady } from '../../services/googleAuthNative';
 import { isMasterPasswordSet } from '../../services/secureStorageService';
+import { BiometricService } from '../../services/biometricService';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 
 type LoginScreenNavigationProp = NativeStackNavigationProp<
@@ -32,13 +35,17 @@ export const LoginScreen: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigation = useNavigation<LoginScreenNavigationProp>();
   const { theme } = useTheme();
+  const authState = useAppSelector(state => state.auth);
   const [isLoading, setIsLoading] = useState(false);
   const [buttonPressed, setButtonPressed] = useState(false);
+  const [isAutoLoggingIn, setIsAutoLoggingIn] = useState(false);
+  const [cachedUsername, setCachedUsername] = useState<string | null>(null);
   const googleSignInAvailable = isGoogleSignInModuleAvailable();
 
   // Use ref to track loading state immediately
   const isLoadingRef = React.useRef(false);
   const buttonPressedRef = React.useRef(false);
+  const autoLoginAttemptedRef = React.useRef(false);
 
   // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -54,6 +61,71 @@ export const LoginScreen: React.FC = () => {
     message: '',
     onConfirm: () => {},
   });
+
+  // Check for existing valid session on mount
+  React.useEffect(() => {
+    const checkExistingSession = async () => {
+      // Only attempt auto-login once
+      if (autoLoginAttemptedRef.current) {
+        console.log('✓ Auto-login already attempted, skipping');
+        return;
+      }
+
+      autoLoginAttemptedRef.current = true;
+
+      // If user is already logged in, start navigation flow
+      if (authState.user) {
+        console.log(
+          `✅ [LoginScreen] User already logged in: ${authState.user.email}`,
+        );
+        setCachedUsername(
+          authState.user.name || authState.user.email || 'User',
+        );
+
+        setIsAutoLoggingIn(true);
+        isLoadingRef.current = true;
+
+        try {
+          const masterPasswordSet = await isMasterPasswordSet();
+
+          // Check if biometric is enabled for unlock
+          const biometricService = BiometricService.getInstance();
+          const biometricCapability =
+            await biometricService.checkBiometricCapability();
+
+          if (!masterPasswordSet) {
+            // First time - need to set master password
+            console.log(
+              '🔐 [LoginScreen] Master password not set - navigating to MasterPassword',
+            );
+            navigation.navigate('MasterPassword');
+          } else if (biometricCapability.available) {
+            // Master password set & biometric available - go to biometric unlock
+            console.log(
+              '🔓 [LoginScreen] Biometric available - navigating to BiometricSetup for unlock',
+            );
+            navigation.navigate('BiometricSetup');
+          } else {
+            // Master password set but no biometric - AppNavigator will handle navigation
+            console.log(
+              '✓ [LoginScreen] Master password set, no biometric - AppNavigator will handle',
+            );
+          }
+        } catch (error) {
+          console.error('Failed to check master password status:', error);
+          navigation.navigate('MasterPassword');
+        }
+
+        return;
+      }
+
+      console.log(
+        '📋 [LoginScreen] No existing session found - showing login UI',
+      );
+    };
+
+    checkExistingSession();
+  }, [authState.user, navigation]);
 
   // Cleanup on unmount
   React.useEffect(() => {
@@ -175,12 +247,102 @@ export const LoginScreen: React.FC = () => {
     }
   }, [isLoading, buttonPressed, googleSignInAvailable, dispatch, navigation]);
 
+  // Show loading screen while auto-logging in
+  if (isAutoLoggingIn) {
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: theme.background }]}
+      >
+        {/* Gradient overlay */}
+        <View
+          style={[
+            styles.gradientOverlay,
+            {
+              backgroundColor: theme.primary,
+              opacity: 0.05,
+            },
+          ]}
+        />
+
+        <View style={styles.autoLoginContent}>
+          {/* Top spacer */}
+          <View style={styles.topSpacer} />
+
+          {/* Logo/Icon container with animation */}
+          <View style={styles.iconContainer}>
+            <View
+              style={[
+                styles.iconCircle,
+                { backgroundColor: theme.primary, opacity: 0.1 },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="vault"
+                size={64}
+                color={theme.primary}
+              />
+            </View>
+          </View>
+
+          {/* Welcome text */}
+          <Text style={[styles.welcomeTitle, { color: theme.text }]}>
+            Welcome back,
+          </Text>
+          <Text
+            style={[styles.usernameLarge, { color: theme.primary }]}
+            numberOfLines={1}
+          >
+            {cachedUsername || 'User'}
+          </Text>
+
+          {/* Subtitle */}
+          <Text style={[styles.preparingText, { color: theme.textSecondary }]}>
+            Unlocking your vault...
+          </Text>
+
+          {/* Loading indicator */}
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" color={theme.primary} />
+            <View style={styles.dots}>
+              <View
+                style={[
+                  styles.dot,
+                  { backgroundColor: theme.primary, opacity: 0.3 },
+                ]}
+              />
+              <View
+                style={[
+                  styles.dot,
+                  { backgroundColor: theme.primary, opacity: 0.5 },
+                ]}
+              />
+              <View
+                style={[
+                  styles.dot,
+                  { backgroundColor: theme.primary, opacity: 0.7 },
+                ]}
+              />
+            </View>
+          </View>
+
+          {/* Bottom security note */}
+          <View style={styles.bottomSpacer} />
+          <Text style={[styles.secureNote, { color: theme.textSecondary }]}>
+            🔒 Your vault is encrypted end-to-end
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.background }]}
     >
       <View style={styles.content}>
-        <Text style={[styles.title, { color: theme.text }]}>Welcome Back</Text>
+        <Text style={[styles.title, { color: theme.text }]}>
+          Welcome Back{cachedUsername ? `, ${cachedUsername}` : ''}
+        </Text>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
           Sign in to access your secure password vault
         </Text>
@@ -323,5 +485,85 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
     fontStyle: 'italic',
+  },
+  mt20: {
+    marginTop: 20,
+  },
+  // ========== AUTO-LOGIN SCREEN STYLES ==========
+  gradientOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '60%',
+  },
+  autoLoginContent: {
+    flex: 1,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 20,
+  },
+  topSpacer: {
+    flex: 0.5,
+  },
+  iconContainer: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  iconCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  welcomeTitle: {
+    fontSize: 18,
+    fontWeight: '500',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  usernameLarge: {
+    fontSize: 32,
+    fontWeight: '700',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  preparingText: {
+    fontSize: 16,
+    fontWeight: '400',
+    marginBottom: 40,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  loaderContainer: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  dots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginHorizontal: 4,
+  },
+  bottomSpacer: {
+    flex: 0.5,
+  },
+  secureNote: {
+    fontSize: 13,
+    textAlign: 'center',
+    fontWeight: '500',
+    lineHeight: 18,
   },
 });

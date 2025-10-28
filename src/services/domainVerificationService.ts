@@ -172,8 +172,9 @@ class DomainVerificationService {
 
   /**
    * Saves trusted domains
+   * Public method to support backup/restore functionality
    */
-  private async saveTrustedDomains(domains: TrustedDomain[]): Promise<void> {
+  async saveTrustedDomains(domains: TrustedDomain[]): Promise<void> {
     await secureStorageService.setItem(
       'trusted_domains',
       JSON.stringify(domains),
@@ -231,25 +232,43 @@ class DomainVerificationService {
 
   /**
    * Normalizes a domain for comparison
+   * Removes protocol, www, path, query, fragment, and port
    *
    * @param domain The domain to normalize
    */
   private normalizeDomain(domain: string): string {
     let normalized = domain.toLowerCase().trim();
 
-    // Remove protocol
-    normalized = normalized.replace(/^https?:\/\//, '');
+    // Remove protocol (http://, https://, etc.)
+    normalized = normalized.replace(/^[a-z]+:\/\//, '');
+
+    // Remove www. prefix
     normalized = normalized.replace(/^www\./, '');
 
-    // Remove path, query, fragment
+    // Remove everything after / (path)
     normalized = normalized.split('/')[0];
+
+    // Remove everything after ? (query string)
     normalized = normalized.split('?')[0];
+
+    // Remove everything after # (fragment)
     normalized = normalized.split('#')[0];
 
-    // Remove port
+    // Remove port (:80, :443, etc.)
     normalized = normalized.split(':')[0];
 
     return normalized;
+  }
+
+  /**
+   * Extracts clean domain from user input
+   * Useful for UI feedback showing what will actually be saved
+   *
+   * @param input The user input (can include protocol, path, port, etc.)
+   * @returns The clean domain that will be saved
+   */
+  public extractCleanDomain(input: string): string {
+    return this.normalizeDomain(input);
   }
 
   /**

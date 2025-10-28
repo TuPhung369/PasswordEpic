@@ -1095,6 +1095,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         decryptionPassword: masterPasswordResult.password, // Use master password
         restoreSettings: options.restoreSettings,
         restoreCategories: options.restoreCategories,
+        restoreDomains: options.restoreDomains,
         overwriteDuplicates: options.overwriteDuplicates,
       };
 
@@ -1112,6 +1113,29 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
       if (result.result.success) {
         console.log('✅ [PasswordsScreen] Restore successful');
+
+        // Restore trusted domains if requested
+        if (
+          options.restoreDomains &&
+          result.data?.domains &&
+          result.data.domains.length > 0
+        ) {
+          console.log(
+            `🔵 [PasswordsScreen] Restoring ${result.data.domains.length} trusted domains...`,
+          );
+          const domainRestored = await backupService.restoreTrustedDomains(
+            result.data.domains,
+          );
+          if (domainRestored) {
+            console.log(
+              '✅ [PasswordsScreen] Trusted domains restored successfully',
+            );
+          } else {
+            console.warn(
+              '⚠️ [PasswordsScreen] Failed to restore trusted domains',
+            );
+          }
+        }
 
         // If replace strategy, clear existing passwords first
         if (restoreOptions.mergeStrategy === 'replace') {

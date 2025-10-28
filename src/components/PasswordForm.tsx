@@ -250,7 +250,12 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     }
   }, [password, passwordValue]); // Re-run when password prop or current passwordValue changes
 
-  // Helper function to notify parent of form changes
+  // Helper function to notify parent of form changes - use ref to avoid re-renders
+  const notifyDataChangeRef = React.useRef<typeof onDataChange>(onDataChange);
+  React.useEffect(() => {
+    notifyDataChangeRef.current = onDataChange;
+  }, [onDataChange]);
+
   const notifyDataChange = useCallback(
     (
       overrides: Partial<{
@@ -263,7 +268,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
         isFavorite: boolean;
       }> = {},
     ) => {
-      if (onDataChange) {
+      if (notifyDataChangeRef.current) {
         const currentFormData = {
           title: overrides.title ?? title,
           username: overrides.username ?? username,
@@ -276,19 +281,10 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
           customFields: [], // Disabled feature
           tags: [], // Default empty
         };
-        onDataChange(currentFormData);
+        notifyDataChangeRef.current(currentFormData);
       }
     },
-    [
-      title,
-      username,
-      passwordValue,
-      website,
-      notes,
-      category,
-      isFavorite,
-      onDataChange,
-    ],
+    [title, username, passwordValue, website, notes, category, isFavorite],
   );
 
   // Calculate password strength when password changes
@@ -326,7 +322,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
           customFields: [], // Empty array since custom fields removed
           tags: password?.tags || [], // Preserve tags from parent
         });
-      }, 300); // 300ms debounce
+      }, 200); // Reduced from 300ms to 200ms for faster input response
 
       return () => clearTimeout(timeoutId);
     }
@@ -337,7 +333,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     passwordValue,
     website,
     notes,
-    category,
+    // Removed category - not used in auto-save detection
     // Removed isFavorite and customFields - no longer used in UI
     // DON'T include onSave in dependencies - it causes infinite loop
     // onSave is stable and doesn't need to be tracked
@@ -574,17 +570,6 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                 ]}
                 placeholder="Enter password"
                 value={passwordValue}
-                onFocus={() => {
-                  // Clear password field when user focuses IF password hasn't been decrypted yet
-                  // This prevents issues where user types into encrypted placeholder
-                  if (!isPasswordDecryptedRef.current && passwordValue) {
-                    console.log(
-                      '🔓 PasswordForm: Clearing encrypted password on focus (not yet decrypted)',
-                    );
-                    setPasswordValue('');
-                    notifyDataChange({ passwordValue: '' });
-                  }
-                }}
                 onChangeText={text => {
                   setPasswordValue(text);
                   notifyDataChange({ passwordValue: text });

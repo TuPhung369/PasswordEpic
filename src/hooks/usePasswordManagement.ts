@@ -31,6 +31,7 @@ import { getMasterPasswordFromBiometric } from '../services/secureStorageService
 import { getEffectiveMasterPassword } from '../services/staticMasterPasswordService';
 import { sessionCache } from '../utils/sessionCache';
 import { autofillService } from '../services/autofillService';
+import { domainVerificationService } from '../services/domainVerificationService';
 
 export const usePasswordManagement = (masterPassword?: string) => {
   const dispatch = useAppDispatch();
@@ -173,6 +174,44 @@ export const usePasswordManagement = (masterPassword?: string) => {
     );
   }, [masterPassword, cachedMasterPassword, cacheTimestamp, CACHE_TIMEOUT]);
 
+  // Helper function to auto-verify and add domain to trusted list
+  const autoVerifyDomain = useCallback(async (website: string | undefined) => {
+    if (!website || website.trim().length === 0) {
+      return;
+    }
+
+    try {
+      // Extract clean domain from website URL
+      const domain = domainVerificationService.extractCleanDomain(website);
+
+      // Check if domain is valid
+      if (!domain || domain.length === 0) {
+        console.log(
+          'ℹ️ autoVerifyDomain: Invalid or empty domain, skipping auto-verification',
+        );
+        return;
+      }
+
+      // Check if domain is already trusted
+      const isTrusted = await domainVerificationService.isTrustedDomain(domain);
+      if (isTrusted) {
+        console.log(
+          `✅ autoVerifyDomain: Domain ${domain} already in trusted list`,
+        );
+        return;
+      }
+
+      // Auto-add domain to trusted list (with autoApproved flag)
+      await domainVerificationService.addTrustedDomain(domain, true);
+      console.log(
+        `✅ autoVerifyDomain: Domain ${domain} auto-verified and added to trusted list`,
+      );
+    } catch (error) {
+      console.warn('⚠️ autoVerifyDomain: Failed to auto-verify domain:', error);
+      // Don't throw - this is a non-critical background operation
+    }
+  }, []);
+
   // Local state for advanced filtering and sorting
   const [localFilters, setLocalFilters] = useState<SearchFilters>({
     query: '',
@@ -276,6 +315,8 @@ export const usePasswordManagement = (masterPassword?: string) => {
             : Promise.resolve(),
           // Add to sync queue in background
           SyncService.addPendingOperation('create', newEntry.id, newEntry),
+          // Auto-verify and add domain to trusted list
+          autoVerifyDomain(newEntry.website),
         ]).catch(bgError => {
           console.warn('Background operations failed:', bgError);
           // Don't throw - these are non-critical
@@ -301,7 +342,7 @@ export const usePasswordManagement = (masterPassword?: string) => {
         throw createError;
       }
     },
-    [dispatch, getMasterPassword],
+    [dispatch, getMasterPassword, autoVerifyDomain],
   );
 
   // Update existing password entry
@@ -329,13 +370,16 @@ export const usePasswordManagement = (masterPassword?: string) => {
           }),
         ).unwrap();
 
+        // Auto-verify and add domain to trusted list (background operation)
+        autoVerifyDomain(updatedEntry.website);
+
         return updatedEntry;
       } catch (updateError) {
         console.error('Failed to update password:', updateError);
         throw updateError;
       }
     },
-    [dispatch, getMasterPassword, passwords],
+    [dispatch, getMasterPassword, passwords, autoVerifyDomain],
   );
 
   // Delete password entry

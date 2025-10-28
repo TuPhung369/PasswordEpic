@@ -666,20 +666,31 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
 
     /**
      * Check if our autofill service is the enabled one
+     * Verifies that PasswordEpic is specifically set as the default autofill service
      */
     @RequiresApi(Build.VERSION_CODES.O)
     private fun isOurAutofillServiceEnabled(): Boolean {
         return try {
-            val autofillManager = reactContext.getSystemService(AutofillManager::class.java)
-            if (autofillManager == null) {
-                false
-            } else {
-                // Check if our service is enabled
-                // Note: This is a simplified check
-                autofillManager.hasEnabledAutofillServices()
+            // Check what autofill service is currently enabled in system settings
+            val enabledService = Settings.Secure.getString(
+                reactContext.contentResolver,
+                Settings.Secure.AUTOFILL_SERVICE
+            )
+            
+            // If no service is enabled, return false
+            if (enabledService == null) {
+                Log.d(TAG, "No autofill service enabled")
+                return false
             }
+            
+            // Check if our package is the enabled autofill service
+            // Expected format: "com.passwordepic.mobile/com.passwordepic.mobile.autofill.PasswordEpicAutofillService"
+            val isOurService = enabledService.contains("com.passwordepic.mobile")
+            
+            Log.d(TAG, "Autofill service check - Enabled: $enabledService, IsOurs: $isOurService")
+            isOurService
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking our service status", e)
+            Log.e(TAG, "Error checking our autofill service status: ${e.message}", e)
             false
         }
     }

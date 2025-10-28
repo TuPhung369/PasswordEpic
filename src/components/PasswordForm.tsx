@@ -8,6 +8,10 @@ import {
   Switch,
   Platform,
   InputAccessoryView,
+  FlatList,
+  Modal,
+  TextInput as RNTextInput,
+  ActivityIndicator,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {
@@ -26,6 +30,7 @@ import CategorySelector from './CategorySelector';
 import { BiometricService } from '../services/biometricService';
 import { QuickPasswordGenerator } from './QuickPasswordGenerator';
 import ConfirmDialog from './ConfirmDialog';
+import { useInstalledApps, AppInfo } from '../hooks/useInstalledApps';
 
 interface PasswordFormProps {
   password?: PasswordEntry;
@@ -137,6 +142,22 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     onConfirm: () => {},
   });
 
+  // Domain Type state (Web or Mobile App)
+  const [domainType, setDomainType] = useState<'web' | 'mobile'>('web');
+  const [selectedApp, setSelectedApp] = useState<AppInfo | null>(null);
+  const [showAppSelector, setShowAppSelector] = useState(false);
+  const [appSearchQuery, setAppSearchQuery] = useState('');
+  const [filteredApps, setFilteredApps] = useState<AppInfo[]>([]);
+
+  // Use installed apps hook
+  const {
+    apps,
+    loading: appsLoading,
+    error: appsError,
+    searchApps,
+    refetch: refetchApps,
+  } = useInstalledApps();
+
   // Password generator options - DEPRECATED: Now using QuickPasswordGenerator component
   // const [generatorOptions, setGeneratorOptions] = useState({
   //   length: 16,
@@ -223,6 +244,25 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
       setNotes(password.notes || '');
       setCategory(password.category || 'Other');
       setIsFavorite(password.isFavorite || false);
+
+      // Detect domain type based on website field
+      if (password.website) {
+        // Check if it looks like a package name (has dots and lowercase)
+        const isPackageName = /^[a-z][a-z0-9]*(\.[a-z0-9]+)+$/.test(
+          password.website,
+        );
+        if (isPackageName) {
+          setDomainType('mobile');
+          setSelectedApp({
+            name: password.website,
+            packageName: password.website,
+          });
+        } else {
+          setDomainType('web');
+          setSelectedApp(null);
+        }
+      }
+
       isInitializedRef.current = true;
       lastPasswordIdRef.current = password.id;
 
@@ -249,6 +289,46 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
       };
     }
   }, [password, passwordValue]); // Re-run when password prop or current passwordValue changes
+
+  // Initialize filtered apps when app selector opens
+  useEffect(() => {
+    if (showAppSelector) {
+      setFilteredApps(apps);
+      setAppSearchQuery('');
+    }
+  }, [showAppSelector, apps]);
+
+  // Handle app search
+  const handleAppSearch = useCallback(
+    async (query: string) => {
+      setAppSearchQuery(query);
+      if (!query.trim()) {
+        setFilteredApps(apps);
+        return;
+      }
+
+      try {
+        const results = await searchApps(query);
+        setFilteredApps(results);
+      } catch (err) {
+        console.error('❌ Error searching apps:', err);
+        setFilteredApps([]);
+      }
+    },
+    [apps, searchApps],
+  );
+
+  // Handle app selection
+  const handleAppSelect = useCallback(
+    (app: AppInfo) => {
+      console.log('📱 Selected app:', app.packageName);
+      setSelectedApp(app);
+      setWebsite(app.packageName); // Set website to package name
+      setShowAppSelector(false);
+      notifyDataChange({ website: app.packageName });
+    },
+    [notifyDataChange],
+  );
 
   // Helper function to notify parent of form changes - use ref to avoid re-renders
   const notifyDataChangeRef = React.useRef<typeof onDataChange>(onDataChange);
@@ -709,28 +789,163 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
             {renderPasswordStrength()}
           </View>
 
-          {/* Website Field */}
+          {/* Domain Type Toggle */}
           <View style={styles.field}>
-            <Text style={styles.label}>Website</Text>
-            <TextInput
-              style={[
-                styles.input,
-                validationErrors.some(e => e.includes('URL')) &&
-                  styles.inputError,
-              ]}
-              placeholder="https://example.com"
-              value={website}
-              onChangeText={text => {
-                setWebsite(text);
-                notifyDataChange({ website: text });
-              }}
-              placeholderTextColor={theme.textSecondary}
-              returnKeyType="next"
-              autoComplete="off"
-              importantForAutofill="no"
-              {...getCleanKeyboardProps(theme, 'url')}
-            />
+            <Text style={styles.label}>Domain Type</Text>
+            <View style={styles.domainTypeContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.domainTypeButton,
+                  domainType === 'web' && styles.domainTypeButtonActive,
+                  {
+                    backgroundColor:
+                      domainType === 'web' ? theme.primary : theme.background,
+                  },
+                ]}
+                onPress={() => {
+                  setDomainType('web');
+                  setSelectedApp(null);
+                  setWebsite('');
+                }}
+              >
+                <Ionicons
+                  name="globe-outline"
+                  size={18}
+                  color={domainType === 'web' ? '#fff' : theme.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.domainTypeButtonText,
+                    domainType === 'web' && styles.domainTypeButtonTextActive,
+                  ]}
+                >
+                  Web
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.domainTypeButton,
+                  domainType === 'mobile' && styles.domainTypeButtonActive,
+                  {
+                    backgroundColor:
+                      domainType === 'mobile'
+                        ? theme.primary
+                        : theme.background,
+                  },
+                ]}
+                onPress={() => {
+                  setDomainType('mobile');
+                  setWebsite('');
+                }}
+              >
+                <Ionicons
+                  name="phone-portrait-outline"
+                  size={18}
+                  color={domainType === 'mobile' ? '#fff' : theme.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.domainTypeButtonText,
+                    domainType === 'mobile' &&
+                      styles.domainTypeButtonTextActive,
+                  ]}
+                >
+                  Mobile App
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
+
+          {/* Website Field - Web Type */}
+          {domainType === 'web' && (
+            <View style={styles.field}>
+              <Text style={styles.label}>Website Domain</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  validationErrors.some(e => e.includes('URL')) &&
+                    styles.inputError,
+                ]}
+                placeholder="https://example.com or example.com"
+                value={website}
+                onChangeText={text => {
+                  setWebsite(text);
+                  notifyDataChange({ website: text });
+                }}
+                placeholderTextColor={theme.textSecondary}
+                returnKeyType="next"
+                autoComplete="off"
+                importantForAutofill="no"
+                {...getCleanKeyboardProps(theme, 'url')}
+              />
+            </View>
+          )}
+
+          {/* App Selector - Mobile Type */}
+          {domainType === 'mobile' && (
+            <View style={styles.field}>
+              <Text style={styles.label}>Select App</Text>
+              <TouchableOpacity
+                style={styles.appSelectorButton}
+                onPress={async () => {
+                  await refetchApps(); // Refresh app list before opening modal
+                  setShowAppSelector(true);
+                }}
+              >
+                {selectedApp ? (
+                  <>
+                    <Ionicons
+                      name="phone-portrait-outline"
+                      size={18}
+                      color={theme.primary}
+                    />
+                    <View style={styles.appSelectorContent}>
+                      <Text style={styles.appSelectorName}>
+                        {selectedApp.name}
+                      </Text>
+                      <Text style={styles.appSelectorPackage}>
+                        {selectedApp.packageName}
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={18}
+                      color={theme.textSecondary}
+                    />
+                    <Text style={styles.appSelectorPlaceholder}>
+                      Tap to select an app
+                    </Text>
+                  </>
+                )}
+                <Ionicons
+                  name="chevron-forward-outline"
+                  size={18}
+                  color={theme.textSecondary}
+                />
+              </TouchableOpacity>
+
+              {/* Auto-filled domain info */}
+              {selectedApp && (
+                <View style={styles.domainInfoContainer}>
+                  <Ionicons
+                    name="information-circle-outline"
+                    size={16}
+                    color={theme.primary}
+                  />
+                  <Text style={styles.domainInfoText}>
+                    Domain will be set to:{' '}
+                    <Text style={styles.domainInfoBold}>
+                      {selectedApp.packageName}
+                    </Text>
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Category Field */}
           <View style={styles.field}>
@@ -825,6 +1040,113 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
       />
+
+      {/* App Selector Modal */}
+      <Modal
+        visible={showAppSelector}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAppSelector(false)}
+      >
+        <View
+          style={[styles.modalContainer, { backgroundColor: theme.background }]}
+        >
+          {/* Header */}
+          <View
+            style={[styles.modalHeader, { backgroundColor: theme.surface }]}
+          >
+            <TouchableOpacity onPress={() => setShowAppSelector(false)}>
+              <Ionicons name="close-outline" size={24} color={theme.text} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Select App</Text>
+            <View style={{ width: 24 }} />
+          </View>
+
+          {/* Search Bar */}
+          <View
+            style={[styles.searchContainer, { backgroundColor: theme.surface }]}
+          >
+            <Ionicons
+              name="search-outline"
+              size={20}
+              color={theme.textSecondary}
+            />
+            <RNTextInput
+              style={[styles.searchInput, { color: theme.text }]}
+              placeholder="Search apps..."
+              placeholderTextColor={theme.textSecondary}
+              value={appSearchQuery}
+              onChangeText={handleAppSearch}
+            />
+          </View>
+
+          {/* Apps List */}
+          {appsLoading && !apps.length ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={theme.primary} />
+              <Text
+                style={[styles.loadingText, { color: theme.textSecondary }]}
+              >
+                Loading apps...
+              </Text>
+            </View>
+          ) : filteredApps.length > 0 ? (
+            <FlatList
+              data={filteredApps}
+              keyExtractor={item => item.packageName}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.appListItem,
+                    { backgroundColor: theme.surface },
+                  ]}
+                  onPress={() => handleAppSelect(item)}
+                >
+                  <Ionicons
+                    name="phone-portrait-outline"
+                    size={24}
+                    color={theme.primary}
+                  />
+                  <View style={styles.appListItemContent}>
+                    <Text style={styles.appListItemName}>{item.name}</Text>
+                    <Text
+                      style={[
+                        styles.appListItemPackage,
+                        { color: theme.textSecondary },
+                      ]}
+                    >
+                      {item.packageName}
+                    </Text>
+                  </View>
+                  {selectedApp?.packageName === item.packageName && (
+                    <Ionicons
+                      name="checkmark-done-outline"
+                      size={20}
+                      color={theme.primary}
+                    />
+                  )}
+                </TouchableOpacity>
+              )}
+              scrollEnabled
+            />
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Ionicons
+                name="search-outline"
+                size={48}
+                color={theme.textSecondary}
+              />
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                {appsError
+                  ? 'Error loading apps'
+                  : appSearchQuery
+                  ? 'No apps found'
+                  : 'No apps available'}
+              </Text>
+            </View>
+          )}
+        </View>
+      </Modal>
     </>
   );
 };
@@ -998,6 +1320,170 @@ const createStyles = (theme: Theme) =>
     // saveButton, saveButtonText, disabledButton - no longer needed
     emptyAccessoryView: {
       height: 0,
+    },
+
+    // Domain Type Toggle Styles
+    domainTypeContainer: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    domainTypeButton: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      borderWidth: 1.5,
+      borderColor: theme.border,
+      gap: 8,
+    },
+    domainTypeButtonActive: {
+      borderColor: theme.primary,
+    },
+    domainTypeButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.textSecondary,
+    },
+    domainTypeButtonTextActive: {
+      color: '#FFFFFF',
+    },
+
+    // App Selector Styles
+    appSelectorButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.surface,
+      borderRadius: 8,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+      gap: 12,
+    },
+    appSelectorContent: {
+      flex: 1,
+    },
+    appSelectorName: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: theme.text,
+      marginBottom: 2,
+    },
+    appSelectorPackage: {
+      fontSize: 12,
+      color: theme.textSecondary,
+    },
+    appSelectorPlaceholder: {
+      fontSize: 14,
+      color: theme.textSecondary,
+      flex: 1,
+    },
+
+    // Domain Info Container
+    domainInfoContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: theme.primary + '15',
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 6,
+      marginTop: 8,
+    },
+    domainInfoText: {
+      fontSize: 12,
+      color: theme.textSecondary,
+    },
+    domainInfoBold: {
+      fontWeight: '600',
+      color: theme.text,
+    },
+
+    // Modal Styles
+    modalContainer: {
+      flex: 1,
+      paddingTop: Platform.OS === 'android' ? 0 : 50,
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: theme.text,
+    },
+
+    // Search Container
+    searchContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginHorizontal: 16,
+      marginVertical: 12,
+      paddingHorizontal: 12,
+      backgroundColor: theme.background,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    searchInput: {
+      flex: 1,
+      paddingVertical: 10,
+      fontSize: 14,
+    },
+
+    // App List Item
+    appListItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    appListItemContent: {
+      flex: 1,
+    },
+    appListItemName: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.text,
+      marginBottom: 2,
+    },
+    appListItemPackage: {
+      fontSize: 12,
+      color: theme.textSecondary,
+    },
+
+    // Loading & Empty States
+    loadingContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 12,
+    },
+    loadingText: {
+      fontSize: 14,
+      fontWeight: '500',
+    },
+    emptyContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 12,
+    },
+    emptyText: {
+      fontSize: 14,
+      fontWeight: '500',
     },
   });
 

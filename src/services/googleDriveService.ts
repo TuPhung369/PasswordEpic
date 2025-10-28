@@ -4,6 +4,12 @@ import RNFS from 'react-native-fs';
 const GOOGLE_DRIVE_API_URL = 'https://www.googleapis.com/drive/v3';
 const GOOGLE_DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3';
 
+// Cache for getTokens() to prevent concurrent calls
+let pendingTokensPromise: Promise<any> | null = null;
+let cachedTokens: any = null;
+let tokensCacheTime = 0;
+const TOKEN_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 export interface DriveFile {
   id: string;
   name: string;
@@ -14,11 +20,38 @@ export interface DriveFile {
 }
 
 /**
+ * Get cached tokens, preventing concurrent getTokens() calls
+ */
+const getCachedTokens = async (): Promise<any> => {
+  // Return cached tokens if still valid
+  if (cachedTokens && Date.now() - tokensCacheTime < TOKEN_CACHE_DURATION) {
+    return cachedTokens;
+  }
+
+  // Return pending promise if already in progress
+  if (pendingTokensPromise) {
+    return pendingTokensPromise;
+  }
+
+  // Create new promise and cache it
+  pendingTokensPromise = GoogleSignin.getTokens();
+
+  try {
+    const tokens = await pendingTokensPromise;
+    cachedTokens = tokens;
+    tokensCacheTime = Date.now();
+    return tokens;
+  } finally {
+    pendingTokensPromise = null;
+  }
+};
+
+/**
  * Get access token for Google Drive API
  */
 const getAccessToken = async (): Promise<string> => {
   try {
-    const tokens = await GoogleSignin.getTokens();
+    const tokens = await getCachedTokens();
     return tokens.accessToken;
   } catch (error) {
     console.error('Failed to get access token:', error);
@@ -258,7 +291,7 @@ export const isGoogleDriveAvailable = async (): Promise<boolean> => {
 
     // Check if we have the required scopes
     try {
-      const tokens = await GoogleSignin.getTokens();
+      const tokens = await getCachedTokens();
       console.log('🔵 [GoogleDrive] Has access token:', !!tokens.accessToken);
       return !!tokens.accessToken;
     } catch (error) {

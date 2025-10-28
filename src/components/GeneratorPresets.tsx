@@ -31,7 +31,7 @@ export const DEFAULT_PRESETS: GeneratorPreset[] = [
   },
   {
     id: 'memorable',
-    name: 'Memorable',
+    name: 'Memory',
     description: 'Easy to pronounce and remember',
     icon: 'bulb-outline',
     color: '#2196F3',
@@ -67,7 +67,7 @@ export const DEFAULT_PRESETS: GeneratorPreset[] = [
   },
   {
     id: 'passphrase',
-    name: 'Passphrase',
+    name: 'Phrase',
     description: 'Word combinations like "BlueSky2024Fast"',
     icon: 'document-text-outline',
     color: '#9C27B0',
@@ -171,6 +171,8 @@ export const GeneratorPresets: React.FC<GeneratorPresetsProps> = ({
               { color: theme.text },
               isSelected && { color: preset.color },
             ]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
           >
             {preset.name}
           </Text>

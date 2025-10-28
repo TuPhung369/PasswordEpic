@@ -53,6 +53,9 @@ class MainApplication : Application(), ReactApplication {
               
               // Add Launch Test Activity Module
               add(LaunchTestActivityPackage())
+              
+              // Add App Utils Module (for getting installed apps)
+              add(AppUtilsPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

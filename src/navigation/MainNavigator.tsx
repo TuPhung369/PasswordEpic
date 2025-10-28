@@ -35,7 +35,7 @@ const TabBarIcon: React.FC<{
     iconName = 'settings-outline';
   }
 
-  return <Ionicons name={iconName} size={focused ? 26 : 24} color={color} />;
+  return <Ionicons name={iconName} size={focused ? 22 : 20} color={color} />;
 };
 
 // Tạo function render icon ra ngoài component
@@ -129,13 +129,13 @@ export const MainNavigator: React.FC = () => {
 const styles = StyleSheet.create({
   tabBar: {
     borderTopWidth: 0.5,
-    paddingBottom: 4,
-    paddingTop: 8,
-    height: 84,
+    paddingBottom: 2,
+    paddingTop: 4,
+    height: 60,
   },
   tabLabel: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
-    marginTop: 4,
+    marginTop: 2,
   },
 });

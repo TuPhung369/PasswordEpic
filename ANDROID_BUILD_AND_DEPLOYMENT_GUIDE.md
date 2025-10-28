@@ -8,11 +8,9 @@ Kết nối USB và chạy:
 
 adb tcpip 5555
 
-
 Nó sẽ trả về:
 
 restarting in TCP mode port: 5555
-
 
 Ngắt cáp USB.
 
@@ -22,16 +20,14 @@ Kết nối qua Wi-Fi:
 
 adb connect 192.168.x.x:5555
 
-
 Nếu thành công, kiểm tra:
 
 adb devices
 
-
 → sẽ thấy thiết bị ở trạng thái device (wifi).
 
-
 ---
+
 ## 📋 Table of Contents
 
 1. [Gradle Synchronization](#gradle-synchronization)
@@ -896,3 +892,7 @@ Get-ChildItem "e:\IT\Mobile\PasswordEpic\android\app\build\outputs\bundle\releas
 4. ✅ Upload .aab to Google Play Store
 5. ✅ Fill in store listing (see Store Listing section)
 6. ✅ Submit for review
+
+## Create the logo by script
+
+`node generate-app-icons.js`

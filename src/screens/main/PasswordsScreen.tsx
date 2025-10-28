@@ -1899,7 +1899,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     >
       {/* Column 1: Vault Title */}
       <View style={styles.vaultTitleColumn}>
-        <Text style={[styles.title, { color: theme.text }]}>🔐 Vault</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Vault</Text>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
           {filteredPasswords.length} passwords
           {statistics.weakPasswords > 0 && (
@@ -2202,6 +2202,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           renderItem={renderPasswordItem}
           keyExtractor={item => item.id}
           style={styles.list}
+          contentContainerStyle={styles.listContentContainer}
           showsVerticalScrollIndicator={false}
           onScroll={trackScrollActivity}
           scrollEventThrottle={400}
@@ -2403,6 +2404,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 8,
   },
+  listContentContainer: {
+    paddingBottom: 30,
+  },
   passwordItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2549,14 +2553,14 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 12,
   },
-  // New 2-column layout styles
+  // Vault header layout styles
   vaultHeaderContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 8,
     borderBottomWidth: 0.5,
     borderBottomColor: '#38383A',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   vaultTitleColumn: {
     flex: 1,

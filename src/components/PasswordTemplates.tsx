@@ -33,7 +33,7 @@ export interface PasswordTemplate {
 export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
   {
     id: 'banking',
-    name: 'Banking & Finance',
+    name: 'Banking',
     description: 'Extra secure for financial accounts',
     icon: 'business-outline',
     color: '#4CAF50',
@@ -49,7 +49,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
   },
   {
     id: 'social',
-    name: 'Social Media',
+    name: 'Social',
     description: 'Strong but memorable for social accounts',
     icon: 'people-outline',
     color: '#FF9800',
@@ -65,7 +65,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
   },
   {
     id: 'email',
-    name: 'Email Accounts',
+    name: 'Email',
     description: 'Balanced security for email access',
     icon: 'mail-outline',
     color: '#2196F3',
@@ -81,7 +81,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
   },
   {
     id: 'work',
-    name: 'Work & Business',
+    name: 'Business',
     description: 'Professional passwords for work accounts',
     icon: 'briefcase-outline',
     color: '#9C27B0',
@@ -112,7 +112,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
   },
   {
     id: 'shopping',
-    name: 'Shopping & E-commerce',
+    name: 'Shopping',
     description: 'Secure passwords for online shopping',
     icon: 'cart-outline',
     color: '#FF5722',
@@ -127,7 +127,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
   },
   {
     id: 'wifi',
-    name: 'WiFi Networks',
+    name: 'WiFi',
     description: 'Strong passwords for WiFi security',
     icon: 'wifi-outline',
     color: '#607D8B',

@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Switch,
   TouchableWithoutFeedback,
   Keyboard,
   ScrollView,
@@ -24,8 +23,8 @@ import { usePasswordGenerator } from '../../hooks/usePasswordGenerator';
 import { PasswordStrengthMeter } from '../../components/PasswordStrengthMeter';
 import { GeneratorPresets } from '../../components/GeneratorPresets';
 import {
-  PasswordTemplates,
   PasswordTemplate,
+  DEFAULT_TEMPLATES,
 } from '../../components/PasswordTemplates';
 import { GeneratorPreset } from '../../services/passwordGeneratorService';
 import { MainTabParamList } from '../../navigation/MainNavigator';
@@ -52,7 +51,6 @@ export const GeneratorScreen: React.FC = () => {
   const [selectedPreset, setSelectedPreset] = useState<GeneratorPreset | null>(
     null,
   );
-  const [showTemplates, setShowTemplates] = useState(false);
   const [selectedTemplate, setSelectedTemplate] =
     useState<PasswordTemplate | null>(null);
 
@@ -203,9 +201,24 @@ export const GeneratorScreen: React.FC = () => {
     ].filter(Boolean).length;
   };
 
-  const isLastEnabledOption = (option: keyof typeof generator) => {
-    return getEnabledOptionsCount() === 1 && generator[option];
+  const isLastEnabledOption = (option: keyof typeof generator): boolean => {
+    return getEnabledOptionsCount() === 1 && Boolean(generator[option]);
   };
+
+  const getCheckboxStyle = (isEnabled: boolean) => [
+    styles.checkbox,
+    {
+      borderColor: isEnabled ? theme.primary : theme.border,
+      backgroundColor: isEnabled ? `${theme.primary}20` : 'transparent',
+    },
+  ];
+
+  const getCheckboxLabelStyle = (isEnabled: boolean) => [
+    styles.checkboxLabel,
+    {
+      color: isEnabled ? theme.text : theme.textSecondary,
+    },
+  ];
 
   return (
     <SafeAreaView
@@ -315,34 +328,60 @@ export const GeneratorScreen: React.FC = () => {
               grid={true}
             />
 
-            {/* Templates Button */}
-            <TouchableOpacity
-              style={[
-                styles.templatesButton,
-                { backgroundColor: theme.card, borderColor: theme.border },
-              ]}
-              onPress={() => setShowTemplates(true)}
-            >
-              <Ionicons name="grid-outline" size={20} color={theme.primary} />
-              <Text style={[styles.templatesButtonText, { color: theme.text }]}>
+            {/* Templates Section - Improved Layout */}
+            <View style={styles.templatesSection}>
+              <Text
+                style={[styles.templatesSectionTitle, { color: theme.text }]}
+              >
                 Choose Template
               </Text>
-              <Text
-                style={[
-                  styles.templatesButtonSubtitle,
-                  { color: theme.textSecondary },
-                ]}
-              >
-                {selectedTemplate
-                  ? selectedTemplate.name
-                  : 'Banking, Social, Email, etc.'}
-              </Text>
-              <Ionicons
-                name="chevron-forward-outline"
-                size={20}
-                color={theme.textSecondary}
-              />
-            </TouchableOpacity>
+
+              <View style={styles.templatesGrid}>
+                {DEFAULT_TEMPLATES.map(item => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.templateChip,
+                      {
+                        backgroundColor: theme.card,
+                        borderColor: theme.border,
+                      },
+                      selectedTemplate?.id === item.id && {
+                        borderColor: item.color,
+                        backgroundColor: `${item.color}15`,
+                      },
+                    ]}
+                    onPress={() => handleSelectTemplate(item)}
+                  >
+                    <View
+                      style={[
+                        styles.templateChipIcon,
+                        { backgroundColor: `${item.color}20` },
+                      ]}
+                    >
+                      <Ionicons
+                        name={item.icon as any}
+                        size={16}
+                        color={item.color}
+                      />
+                    </View>
+                    <Text
+                      style={[styles.templateChipText, { color: theme.text }]}
+                      numberOfLines={1}
+                    >
+                      {item.name}
+                    </Text>
+                    {selectedTemplate?.id === item.id && (
+                      <Ionicons
+                        name="checkmark-circle-outline"
+                        size={18}
+                        color={item.color}
+                      />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
 
             <View style={styles.settings}>
               <Text style={[styles.settingsTitle, { color: theme.text }]}>
@@ -351,182 +390,158 @@ export const GeneratorScreen: React.FC = () => {
 
               <View
                 style={[
-                  styles.setting,
+                  styles.settingCard,
                   { backgroundColor: theme.card, borderColor: theme.border },
                 ]}
               >
-                <View style={styles.sliderHeader}>
-                  <Text style={[styles.settingLabel, { color: theme.text }]}>
-                    Length
-                  </Text>
-                  <Text style={[styles.lengthValue, { color: theme.primary }]}>
-                    {length}
-                  </Text>
+                {/* Length Slider */}
+                <View style={styles.sliderSection}>
+                  <View style={styles.sliderHeader}>
+                    <Text style={[styles.settingLabel, { color: theme.text }]}>
+                      Length
+                    </Text>
+                    <Text
+                      style={[styles.lengthValue, { color: theme.primary }]}
+                    >
+                      {length}
+                    </Text>
+                  </View>
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={10}
+                    maximumValue={50}
+                    value={length}
+                    onValueChange={value => updateLength(Math.round(value))}
+                    step={1}
+                    minimumTrackTintColor={theme.primary}
+                    maximumTrackTintColor={theme.border}
+                    thumbTintColor={theme.primary}
+                  />
                 </View>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={8}
-                  maximumValue={32}
-                  value={length}
-                  onValueChange={value => updateLength(Math.round(value))}
-                  step={1}
-                  minimumTrackTintColor={theme.primary}
-                  maximumTrackTintColor={theme.border}
-                  thumbTintColor={theme.primary}
-                />
-              </View>
 
-              <View
-                style={[
-                  styles.switchSetting,
-                  {
-                    backgroundColor: theme.card,
-                    borderColor: theme.border,
-                  },
-                  isLastEnabledOption('includeUppercase')
-                    ? styles.disabledSetting
-                    : null,
-                ]}
-              >
-                <Text style={[styles.settingLabel, { color: theme.text }]}>
-                  Include Uppercase
-                  {isLastEnabledOption('includeUppercase') && (
-                    <Text
-                      style={[styles.requiredText, { color: theme.primary }]}
-                    >
-                      {' '}
-                      *
-                    </Text>
-                  )}
-                </Text>
-                <Switch
-                  value={generator.includeUppercase}
-                  onValueChange={toggleUppercase}
-                  trackColor={{ false: theme.border, true: theme.primary }}
-                  thumbColor={
-                    generator.includeUppercase
-                      ? theme.background
-                      : theme.textSecondary
-                  }
+                {/* Divider */}
+                <View
+                  style={[styles.divider, { backgroundColor: theme.border }]}
                 />
-              </View>
 
-              <View
-                style={[
-                  styles.switchSetting,
-                  {
-                    backgroundColor: theme.card,
-                    borderColor: theme.border,
-                  },
-                  isLastEnabledOption('includeLowercase')
-                    ? styles.disabledSetting
-                    : null,
-                ]}
-              >
-                <Text style={[styles.settingLabel, { color: theme.text }]}>
-                  Include Lowercase
-                  {isLastEnabledOption('includeLowercase') && (
-                    <Text
-                      style={[styles.requiredText, { color: theme.primary }]}
-                    >
-                      {' '}
-                      *
-                    </Text>
-                  )}
-                </Text>
-                <Switch
-                  value={generator.includeLowercase}
-                  onValueChange={toggleLowercase}
-                  trackColor={{ false: theme.border, true: theme.primary }}
-                  thumbColor={
-                    generator.includeLowercase
-                      ? theme.background
-                      : theme.textSecondary
-                  }
-                />
-              </View>
+                {/* Include Options */}
+                <View>
+                  <Text style={[styles.includeLabel, { color: theme.text }]}>
+                    Include
+                  </Text>
+                  <View style={styles.checkboxGrid}>
+                    {/* Row 1 */}
+                    <View style={styles.checkboxRow}>
+                      <TouchableOpacity
+                        style={styles.checkboxItem}
+                        onPress={toggleUppercase}
+                        disabled={isLastEnabledOption('includeUppercase')}
+                      >
+                        <View
+                          style={getCheckboxStyle(generator.includeUppercase)}
+                        >
+                          {generator.includeUppercase && (
+                            <Ionicons
+                              name="checkmark"
+                              size={14}
+                              color={theme.primary}
+                            />
+                          )}
+                        </View>
+                        <Text
+                          style={getCheckboxLabelStyle(
+                            generator.includeUppercase,
+                          )}
+                        >
+                          A-Z
+                        </Text>
+                      </TouchableOpacity>
 
-              <View
-                style={[
-                  styles.switchSetting,
-                  {
-                    backgroundColor: theme.card,
-                    borderColor: theme.border,
-                  },
-                  isLastEnabledOption('includeNumbers')
-                    ? styles.disabledSetting
-                    : null,
-                ]}
-              >
-                <Text style={[styles.settingLabel, { color: theme.text }]}>
-                  Include Numbers
-                  {isLastEnabledOption('includeNumbers') && (
-                    <Text
-                      style={[styles.requiredText, { color: theme.primary }]}
-                    >
-                      {' '}
-                      *
-                    </Text>
-                  )}
-                </Text>
-                <Switch
-                  value={generator.includeNumbers}
-                  onValueChange={toggleNumbers}
-                  trackColor={{ false: theme.border, true: theme.primary }}
-                  thumbColor={
-                    generator.includeNumbers
-                      ? theme.background
-                      : theme.textSecondary
-                  }
-                />
-              </View>
+                      <TouchableOpacity
+                        style={styles.checkboxItem}
+                        onPress={toggleLowercase}
+                        disabled={isLastEnabledOption('includeLowercase')}
+                      >
+                        <View
+                          style={getCheckboxStyle(generator.includeLowercase)}
+                        >
+                          {generator.includeLowercase && (
+                            <Ionicons
+                              name="checkmark"
+                              size={14}
+                              color={theme.primary}
+                            />
+                          )}
+                        </View>
+                        <Text
+                          style={getCheckboxLabelStyle(
+                            generator.includeLowercase,
+                          )}
+                        >
+                          a-z
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
 
-              <View
-                style={[
-                  styles.switchSetting,
-                  {
-                    backgroundColor: theme.card,
-                    borderColor: theme.border,
-                  },
-                  isLastEnabledOption('includeSymbols')
-                    ? styles.disabledSetting
-                    : null,
-                ]}
-              >
-                <Text style={[styles.settingLabel, { color: theme.text }]}>
-                  Include Symbols
-                  {isLastEnabledOption('includeSymbols') && (
-                    <Text
-                      style={[styles.requiredText, { color: theme.primary }]}
-                    >
-                      {' '}
-                      *
-                    </Text>
-                  )}
-                </Text>
-                <Switch
-                  value={generator.includeSymbols}
-                  onValueChange={toggleSymbols}
-                  trackColor={{ false: theme.border, true: theme.primary }}
-                  thumbColor={
-                    generator.includeSymbols
-                      ? theme.background
-                      : theme.textSecondary
-                  }
-                />
+                    {/* Row 2 */}
+                    <View style={styles.checkboxRow}>
+                      <TouchableOpacity
+                        style={styles.checkboxItem}
+                        onPress={toggleNumbers}
+                        disabled={isLastEnabledOption('includeNumbers')}
+                      >
+                        <View
+                          style={getCheckboxStyle(generator.includeNumbers)}
+                        >
+                          {generator.includeNumbers && (
+                            <Ionicons
+                              name="checkmark"
+                              size={14}
+                              color={theme.primary}
+                            />
+                          )}
+                        </View>
+                        <Text
+                          style={getCheckboxLabelStyle(
+                            generator.includeNumbers,
+                          )}
+                        >
+                          0-9
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.checkboxItem}
+                        onPress={toggleSymbols}
+                        disabled={isLastEnabledOption('includeSymbols')}
+                      >
+                        <View
+                          style={getCheckboxStyle(generator.includeSymbols)}
+                        >
+                          {generator.includeSymbols && (
+                            <Ionicons
+                              name="checkmark"
+                              size={14}
+                              color={theme.primary}
+                            />
+                          )}
+                        </View>
+                        <Text
+                          style={getCheckboxLabelStyle(
+                            generator.includeSymbols,
+                          )}
+                        >
+                          !@#
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
               </View>
             </View>
           </View>
         </TouchableWithoutFeedback>
       </ScrollView>
-
-      {/* Password Templates Modal */}
-      <PasswordTemplates
-        visible={showTemplates}
-        onClose={() => setShowTemplates(false)}
-        onSelectTemplate={handleSelectTemplate}
-        currentTemplate={selectedTemplate}
-      />
     </SafeAreaView>
   );
 };
@@ -537,7 +552,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingVertical: 12,
     borderBottomWidth: 0.5,
     borderBottomColor: '#38383A',
   },
@@ -546,6 +561,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    paddingBottom: 0,
   },
   title: {
     fontSize: 28,
@@ -649,26 +665,16 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginBottom: 16,
   },
-  setting: {
+  settingCard: {
     backgroundColor: '#1C1C1E',
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderRadius: 12,
-    marginBottom: 8,
     borderWidth: 0.5,
     borderColor: '#38383A',
   },
-  switchSetting: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1C1C1E',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-    borderWidth: 0.5,
-    borderColor: '#38383A',
+  sliderSection: {
+    marginBottom: 12,
   },
   sliderHeader: {
     flexDirection: 'row',
@@ -691,34 +697,81 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 40,
   },
-  requiredText: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  divider: {
+    height: 1,
+    marginVertical: 12,
+    opacity: 0.3,
   },
-  disabledSetting: {
-    opacity: 0.6,
+  includeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+    opacity: 0.8,
   },
-  templatesButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1C1C1E',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginBottom: 24,
-    borderWidth: 0.5,
-    borderColor: '#38383A',
+  checkboxGrid: {
     gap: 12,
   },
-  templatesButtonText: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
+  checkboxRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 16,
+    alignItems: 'center',
   },
-  templatesButtonSubtitle: {
-    fontSize: 12,
-    color: '#8E8E93',
-    marginRight: 8,
+  checkboxItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    minWidth: 28,
+  },
+  templatesSection: {
+    marginBottom: 24,
+  },
+  templatesSectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  templatesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  templateChip: {
+    width: '48%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    gap: 8,
+    minHeight: 44,
+  },
+  templateChipIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  templateChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
   },
 });

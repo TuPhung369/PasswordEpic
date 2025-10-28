@@ -10,7 +10,6 @@ import {
   Modal,
   FlatList,
   Image,
-  ActionSheetIOS,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -938,7 +937,10 @@ export const SettingsScreen: React.FC = () => {
         </Text>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.settingsContentContainer}
+      >
         {/* User Profile */}
         <View style={styles.section}>
           <View
@@ -963,14 +965,18 @@ export const SettingsScreen: React.FC = () => {
               <View
                 style={[styles.cameraIcon, { backgroundColor: theme.primary }]}
               >
-                <Ionicons name="camera" size={12} color="#fff" />
+                <Ionicons name="camera" size={9} color="#fff" />
               </View>
             </TouchableOpacity>
             <View style={styles.userInfo}>
               <Text style={[styles.userName, { color: theme.text }]}>
                 {user?.displayName || 'User'}
               </Text>
-              <Text style={[styles.userEmail, { color: theme.textSecondary }]}>
+              <Text
+                style={[styles.userEmail, { color: theme.textSecondary }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 {user?.email || 'No email available'}
               </Text>
             </View>
@@ -1434,9 +1440,7 @@ export const SettingsScreen: React.FC = () => {
         animationType="slide"
         onRequestClose={() => setShowIconReportModal(false)}
       >
-        <View
-          style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.7)' }]}
-        >
+        <View style={[styles.modalOverlay, styles.modalOverlayDark]}>
           <View
             style={[
               styles.modalContent,
@@ -1466,7 +1470,7 @@ export const SettingsScreen: React.FC = () => {
                 },
               ]}
             >
-              <Text style={[styles.summaryText, { color: '#fff' }]}>
+              <Text style={[styles.summaryText, styles.summaryTextWhite]}>
                 {iconReportData.summary}
               </Text>
             </View>
@@ -1509,9 +1513,7 @@ export const SettingsScreen: React.FC = () => {
         animationType="slide"
         onRequestClose={() => setShowAvatarModal(false)}
       >
-        <View
-          style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.7)' }]}
-        >
+        <View style={[styles.modalOverlay, styles.modalOverlayDark]}>
           <View
             style={[
               styles.modalContent,
@@ -1545,8 +1547,8 @@ export const SettingsScreen: React.FC = () => {
                   avatarTab === 'emoji' && {
                     backgroundColor: theme.primary + '20',
                     borderBottomColor: theme.primary,
-                    borderBottomWidth: 2,
                   },
+                  avatarTab === 'emoji' && styles.tabButtonActiveBorder,
                 ]}
               >
                 <Text
@@ -1571,8 +1573,8 @@ export const SettingsScreen: React.FC = () => {
                   avatarTab === 'image' && {
                     backgroundColor: theme.primary + '20',
                     borderBottomColor: theme.primary,
-                    borderBottomWidth: 2,
                   },
+                  avatarTab === 'image' && styles.tabButtonActiveBorder,
                 ]}
               >
                 <Text
@@ -1694,10 +1696,7 @@ export const SettingsScreen: React.FC = () => {
                   {avatarImageUri && (
                     <TouchableOpacity
                       onPress={handleClearAvatar}
-                      style={[
-                        styles.imageActionButton,
-                        { backgroundColor: '#EF4444' },
-                      ]}
+                      style={[styles.imageActionButton, styles.clearButton]}
                     >
                       <Ionicons name="trash-outline" size={20} color="#fff" />
                       <Text style={styles.imageActionButtonText}>
@@ -1730,7 +1729,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingVertical: 12,
     borderBottomWidth: 0.5,
     borderBottomColor: '#38383A',
   },
@@ -1770,9 +1769,9 @@ const styles = StyleSheet.create({
     borderColor: '#38383A',
   },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: '#2C2C2E',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1780,15 +1779,15 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   avatarEmoji: {
-    fontSize: 32,
+    fontSize: 40,
   },
   cameraIcon: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1960,9 +1959,9 @@ const styles = StyleSheet.create({
   },
   // Avatar Image Styles
   avatarImage: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     resizeMode: 'cover',
   },
   // Tab Styles
@@ -2018,5 +2017,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#fff',
+  },
+  // Settings Content Container
+  settingsContentContainer: {
+    paddingBottom: 10,
+  },
+  // Modal Overlay with dark background
+  modalOverlayDark: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  // Summary text white
+  summaryTextWhite: {
+    color: '#fff',
+  },
+  // Tab button active border
+  tabButtonActiveBorder: {
+    borderBottomWidth: 2,
+  },
+  // Clear button red background
+  clearButton: {
+    backgroundColor: '#EF4444',
   },
 });

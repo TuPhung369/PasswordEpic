@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { ReactNode } from 'react';
 import {
   Modal,
   View,
@@ -18,6 +18,7 @@ interface ConfirmDialogProps {
   confirmStyle?: 'default' | 'destructive';
   onConfirm: () => void;
   onCancel: () => void;
+  children?: ReactNode;
 }
 
 const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
@@ -29,6 +30,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   confirmStyle = 'default',
   onConfirm,
   onCancel,
+  children,
 }) => {
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -45,6 +47,10 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           <View style={styles.content}>
             <Text style={styles.title}>{title}</Text>
             <Text style={styles.message}>{message}</Text>
+
+            {children && (
+              <View style={styles.childrenContainer}>{children}</View>
+            )}
 
             <View style={styles.buttonContainer}>
               <TouchableOpacity
@@ -121,6 +127,9 @@ const createStyles = (theme: any) =>
       lineHeight: 22,
       marginBottom: 24,
       textAlign: 'center',
+    },
+    childrenContainer: {
+      marginBottom: 24,
     },
     buttonContainer: {
       flexDirection: 'row',

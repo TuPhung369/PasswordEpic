@@ -140,6 +140,16 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     options: any;
   } | null>(null);
 
+  // Decryption password state for failed restores
+  const [showDecryptionPasswordDialog, setShowDecryptionPasswordDialog] =
+    useState(false);
+  const [decryptionPassword, setDecryptionPassword] = useState('');
+  const [pendingRestore, setPendingRestore] = useState<{
+    backupId: string;
+    options: any;
+  } | null>(null);
+  const [decryptionAttempts, setDecryptionAttempts] = useState(0);
+
   // Import state
   const [isImportLoading, setIsImportLoading] = useState(false);
 
@@ -1374,7 +1384,173 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       }
     } catch (error: any) {
       console.error('❌ Restore failed:', error);
-      setToastMessage(`Failed to restore backup: ${error.message || error}`);
+      const errorMsg = error.message || String(error);
+
+      // Check if it's a decryption password error
+      if (
+        errorMsg.includes('Invalid decryption password') ||
+        errorMsg.includes('Authentication tag verification failed')
+      ) {
+        console.log(
+          '🔐 [PasswordsScreen] Decryption failed, asking for password...',
+        );
+        // Save pending restore and show decryption password dialog
+        setPendingRestore({ backupId, options });
+        setDecryptionPassword('');
+        setDecryptionAttempts(0);
+        setShowDecryptionPasswordDialog(true);
+
+        // Still clean up temp file if needed
+        if (tempFilePath) {
+          try {
+            const RNFS = await import('react-native-fs');
+            if (await RNFS.default.exists(tempFilePath)) {
+              await RNFS.default.unlink(tempFilePath);
+            }
+          } catch (cleanupError) {
+            console.warn(
+              '⚠️ [PasswordsScreen] Failed to cleanup temp file:',
+              cleanupError,
+            );
+          }
+        }
+      } else {
+        setToastMessage(`Failed to restore backup: ${errorMsg}`);
+        setToastType('error');
+        setShowToast(true);
+      }
+    } finally {
+      // Clean up temporary file if it was created (if not already cleaned)
+      if (tempFilePath) {
+        try {
+          const RNFS = await import('react-native-fs');
+          if (await RNFS.default.exists(tempFilePath)) {
+            await RNFS.default.unlink(tempFilePath);
+            console.log('🗑️ [PasswordsScreen] Cleaned up temp file');
+          }
+        } catch (cleanupError) {
+          console.warn(
+            '⚠️ [PasswordsScreen] Failed to cleanup temp file:',
+            cleanupError,
+          );
+        }
+      }
+      setIsExportLoading(false);
+    }
+  };
+
+  // Handle restore with custom decryption password
+  const handleRestoreWithPassword = async () => {
+    if (!pendingRestore || !decryptionPassword.trim()) {
+      setToastMessage('Please enter a decryption password');
+      setToastType('error');
+      setShowToast(true);
+      return;
+    }
+
+    let tempFilePath: string | null = null;
+
+    try {
+      setIsExportLoading(true);
+      setDecryptionAttempts(prev => prev + 1);
+
+      // Get the backup
+      const backup = availableBackups.find(
+        (b: any) => b.id === pendingRestore.backupId,
+      );
+      if (!backup) {
+        throw new Error('Backup not found');
+      }
+
+      let filePath = (backup as any).filePath;
+
+      if (!filePath) {
+        // This is a Google Drive backup, download it first
+        console.log('🔵 [PasswordsScreen] Downloading from Google Drive...');
+        const { downloadFromGoogleDrive } = await import(
+          '../../services/googleDriveService'
+        );
+
+        const RNFS = await import('react-native-fs');
+        tempFilePath = `${
+          RNFS.default.CachesDirectoryPath
+        }/temp_restore_${Date.now()}.bak`;
+
+        const downloadResult = await downloadFromGoogleDrive(
+          backup.id,
+          tempFilePath,
+        );
+
+        if (!downloadResult.success) {
+          throw new Error(
+            `Failed to download backup: ${
+              downloadResult.error || 'Unknown error'
+            }`,
+          );
+        }
+
+        filePath = tempFilePath;
+      }
+
+      // Create restore options with custom decryption password
+      const restoreOptions = {
+        mergeStrategy: pendingRestore.options.mergeWithExisting
+          ? ('merge' as const)
+          : ('replace' as const),
+        decryptionPassword: decryptionPassword,
+        restoreSettings: pendingRestore.options.restoreSettings,
+        restoreCategories: pendingRestore.options.restoreCategories,
+        restoreDomains: pendingRestore.options.restoreDomains,
+        overwriteDuplicates: pendingRestore.options.overwriteDuplicates,
+      };
+
+      console.log(
+        '🔵 [PasswordsScreen] Retrying restore with custom password...',
+      );
+
+      const result = await backupService.restoreFromBackup(
+        filePath,
+        restoreOptions,
+      );
+
+      if (result.result.success) {
+        console.log('✅ [PasswordsScreen] Restore successful');
+
+        // Get master password for reloading passwords
+        const masterPasswordResult = await getEffectiveMasterPassword();
+        if (masterPasswordResult.success && masterPasswordResult.password) {
+          await dispatch(
+            loadPasswordsLazy(masterPasswordResult.password),
+          ).unwrap();
+        }
+
+        setToastMessage('Backup restored successfully');
+        setToastType('success');
+        setShowToast(true);
+
+        // Close dialogs
+        setShowDecryptionPasswordDialog(false);
+        setShowBackupModal(false);
+        setPendingRestore(null);
+      } else {
+        const errorMsg = result.result.errors?.length
+          ? result.result.errors.join(', ')
+          : 'Restore failed';
+        throw new Error(errorMsg);
+      }
+    } catch (error: any) {
+      console.error('❌ Restore with password failed:', error);
+
+      if (decryptionAttempts < 3) {
+        setToastMessage(
+          `Incorrect password. Attempts: ${decryptionAttempts}/3`,
+        );
+      } else {
+        setToastMessage('Max password attempts reached');
+        setShowDecryptionPasswordDialog(false);
+        setPendingRestore(null);
+      }
+
       setToastType('error');
       setShowToast(true);
     } finally {
@@ -1384,7 +1560,6 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           const RNFS = await import('react-native-fs');
           if (await RNFS.default.exists(tempFilePath)) {
             await RNFS.default.unlink(tempFilePath);
-            console.log('🗑️ [PasswordsScreen] Cleaned up temp file');
           }
         } catch (cleanupError) {
           console.warn(
@@ -2103,6 +2278,36 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
       {/* Confirm Dialog */}
       <ConfirmDialog {...confirmDialog} onCancel={hideConfirm} />
+
+      {/* Decryption Password Dialog */}
+      <ConfirmDialog
+        visible={showDecryptionPasswordDialog}
+        title="Enter Decryption Password"
+        message="The backup is encrypted with a different password. Please enter the password used when creating this backup."
+        onConfirm={handleRestoreWithPassword}
+        onCancel={() => {
+          setShowDecryptionPasswordDialog(false);
+          setPendingRestore(null);
+          setDecryptionPassword('');
+        }}
+        confirmText="Restore"
+        confirmStyle="default"
+      >
+        <TextInput
+          style={[
+            styles.decryptionPasswordInput,
+            { borderColor: theme.border, color: theme.text },
+          ]}
+          placeholder="Enter backup decryption password"
+          placeholderTextColor={theme.textSecondary}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          value={decryptionPassword}
+          onChangeText={setDecryptionPassword}
+          editable={!isExportLoading}
+        />
+      </ConfirmDialog>
     </SafeAreaView>
   );
 };
@@ -2366,5 +2571,13 @@ const styles = StyleSheet.create({
   },
   importButtonLoading: {
     opacity: 0.6,
+  },
+  decryptionPasswordInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    marginBottom: 16,
   },
 });

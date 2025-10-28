@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   TextInput,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -185,203 +186,214 @@ export const MasterPasswordScreen: React.FC = () => {
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.background }]}
     >
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: theme.text }]}>
-            Create Master Password
-          </Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            This password will encrypt all your data. Make it strong and
-            memorable.
-          </Text>
-        </View>
-
-        {/* Password Input */}
-        <View style={styles.inputSection}>
-          <Text style={[styles.inputLabel, { color: theme.text }]}>
-            Master Password
-          </Text>
-          <View style={[styles.inputContainer, { borderColor: theme.border }]}>
-            <TextInput
-              style={[styles.textInput, { color: theme.text }]}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Enter your master password"
-              placeholderTextColor={theme.textSecondary}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="off"
-              importantForAutofill="no"
-            />
-            <TouchableOpacity
-              onPress={() => setShowPassword(!showPassword)}
-              style={styles.eyeButton}
-            >
-              <Ionicons
-                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                size={24}
-                color={theme.textSecondary}
-              />
-            </TouchableOpacity>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.content}>
+          <View style={styles.header}>
+            <Text style={[styles.title, { color: theme.text }]}>
+              Create Master Password
+            </Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+              This password will encrypt all your data. Make it strong and
+              memorable.
+            </Text>
           </View>
 
-          {/* Password Strength Indicator */}
-          {password.length > 0 && (
-            <View style={styles.strengthContainer}>
-              <View style={styles.strengthBar}>
-                <View
-                  style={[
-                    styles.strengthFill,
-                    {
-                      width: `${(passwordStrength.score / 5) * 100}%`,
-                      backgroundColor: passwordStrength.color,
-                    },
-                  ]}
+          {/* Password Input */}
+          <View style={styles.inputSection}>
+            <Text style={[styles.inputLabel, { color: theme.text }]}>
+              Master Password
+            </Text>
+            <View
+              style={[styles.inputContainer, { borderColor: theme.border }]}
+            >
+              <TextInput
+                style={[styles.textInput, { color: theme.text }]}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Enter your master password"
+                placeholderTextColor={theme.textSecondary}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                importantForAutofill="no"
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.eyeButton}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={24}
+                  color={theme.textSecondary}
                 />
-              </View>
-              <Text
-                style={[
-                  styles.strengthLabel,
-                  { color: passwordStrength.color },
-                ]}
-              >
-                {passwordStrength.label}
-              </Text>
+              </TouchableOpacity>
             </View>
-          )}
-        </View>
 
-        {/* Confirm Password Input */}
-        <View style={styles.inputSection}>
-          <Text style={[styles.inputLabel, { color: theme.text }]}>
-            Confirm Password
-          </Text>
-          <View style={[styles.inputContainer, { borderColor: theme.border }]}>
-            <TextInput
-              style={[styles.textInput, { color: theme.text }]}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="Confirm your master password"
-              placeholderTextColor={theme.textSecondary}
-              secureTextEntry={!showConfirmPassword}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="off"
-              importantForAutofill="no"
-            />
-            <TouchableOpacity
-              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-              style={styles.eyeButton}
-            >
-              <Ionicons
-                name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                size={24}
-                color={theme.textSecondary}
-              />
-            </TouchableOpacity>
+            {/* Password Strength Indicator */}
+            {password.length > 0 && (
+              <View style={styles.strengthContainer}>
+                <View style={styles.strengthBar}>
+                  <View
+                    style={[
+                      styles.strengthFill,
+                      {
+                        width: `${(passwordStrength.score / 5) * 100}%`,
+                        backgroundColor: passwordStrength.color,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.strengthLabel,
+                    { color: passwordStrength.color },
+                  ]}
+                >
+                  {passwordStrength.label}
+                </Text>
+              </View>
+            )}
           </View>
 
-          {/* Password Match Indicator */}
-          {confirmPassword.length > 0 && (
-            <View style={styles.matchContainer}>
-              <Ionicons
-                name={
-                  doPasswordsMatch
-                    ? 'checkmark-circle-outline'
-                    : 'close-circle-outline'
-                }
-                size={16}
-                color={doPasswordsMatch ? '#00C851' : theme.error}
+          {/* Confirm Password Input */}
+          <View style={styles.inputSection}>
+            <Text style={[styles.inputLabel, { color: theme.text }]}>
+              Confirm Password
+            </Text>
+            <View
+              style={[styles.inputContainer, { borderColor: theme.border }]}
+            >
+              <TextInput
+                style={[styles.textInput, { color: theme.text }]}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Confirm your master password"
+                placeholderTextColor={theme.textSecondary}
+                secureTextEntry={!showConfirmPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                importantForAutofill="no"
               />
-              <Text
-                style={[
-                  styles.matchText,
-                  doPasswordsMatch
-                    ? styles.matchTextSuccess
-                    : { color: theme.error },
-                ]}
+              <TouchableOpacity
+                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                style={styles.eyeButton}
               >
-                {doPasswordsMatch
-                  ? 'Passwords match'
-                  : 'Passwords do not match'}
-              </Text>
+                <Ionicons
+                  name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={24}
+                  color={theme.textSecondary}
+                />
+              </TouchableOpacity>
             </View>
-          )}
-        </View>
 
-        {/* Password Requirements */}
-        <View style={styles.requirementsContainer}>
-          <Text style={[styles.requirementsTitle, { color: theme.text }]}>
-            Password Requirements:
-          </Text>
-          <RequirementItem
-            met={passwordStrength.requirements.length}
-            text="At least 12 characters"
-            theme={theme}
-          />
-          <RequirementItem
-            met={passwordStrength.requirements.uppercase}
-            text="At least one uppercase letter"
-            theme={theme}
-          />
-          <RequirementItem
-            met={passwordStrength.requirements.lowercase}
-            text="At least one lowercase letter"
-            theme={theme}
-          />
-          <RequirementItem
-            met={passwordStrength.requirements.numbers}
-            text="At least one number"
-            theme={theme}
-          />
-          <RequirementItem
-            met={passwordStrength.requirements.symbols}
-            text="At least one special character"
-            theme={theme}
-          />
-        </View>
+            {/* Password Match Indicator */}
+            {confirmPassword.length > 0 && (
+              <View style={styles.matchContainer}>
+                <Ionicons
+                  name={
+                    doPasswordsMatch
+                      ? 'checkmark-circle-outline'
+                      : 'close-circle-outline'
+                  }
+                  size={16}
+                  color={doPasswordsMatch ? '#00C851' : theme.error}
+                />
+                <Text
+                  style={[
+                    styles.matchText,
+                    doPasswordsMatch
+                      ? styles.matchTextSuccess
+                      : { color: theme.error },
+                  ]}
+                >
+                  {doPasswordsMatch
+                    ? 'Passwords match'
+                    : 'Passwords do not match'}
+                </Text>
+              </View>
+            )}
+          </View>
 
-        {/* Set Password Button */}
-        <TouchableOpacity
-          style={[
-            styles.setPasswordButton,
-            {
-              backgroundColor:
-                isPasswordValid && doPasswordsMatch
-                  ? theme.primary
-                  : theme.surface,
-            },
-            isLoading && styles.disabledButton,
-          ]}
-          onPress={handleSetMasterPassword}
-          disabled={!isPasswordValid || !doPasswordsMatch || isLoading}
-        >
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#ffffff" />
-              <Text style={[styles.buttonText, styles.loadingButtonText]}>
-                Setting Password...
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.buttonText}>Set Master Password</Text>
-          )}
-        </TouchableOpacity>
+          {/* Password Requirements */}
+          <View style={styles.requirementsContainer}>
+            <Text style={[styles.requirementsTitle, { color: theme.text }]}>
+              Password Requirements:
+            </Text>
+            <RequirementItem
+              met={passwordStrength.requirements.length}
+              text="At least 12 characters"
+              theme={theme}
+            />
+            <RequirementItem
+              met={passwordStrength.requirements.uppercase}
+              text="At least one uppercase letter"
+              theme={theme}
+            />
+            <RequirementItem
+              met={passwordStrength.requirements.lowercase}
+              text="At least one lowercase letter"
+              theme={theme}
+            />
+            <RequirementItem
+              met={passwordStrength.requirements.numbers}
+              text="At least one number"
+              theme={theme}
+            />
+            <RequirementItem
+              met={passwordStrength.requirements.symbols}
+              text="At least one special character"
+              theme={theme}
+            />
+          </View>
 
-        {/* Security Note */}
-        <View style={styles.securityNote}>
-          <Ionicons
-            name="shield-checkmark-outline"
-            size={20}
-            color={theme.primary}
-          />
-          <Text style={[styles.securityText, { color: theme.textSecondary }]}>
-            Your master password cannot be recovered. Make sure to remember it
-            or store it in a safe place.
-          </Text>
+          {/* Set Password Button */}
+          <TouchableOpacity
+            style={[
+              styles.setPasswordButton,
+              {
+                backgroundColor:
+                  isPasswordValid && doPasswordsMatch
+                    ? theme.primary
+                    : theme.surface,
+              },
+              isLoading && styles.disabledButton,
+            ]}
+            onPress={handleSetMasterPassword}
+            disabled={!isPasswordValid || !doPasswordsMatch || isLoading}
+          >
+            {isLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#ffffff" />
+                <Text style={[styles.buttonText, styles.loadingButtonText]}>
+                  Setting Password...
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.buttonText}>Set Master Password</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Security Note */}
+          <View style={styles.securityNote}>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={20}
+              color={theme.primary}
+            />
+            <Text style={[styles.securityText, { color: theme.textSecondary }]}>
+              Your master password cannot be recovered. Make sure to remember it
+              or store it in a safe place.
+            </Text>
+          </View>
         </View>
-      </View>
+      </ScrollView>
 
       <ConfirmDialog
         visible={confirmDialog.visible}
@@ -400,8 +412,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
+  scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 24,
+  },
+  content: {
     paddingHorizontal: 24,
     paddingTop: 20,
   },

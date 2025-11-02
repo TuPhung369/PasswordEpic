@@ -223,8 +223,11 @@ npm start -- --reset-cache
 **Fix**:
 
 ```powershell
-# Rebuild with latest google-services.json
+# Rebuild with latest google-services.json Increase Version into build/gradle
 Set-Location "e:\IT\Mobile\PasswordEpic\android"
+# kill all task before build
+taskkill /IM adb.exe /F
+taskkill /IM node.exe /F
 .\gradlew clean bundleRelease
 ```
 

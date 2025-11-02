@@ -40,7 +40,6 @@ interface AutofillSettings {
   enabled: boolean;
   requireBiometric: boolean;
   allowSubdomains: boolean;
-  autoSubmit: boolean;
 }
 
 interface AutofillStatistics {
@@ -66,7 +65,6 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
     enabled: true,
     requireBiometric: true,
     allowSubdomains: true,
-    autoSubmit: false,
   });
   const [statistics, setStatistics] = useState<AutofillStatistics>({
     totalFills: 0,
@@ -616,29 +614,6 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
               onValueChange={value =>
                 handleSettingChange('allowSubdomains', value)
               }
-              trackColor={{ false: theme.border, true: theme.primary }}
-              thumbColor={theme.surface}
-            />
-          </View>
-
-          {/* Auto Submit */}
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={[styles.settingLabel, { color: theme.text }]}>
-                Auto Submit
-              </Text>
-              <Text
-                style={[
-                  styles.settingDescription,
-                  { color: theme.textSecondary },
-                ]}
-              >
-                Automatically submit forms after autofill
-              </Text>
-            </View>
-            <Switch
-              value={settings.autoSubmit}
-              onValueChange={value => handleSettingChange('autoSubmit', value)}
               trackColor={{ false: theme.border, true: theme.primary }}
               thumbColor={theme.surface}
             />

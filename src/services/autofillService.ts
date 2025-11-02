@@ -169,7 +169,6 @@ export interface AutofillSettings {
   enabled: boolean;
   requireBiometric: boolean;
   allowSubdomains: boolean;
-  autoSubmit: boolean;
   trustedDomains: string[];
 }
 
@@ -1129,7 +1128,6 @@ class AutofillService {
       enabled: false,
       requireBiometric: true,
       allowSubdomains: true,
-      autoSubmit: false,
       trustedDomains: [],
     };
   }

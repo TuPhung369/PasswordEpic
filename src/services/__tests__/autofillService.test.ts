@@ -577,7 +577,6 @@ describe('AutofillService', () => {
       expect(result.enabled).toBe(false);
       expect(result.requireBiometric).toBe(true);
       expect(result.allowSubdomains).toBe(true);
-      expect(result.autoSubmit).toBe(false);
       expect(result.trustedDomains).toEqual([]);
     });
 
@@ -586,7 +585,6 @@ describe('AutofillService', () => {
         enabled: true,
         requireBiometric: true,
         allowSubdomains: true,
-        autoSubmit: false,
         trustedDomains: ['google.com'],
       };
       (secureStorageService.getItem as jest.Mock).mockResolvedValue(

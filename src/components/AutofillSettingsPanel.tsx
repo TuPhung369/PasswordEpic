@@ -17,7 +17,7 @@
  * @since Week 9 - Phase 4
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -28,6 +28,7 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  AppState,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -73,10 +74,55 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   });
   const [trustedDomainsCount, setTrustedDomainsCount] = useState(0);
 
+  // Track app state to detect when user returns from settings
+  const appStateRef = useRef(AppState.currentState);
+  const isCheckingAutofillRef = useRef(false);
+
   // Load initial data
   useEffect(() => {
     loadAutofillData();
   }, []);
+
+  // Listen for app state changes to detect when user returns from settings
+  useEffect(() => {
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isEnabled]);
+
+  const handleAppStateChange = async (state: string) => {
+    if (state === 'active' && isCheckingAutofillRef.current) {
+      console.log('📱 App returned to foreground - checking autofill status');
+      // Give system a moment to process the settings change
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      try {
+        const enabled = await autofillService.isEnabled();
+        if (enabled !== isEnabled) {
+          console.log(
+            `✅ Autofill status changed: ${enabled ? 'Enabled' : 'Disabled'}`,
+          );
+          setIsEnabled(enabled);
+
+          if (enabled) {
+            Alert.alert(
+              '✅ Success',
+              'Autofill has been enabled! You can now use PasswordEpic to fill credentials.',
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Error checking autofill status on app return:', error);
+      } finally {
+        isCheckingAutofillRef.current = false;
+      }
+    }
+  };
 
   const loadAutofillData = async () => {
     try {
@@ -124,19 +170,86 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
           [{ text: 'OK' }],
         );
       } else {
-        // Enable autofill
+        // Enable autofill - open settings
+        console.log('🎯 Opening autofill settings...');
         const success = await autofillService.requestEnable();
+
         if (success) {
-          // Check status after a delay
-          setTimeout(async () => {
-            const enabled = await autofillService.isEnabled();
-            setIsEnabled(enabled);
-          }, 1000);
+          // Mark that we're waiting for user to return from settings
+          isCheckingAutofillRef.current = true;
+
+          // Show user-friendly message with instructions
+          Alert.alert(
+            '📱 Settings Opened',
+            'Please select "PasswordEpic" as your Autofill service in Settings.\n\nWhen done, return to the app and we\'ll verify the setting.',
+            [
+              {
+                text: "I've enabled it",
+                onPress: async () => {
+                  console.log('👤 User confirmed they enabled autofill');
+                  // Wait a bit then check status with retries
+                  await checkAutofillStatusWithRetry();
+                },
+              },
+              {
+                text: 'Cancel',
+                onPress: () => {
+                  isCheckingAutofillRef.current = false;
+                },
+                style: 'cancel',
+              },
+            ],
+            { cancelable: false },
+          );
+        } else {
+          console.warn('⚠️ Failed to open autofill settings');
+          Alert.alert(
+            'Error',
+            'Failed to open autofill settings. Please try again.',
+          );
         }
       }
     } catch (error) {
       console.error('Error toggling autofill:', error);
       Alert.alert('Error', 'Failed to toggle autofill service');
+      isCheckingAutofillRef.current = false;
+    }
+  };
+
+  const checkAutofillStatusWithRetry = async () => {
+    try {
+      // Retry up to 3 times with increasing delays
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        // Wait longer on each retry
+        const delayMs = attempt * 1500;
+        console.log(
+          `⏳ Autofill check attempt ${attempt}/3 (waiting ${delayMs}ms)...`,
+        );
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+
+        const enabled = await autofillService.isEnabled();
+        console.log(`   Result: ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`);
+
+        if (enabled) {
+          setIsEnabled(true);
+          Alert.alert(
+            '✅ Success!',
+            'Autofill has been enabled successfully. You can now use PasswordEpic to automatically fill credentials in apps and websites.',
+          );
+          return;
+        }
+      }
+
+      // If still not enabled after retries, show help message
+      console.warn('⚠️ Autofill still not enabled after 3 attempts');
+      Alert.alert(
+        '⏳ Still Checking',
+        'Autofill hasn\'t been enabled yet. Please make sure to select "PasswordEpic" in Settings > System > Autofill service and return to the app.',
+        [{ text: 'OK' }],
+      );
+    } catch (error) {
+      console.error('Error during autofill status retry:', error);
+      Alert.alert('Error', 'Failed to verify autofill status');
     }
   };
 

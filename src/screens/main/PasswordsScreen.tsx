@@ -62,6 +62,9 @@ import {
 import { encryptedDatabase } from '../../services/encryptedDatabaseService';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
+import { autofillService } from '../../services/autofillService';
+import { Platform } from 'react-native';
+import { setIsInSetupFlow } from '../../store/slices/authSlice';
 
 // Define local types for PasswordsScreen string-based filtering
 type SortOption =
@@ -107,6 +110,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   const [selectedPasswords, setSelectedPasswords] = useState<string[]>([]);
   const [bulkMode, setBulkMode] = useState(false);
   const [isLoadingPasswords, setIsLoadingPasswords] = useState(false);
+
+  // Autofill setup tracking - only check once on first load
+  const autofillPromptShownRef = React.useRef(false);
 
   // Toast state
   const [showToast, setShowToast] = useState(false);
@@ -283,6 +289,47 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
       loadPasswordsData();
     }, [dispatch]),
+  );
+
+  // Check autofill status on first load and navigate to setup if needed
+  useFocusEffect(
+    React.useCallback(() => {
+      const checkAndPromptAutofillSetup = async () => {
+        // Only check once, and only on Android
+        if (autofillPromptShownRef.current || Platform.OS !== 'android') {
+          return;
+        }
+
+        autofillPromptShownRef.current = true;
+
+        try {
+          console.log('🔍 Checking autofill status on first login...');
+          const isEnabled = await autofillService.isEnabled();
+
+          if (!isEnabled) {
+            console.log(
+              '⚠️ Autofill not enabled - navigating directly to setup',
+            );
+            // Mark that user is in setup flow to prevent auto-lock during autofill configuration
+            dispatch(setIsInSetupFlow(true));
+
+            // Add a small delay to let the UI settle
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Navigate directly to Autofill Management screen (skip the prompt)
+            navigation.navigate('Settings', {
+              screen: 'AutofillManagement',
+            });
+          } else {
+            console.log('✅ Autofill already enabled - no setup needed');
+          }
+        } catch (error) {
+          console.warn('⚠️ Failed to check autofill status:', error);
+        }
+      };
+
+      checkAndPromptAutofillSetup();
+    }, [dispatch, navigation]),
   );
 
   // Recalculate password strengths when passwords change

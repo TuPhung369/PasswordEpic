@@ -62,7 +62,7 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
 
     setLoading(true);
     try {
-      const result = await verifyMasterPassword(password);
+      const result = await verifyMasterPassword(password.trim());
       if (result.success) {
         setPassword('');
         onSuccess();
@@ -144,7 +144,7 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
                 placeholder="Enter master password"
                 placeholderTextColor={theme.textSecondary}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={text => setPassword(text.trim())}
                 secureTextEntry={!showPassword}
                 autoFocus={true}
                 onSubmitEditing={handleVerify}

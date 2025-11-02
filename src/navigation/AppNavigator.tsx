@@ -52,6 +52,7 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
     masterPasswordConfigured,
     biometricEnabled,
     session,
+    isInSetupFlow,
   } = useAppSelector(state => state.auth);
   const { security } = useAppSelector(state => state.settings);
   // console.log('🔄 AppNavigator: Redux state:', {
@@ -71,6 +72,13 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
     async () => {
       // Auto-lock callback when user is inactive
       console.log('🎯 🔒 Auto-lock triggered due to user inactivity');
+
+      // Skip auto-lock if user is in setup flow (master password or biometric setup)
+      if (isInSetupFlow) {
+        console.log('🎯 🔒 Auto-lock: Skipping - user is in setup flow');
+        return;
+      }
+
       if (
         isAuthenticated &&
         masterPasswordConfigured &&
@@ -381,11 +389,13 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
 
       // IMPROVED: Save navigation state when app goes to background
       // This ensures we can restore it after biometric unlock
+      // Skip if user is in setup flow (master password or biometric setup)
       if (nextAppState === 'background' || nextAppState === 'inactive') {
         if (
           stateRefs.current.isAuthenticated &&
           stateRefs.current.masterPasswordConfigured &&
-          stateRefs.current.initialAuthComplete
+          stateRefs.current.initialAuthComplete &&
+          !isInSetupFlow // Skip if in setup flow
         ) {
           // Save navigation state BEFORE app goes background
           try {
@@ -439,6 +449,7 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
       handleAppStateChange,
     );
     return () => subscription?.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Add delay state to prevent immediate biometric prompt on app resume
@@ -459,7 +470,8 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
       !hasAuthenticatedInSession &&
       sessionActive !== undefined &&
       !sessionTimeoutVisible &&
-      initialAuthComplete; // Only show biometric after Firebase auth is initialized
+      initialAuthComplete &&
+      !isInSetupFlow; // Don't show biometric during setup flow
 
     console.log('🔐 shouldShowBiometric calculated:', {
       result,
@@ -473,6 +485,7 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
       sessionActive,
       sessionTimeoutVisible,
       initialAuthComplete,
+      isInSetupFlow,
     });
 
     return result;
@@ -487,6 +500,7 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
     sessionActive,
     sessionTimeoutVisible,
     initialAuthComplete,
+    isInSetupFlow,
   ]);
 
   // Handle biometric prompt display
@@ -630,11 +644,13 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
   // Determine if we should block main navigator access
   // Show overlay immediately when authentication is required, even before prompts are shown
   // This prevents the flash of content when session expires or app resumes from background
+  // Don't block if user is in setup flow (master password or biometric setup)
   const shouldBlockMainAccess =
     isAuthenticated &&
     masterPasswordConfigured &&
     !hasAuthenticatedInSession &&
-    initialAuthComplete && // Only block after initial auth is complete
+    initialAuthComplete &&
+    !isInSetupFlow && // Don't block during setup flow
     (showBiometricPrompt ||
       showMasterPasswordPrompt ||
       shouldShowBiometric ||

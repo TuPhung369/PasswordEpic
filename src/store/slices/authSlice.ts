@@ -21,6 +21,7 @@ interface AuthState {
   masterPasswordConfigured: boolean;
   biometricEnabled: boolean;
   session: SessionState;
+  isInSetupFlow: boolean; // Track if user is in master password/biometric setup
 }
 
 const initialState: AuthState = {
@@ -35,6 +36,7 @@ const initialState: AuthState = {
     warning: false,
     timeRemaining: 0,
   },
+  isInSetupFlow: false,
 };
 
 const authSlice = createSlice({
@@ -64,6 +66,7 @@ const authSlice = createSlice({
       state.error = null;
       state.masterPasswordConfigured = false;
       state.biometricEnabled = false;
+      state.isInSetupFlow = false;
     },
     clearError: state => {
       state.error = null;
@@ -87,6 +90,9 @@ const authSlice = createSlice({
         timeRemaining: 0,
       };
     },
+    setIsInSetupFlow: (state, action: PayloadAction<boolean>) => {
+      state.isInSetupFlow = action.payload;
+    },
   },
 });
 
@@ -100,5 +106,6 @@ export const {
   setBiometricEnabled,
   setSessionExpired,
   clearSession,
+  setIsInSetupFlow,
 } = authSlice.actions;
 export default authSlice.reducer;

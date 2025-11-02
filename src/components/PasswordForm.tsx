@@ -298,38 +298,6 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     }
   }, [showAppSelector, apps]);
 
-  // Handle app search
-  const handleAppSearch = useCallback(
-    async (query: string) => {
-      setAppSearchQuery(query);
-      if (!query.trim()) {
-        setFilteredApps(apps);
-        return;
-      }
-
-      try {
-        const results = await searchApps(query);
-        setFilteredApps(results);
-      } catch (err) {
-        console.error('❌ Error searching apps:', err);
-        setFilteredApps([]);
-      }
-    },
-    [apps, searchApps],
-  );
-
-  // Handle app selection
-  const handleAppSelect = useCallback(
-    (app: AppInfo) => {
-      console.log('📱 Selected app:', app.packageName);
-      setSelectedApp(app);
-      setWebsite(app.packageName); // Set website to package name
-      setShowAppSelector(false);
-      notifyDataChange({ website: app.packageName });
-    },
-    [notifyDataChange],
-  );
-
   // Helper function to notify parent of form changes - use ref to avoid re-renders
   const notifyDataChangeRef = React.useRef<typeof onDataChange>(onDataChange);
   React.useEffect(() => {
@@ -367,6 +335,38 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     [title, username, passwordValue, website, notes, category, isFavorite],
   );
 
+  // Handle app search
+  const handleAppSearch = useCallback(
+    async (query: string) => {
+      setAppSearchQuery(query);
+      if (!query.trim()) {
+        setFilteredApps(apps);
+        return;
+      }
+
+      try {
+        const results = await searchApps(query);
+        setFilteredApps(results);
+      } catch (err) {
+        console.error('❌ Error searching apps:', err);
+        setFilteredApps([]);
+      }
+    },
+    [apps, searchApps],
+  );
+
+  // Handle app selection
+  const handleAppSelect = useCallback(
+    (app: AppInfo) => {
+      console.log('📱 Selected app:', app.packageName);
+      setSelectedApp(app);
+      setWebsite(app.packageName); // Set website to package name
+      setShowAppSelector(false);
+      notifyDataChange({ website: app.packageName });
+    },
+    [notifyDataChange],
+  );
+
   // Calculate password strength when password changes
   useEffect(() => {
     // Only calculate strength for decrypted passwords
@@ -394,7 +394,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
         onSave({
           title,
           username,
-          password: passwordValue,
+          password: passwordValue.trim(),
           website,
           notes,
           category,
@@ -451,7 +451,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
         onSave({
           title: title.trim(),
           username: username.trim(),
-          password: passwordValue,
+          password: passwordValue.trim(),
           website: website.trim() || undefined,
           notes: notes.trim() || undefined,
           category: category,
@@ -626,8 +626,9 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               placeholder="Enter username or email"
               value={username}
               onChangeText={text => {
-                setUsername(text);
-                notifyDataChange({ username: text });
+                const trimmedText = text.trim();
+                setUsername(trimmedText);
+                notifyDataChange({ username: trimmedText });
               }}
               placeholderTextColor={theme.textSecondary}
               returnKeyType="next"
@@ -651,8 +652,9 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                 placeholder="Enter password"
                 value={passwordValue}
                 onChangeText={text => {
-                  setPasswordValue(text);
-                  notifyDataChange({ passwordValue: text });
+                  const trimmedText = text.trim();
+                  setPasswordValue(trimmedText);
+                  notifyDataChange({ passwordValue: trimmedText });
                 }}
                 // onBlur={handlePasswordBlur} // 🚫 Temporarily disabled - causing Google autofill modal
                 secureTextEntry={!isPasswordVisible}
@@ -806,6 +808,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                   setDomainType('web');
                   setSelectedApp(null);
                   setWebsite('');
+                  notifyDataChange({ website: '' });
                 }}
               >
                 <Ionicons
@@ -837,6 +840,8 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                 onPress={() => {
                   setDomainType('mobile');
                   setWebsite('');
+                  setSelectedApp(null);
+                  notifyDataChange({ website: '' });
                 }}
               >
                 <Ionicons
@@ -1059,7 +1064,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               <Ionicons name="close-outline" size={24} color={theme.text} />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Select App</Text>
-            <View style={{ width: 24 }} />
+            <View style={styles.modalHeaderSpacer} />
           </View>
 
           {/* Search Bar */}
@@ -1419,6 +1424,9 @@ const createStyles = (theme: Theme) =>
       fontSize: 18,
       fontWeight: '600',
       color: theme.text,
+    },
+    modalHeaderSpacer: {
+      width: 24,
     },
 
     // Search Container

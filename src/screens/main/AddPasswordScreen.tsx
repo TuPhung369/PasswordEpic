@@ -395,7 +395,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     // Only log validation errors in development/debug
     // console.log('🔍 isFormValid check:', isValid);
     return isValid;
-  }, [formData?.title]); // Only depend on title field for validation
+  }, [formData]); // Depend on full formData to ensure callback stays updated
 
   const handleSave = async () => {
     if (!isFormValid()) {

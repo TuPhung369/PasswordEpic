@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,10 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAppDispatch } from '../../hooks/redux';
-import { setMasterPasswordConfigured } from '../../store/slices/authSlice';
+import {
+  setMasterPasswordConfigured,
+  setIsInSetupFlow,
+} from '../../store/slices/authSlice';
 import { storeMasterPassword } from '../../services/secureStorageService';
 
 interface RequirementItemProps {
@@ -65,6 +68,20 @@ export const MasterPasswordScreen: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [_renderCount, setRenderCount] = useState(0);
+
+  // Ref to force immediate UI update when loading starts
+  const updateCounterRef = useRef(0);
+
+  // Mark that user is in setup flow to prevent auto-lock
+  useEffect(() => {
+    dispatch(setIsInSetupFlow(true));
+
+    // Cleanup: Mark setup flow as complete when unmounting
+    return () => {
+      dispatch(setIsInSetupFlow(false));
+    };
+  }, [dispatch]);
 
   // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -119,67 +136,78 @@ export const MasterPasswordScreen: React.FC = () => {
     password === confirmPassword && confirmPassword.length > 0;
 
   const handleSetMasterPassword = async () => {
-    if (!isPasswordValid) {
-      setConfirmDialog({
-        visible: true,
-        title: 'Weak Password',
-        message:
-          'Please create a stronger password with at least 4 of the 5 requirements.',
-        confirmText: 'OK',
-        onConfirm: () =>
-          setConfirmDialog(prev => ({ ...prev, visible: false })),
-      });
-      return;
-    }
+    // Update loading state and force immediate re-render for instant UI feedback
+    // This ensures the "Setting Password..." button appears immediately
+    updateCounterRef.current++;
+    setRenderCount(prev => prev + 1); // Force re-render BEFORE any validation
+    setIsLoading(true);
 
-    if (!doPasswordsMatch) {
-      setConfirmDialog({
-        visible: true,
-        title: 'Password Mismatch',
-        message: 'Passwords do not match. Please try again.',
-        confirmText: 'OK',
-        onConfirm: () =>
-          setConfirmDialog(prev => ({ ...prev, visible: false })),
-      });
-      return;
-    }
+    // Use setTimeout with 0ms to ensure UI updates before validation
+    setTimeout(async () => {
+      try {
+        // Validate password strength
+        if (!isPasswordValid) {
+          setConfirmDialog({
+            visible: true,
+            title: 'Weak Password',
+            message:
+              'Please create a stronger password with at least 4 of the 5 requirements.',
+            confirmText: 'OK',
+            onConfirm: () =>
+              setConfirmDialog(prev => ({ ...prev, visible: false })),
+          });
+          setIsLoading(false);
+          return;
+        }
 
-    try {
-      setIsLoading(true);
+        // Validate passwords match
+        if (!doPasswordsMatch) {
+          setConfirmDialog({
+            visible: true,
+            title: 'Password Mismatch',
+            message: 'Passwords do not match. Please try again.',
+            confirmText: 'OK',
+            onConfirm: () =>
+              setConfirmDialog(prev => ({ ...prev, visible: false })),
+          });
+          setIsLoading(false);
+          return;
+        }
 
-      // Store master password securely
-      const result = await storeMasterPassword(password);
+        // Store master password securely
+        const result = await storeMasterPassword(password.trim());
 
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to store master password');
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to store master password');
+        }
+
+        // Mark as configured in Redux store
+        dispatch(setMasterPasswordConfigured(true));
+
+        setConfirmDialog({
+          visible: true,
+          title: 'Success',
+          message:
+            'Master password has been set successfully. Your passwords will now be encrypted with this key.',
+          confirmText: 'Continue',
+          onConfirm: () => {
+            setConfirmDialog(prev => ({ ...prev, visible: false }));
+            // Navigation will be handled by AppNavigator based on auth state
+          },
+        });
+      } catch (error: any) {
+        setConfirmDialog({
+          visible: true,
+          title: 'Error',
+          message: error.message || 'Failed to set master password',
+          confirmText: 'OK',
+          onConfirm: () =>
+            setConfirmDialog(prev => ({ ...prev, visible: false })),
+        });
+      } finally {
+        setIsLoading(false);
       }
-
-      // Mark as configured in Redux store
-      dispatch(setMasterPasswordConfigured(true));
-
-      setConfirmDialog({
-        visible: true,
-        title: 'Success',
-        message:
-          'Master password has been set successfully. Your passwords will now be encrypted with this key.',
-        confirmText: 'Continue',
-        onConfirm: () => {
-          setConfirmDialog(prev => ({ ...prev, visible: false }));
-          // Navigation will be handled by AppNavigator based on auth state
-        },
-      });
-    } catch (error: any) {
-      setConfirmDialog({
-        visible: true,
-        title: 'Error',
-        message: error.message || 'Failed to set master password',
-        confirmText: 'OK',
-        onConfirm: () =>
-          setConfirmDialog(prev => ({ ...prev, visible: false })),
-      });
-    } finally {
-      setIsLoading(false);
-    }
+    }, 0);
   };
 
   return (
@@ -214,7 +242,7 @@ export const MasterPasswordScreen: React.FC = () => {
               <TextInput
                 style={[styles.textInput, { color: theme.text }]}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={text => setPassword(text.trim())}
                 placeholder="Enter your master password"
                 placeholderTextColor={theme.textSecondary}
                 secureTextEntry={!showPassword}
@@ -272,7 +300,7 @@ export const MasterPasswordScreen: React.FC = () => {
               <TextInput
                 style={[styles.textInput, { color: theme.text }]}
                 value={confirmPassword}
-                onChangeText={setConfirmPassword}
+                onChangeText={text => setConfirmPassword(text.trim())}
                 placeholder="Confirm your master password"
                 placeholderTextColor={theme.textSecondary}
                 secureTextEntry={!showConfirmPassword}

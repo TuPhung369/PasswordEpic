@@ -11,6 +11,8 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useBiometric } from '../../hooks/useBiometric';
 import { useNavigation } from '@react-navigation/native';
+import { useAppDispatch } from '../../hooks/redux';
+import { setIsInSetupFlow } from '../../store/slices/authSlice';
 import { BiometricPrompt } from '../../components/BiometricPrompt';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
@@ -22,6 +24,7 @@ interface BiometricFeature {
 
 export const BiometricSetupScreen: React.FC = () => {
   const { theme } = useTheme();
+  const dispatch = useAppDispatch();
   const navigation = useNavigation();
   const {
     isAvailable,
@@ -34,6 +37,16 @@ export const BiometricSetupScreen: React.FC = () => {
 
   const [showPrompt, setShowPrompt] = useState(false);
   const [setupComplete, setSetupComplete] = useState(false);
+
+  // Mark that user is in setup flow to prevent auto-lock
+  useEffect(() => {
+    dispatch(setIsInSetupFlow(true));
+
+    // Cleanup: Mark setup flow as complete when unmounting
+    return () => {
+      dispatch(setIsInSetupFlow(false));
+    };
+  }, [dispatch]);
 
   // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{

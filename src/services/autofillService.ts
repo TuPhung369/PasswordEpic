@@ -773,6 +773,21 @@ class AutofillService {
         );
       }
 
+      // 🔑 CRITICAL FIX: Get autofill settings to determine if we should encrypt or send plaintext
+      let requireBiometric = true; // Default: require biometric for security
+      try {
+        const settings = await this.getSettings();
+        requireBiometric = settings.requireBiometric ?? true;
+        console.log(
+          `📋 [Autofill] Current settings: requireBiometric=${requireBiometric}`,
+        );
+      } catch (settingsError) {
+        console.warn(
+          `⚠️ [Autofill] Failed to get settings, defaulting to requireBiometric=true:`,
+          settingsError,
+        );
+      }
+
       // Convert passwords to autofill credentials
       const credentials: AutofillCredential[] = [];
 
@@ -867,26 +882,49 @@ class AutofillService {
           continue;
         }
 
+        // 🔑 CRITICAL FIX: If requireBiometric=false, send plaintext instead of encrypted
+        // This prevents Android autofill from forcing biometric as a security fallback
+        let finalPassword = encryptedPassword;
+        let finalSalt = encryptedSalt;
+        let finalIV = encryptedIV;
+        let finalTag = encryptedTag;
+        let isEncrypted = true;
+
+        if (!requireBiometric && password.password && password.isDecrypted) {
+          // User disabled biometric requirement - send plaintext to allow auto-fill without auth
+          console.log(
+            `📤 [FIX] requireBiometric=false for ${password.username} - sending as PLAINTEXT to avoid forced auth`,
+          );
+          finalPassword = password.password;
+          finalSalt = undefined;
+          finalIV = undefined;
+          finalTag = undefined;
+          isEncrypted = false;
+        }
+
         const credential: AutofillCredential = {
           id: password.id,
           domain,
           username: password.username,
-          password: encryptedPassword, // Always encrypted hex string
-          salt: encryptedSalt, // 🔑 CRITICAL: Salt for key derivation during decryption
-          iv: encryptedIV, // Initialization vector for decryption
-          tag: encryptedTag, // Authentication tag for decryption
+          password: finalPassword, // Encrypted OR plaintext depending on requireBiometric
+          salt: finalSalt, // 🔑 CRITICAL: Only set if encrypted
+          iv: finalIV, // Only set if encrypted
+          tag: finalTag, // Only set if encrypted
           lastUsed: password.lastUsed
             ? new Date(password.lastUsed).getTime()
             : undefined,
-          encrypted: true, // Always true - all credentials are encrypted
+          encrypted: isEncrypted, // true if encrypted, false if plaintext
         };
 
         console.log(
-          `🔐 Credential for ${password.username} prepared as encrypted (${
+          `🔐 Credential for ${password.username} prepared as ${
+            isEncrypted ? 'ENCRYPTED' : 'PLAINTEXT'
+          } (${
             password.isDecrypted
-              ? 'was plaintext, now encrypted'
+              ? 'was plaintext, now ' +
+                (isEncrypted ? 'encrypted' : 'kept as plaintext')
               : 'already encrypted'
-          }) with IV=${!!encryptedIV} TAG=${!!encryptedTag}`,
+          }) with IV=${!!finalIV} TAG=${!!finalTag}`,
         );
 
         credentials.push(credential);
@@ -911,9 +949,30 @@ class AutofillService {
       // This allows Android autofill service to access credentials
       if (Platform.OS === 'android') {
         try {
-          // STEP A: Verify credentials have all required fields before sending
+          // STEP A: Sync autofill settings to native bridge first
+          // This ensures biometric requirements are correctly set before credentials are accessed
           console.log(
-            '📊 [STEP A] Verifying credentials have encryption metadata:',
+            '📱 [STEP A] Syncing autofill settings to native bridge...',
+          );
+          try {
+            const currentSettings = await this.getSettings();
+            const settingsSyncResult = await AutofillBridge.updateSettings(
+              JSON.stringify(currentSettings),
+            );
+            console.log(
+              `✅ [STEP A] Settings synced to native bridge: ${settingsSyncResult}`,
+            );
+          } catch (settingsSyncError) {
+            console.warn(
+              '⚠️ [STEP A] Failed to sync settings to native bridge:',
+              settingsSyncError,
+            );
+            // Continue anyway - credentials are more important
+          }
+
+          // STEP B: Verify credentials have all required fields before sending
+          console.log(
+            '📊 [STEP B] Verifying credentials have encryption metadata:',
           );
           credentials.forEach((cred, idx) => {
             console.log(
@@ -926,20 +985,22 @@ class AutofillService {
           });
 
           console.log(
-            '📱 [STEP B] Sending credentials to native autofill bridge...',
+            '📱 [STEP C] Sending credentials to native autofill bridge...',
             JSON.stringify(credentials, null, 2),
           );
           const result = await AutofillBridge.prepareCredentials(
             JSON.stringify(credentials),
           );
           console.log(
-            `✅ [STEP C] Native bridge stored credentials: ${result}`,
+            `✅ [STEP D] Native bridge stored credentials: ${result}`,
           );
 
           // 🔑 CRITICAL: Cache plaintext passwords for decryption after autofill
           // When user taps login after autofill, they may need to decrypt
           // So cache plaintext now for quick access
-          console.log('📦 Caching plaintext passwords for decryption...');
+          console.log(
+            '📦 [STEP E] Caching plaintext passwords for decryption...',
+          );
           for (const password of passwords) {
             if (password.password && password.id) {
               try {
@@ -1186,6 +1247,27 @@ class AutofillService {
       );
 
       console.log('Autofill settings updated:', newSettings);
+
+      // 🔑 CRITICAL: Sync settings to native Android autofill service
+      // This ensures the biometric requirement is properly propagated to the Android side
+      if (Platform.OS === 'android') {
+        try {
+          console.log(
+            '📱 Syncing autofill settings to native bridge:',
+            newSettings,
+          );
+          const syncResult = await AutofillBridge.updateSettings(
+            JSON.stringify(newSettings),
+          );
+          console.log(`✅ Native autofill settings synced: ${syncResult}`);
+        } catch (bridgeError) {
+          console.warn(
+            '⚠️ Failed to sync settings to autofill bridge:',
+            bridgeError,
+          );
+          // Don't throw - app should still work even if bridge call fails
+        }
+      }
     } catch (error) {
       console.error('Error updating autofill settings:', error);
       throw error;

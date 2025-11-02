@@ -29,7 +29,16 @@ interface AutofillBridgeModule {
   isAutofillSupported(): Promise<boolean>;
   isAutofillEnabled(): Promise<boolean>;
   requestEnableAutofill(): Promise<boolean>;
-  disableAutofill(): Promise<boolean>;
+  disableAutofill(): Promise<
+    | boolean
+    | {
+        success: boolean;
+        instructions: string;
+        error?: string;
+        action?: string;
+      }
+  >;
+  openAutofillSettingsNow(): Promise<boolean>;
   getCredentialsForDomain(domain: string): Promise<Array<any>>;
   prepareCredentials(credentialsJson: string): Promise<boolean>;
   clearCache(): Promise<boolean>;
@@ -76,6 +85,17 @@ const AutofillBridge: AutofillBridgeModule = (() => {
       },
       disableAutofill: async () => {
         console.warn('⚠️ [Mock] disableAutofill called');
+        return {
+          success: true,
+          instructions:
+            'Mock: Please follow your device settings to disable autofill.',
+          action: 'openAutofillSettings',
+        };
+      },
+      openAutofillSettingsNow: async () => {
+        console.warn(
+          '⚠️ [Mock] openAutofillSettingsNow called - cannot open real settings in mock',
+        );
         return true;
       },
       getCredentialsForDomain: async () => {
@@ -555,8 +575,11 @@ class AutofillService {
   /**
    * Requests to disable autofill service
    * Opens system settings for user to disable
+   * Returns OEM-specific instructions along with success status
    */
-  async requestDisable(): Promise<boolean> {
+  async requestDisable(): Promise<
+    boolean | { success: boolean; instructions: string; error?: string }
+  > {
     try {
       console.log('📞 [AutofillService] requestDisable() called');
 
@@ -585,6 +608,55 @@ class AutofillService {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error(
         '❌ [AutofillService] Error requesting autofill disable:',
+        errorMsg,
+      );
+      console.error(
+        'Stack trace:',
+        error instanceof Error ? error.stack : 'N/A',
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Open autofill settings now (after user confirms from alert dialog)
+   * This is called from the Alert button press to ensure alert is visible first
+   */
+  async openAutofillSettingsNow(): Promise<boolean> {
+    try {
+      console.log(
+        '📱 [AutofillService] openAutofillSettingsNow() called - Opening settings intent',
+      );
+
+      if (Platform.OS !== 'android') {
+        console.warn(
+          '⚠️ [AutofillService] Autofill is only supported on Android',
+        );
+        return false;
+      }
+
+      console.log(
+        '🔗 [AutofillService] Checking if AutofillBridge is available...',
+      );
+      if (!AutofillBridge) {
+        const errorMsg = 'AutofillBridge native module is not available';
+        console.error('❌ [AutofillService]', errorMsg);
+        return false;
+      }
+
+      console.log(
+        '📞 [AutofillService] Calling AutofillBridge.openAutofillSettingsNow()...',
+      );
+      const result = await AutofillBridge.openAutofillSettingsNow();
+      console.log(
+        '✅ [AutofillService] openAutofillSettingsNow returned:',
+        result,
+      );
+      return result;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(
+        '❌ [AutofillService] Error opening autofill settings:',
         errorMsg,
       );
       console.error(

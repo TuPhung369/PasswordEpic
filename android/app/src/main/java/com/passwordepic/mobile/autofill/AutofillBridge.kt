@@ -1,6 +1,7 @@
 package com.passwordepic.mobile.autofill
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -121,7 +122,14 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
             val isOurService = isOurAutofillServiceEnabled()
             
             Log.d(TAG, "Autofill enabled: $isEnabled, Our service: $isOurService")
-            promise.resolve(isEnabled && isOurService)
+            
+            // 🔧 FIX: On some OEM devices (e.g., Huawei), hasEnabledAutofillServices() 
+            // may return false even when an autofill service IS selected.
+            // If our service is the one enabled, then autofill IS enabled.
+            val finalResult = isOurService || isEnabled
+            Log.d(TAG, "✅ Final autofill status: $finalResult (ourService=$isOurService, systemEnabled=$isEnabled)")
+            
+            promise.resolve(finalResult)
         } catch (e: Exception) {
             Log.e(TAG, "Error checking autofill status", e)
             promise.reject("ERROR", "Failed to check autofill status: ${e.message}", e)
@@ -131,6 +139,7 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
     /**
      * Request to enable autofill service
      * Opens system settings for user to enable the service
+     * Tries multiple approaches including OEM-specific paths for compatibility
      */
     @ReactMethod
     fun requestEnableAutofill(promise: Promise) {
@@ -143,46 +152,68 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
 
             val activity = reactContext.currentActivity
             if (activity == null) {
-                Log.e(TAG, "❌ Activity not available - trying alternative method")
-                // Try alternative: use the app context to start activity
-                try {
-                    val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
-                    intent.data = android.net.Uri.parse("package:${reactContext.packageName}")
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    reactContext.startActivity(intent)
-                    Log.d(TAG, "✅ Opened autofill settings using ReactContext")
-                    promise.resolve(true)
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Failed to start activity using ReactContext: ${e.message}", e)
-                    promise.reject("ERROR", "Activity not available: ${e.message}", e)
-                }
+                Log.e(TAG, "❌ Activity not available")
+                promise.reject("ERROR", "Activity not available")
                 return
             }
 
-            // Open autofill settings
-            try {
-                val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
-                intent.data = android.net.Uri.parse("package:${reactContext.packageName}")
-                Log.d(TAG, "📱 Starting autofill settings with intent: ${intent.action}")
-                
-                activity.startActivity(intent)
-                
-                Log.d(TAG, "✅ Opened autofill settings")
-                promise.resolve(true)
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Error starting activity: ${e.message}", e)
-                // Try fallback: open general settings
+            val manufacturer = Build.MANUFACTURER.uppercase()
+            Log.d(TAG, "📱 Device manufacturer: $manufacturer")
+
+            // Try 1: Official Android API (preferred method - Android 8.0+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
-                    Log.d(TAG, "🔄 Trying fallback: opening general settings")
-                    val fallbackIntent = Intent(Settings.ACTION_SETTINGS)
-                    activity.startActivity(fallbackIntent)
-                    Log.d(TAG, "✅ Opened general settings as fallback")
+                    val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+                    Log.d(TAG, "📱 Attempt 1: Opening autofill service settings via official API")
+                    activity.startActivity(intent)
+                    Log.d(TAG, "✅ Opened autofill settings via official API")
                     promise.resolve(true)
-                } catch (fallbackError: Exception) {
-                    Log.e(TAG, "❌ Fallback also failed: ${fallbackError.message}", fallbackError)
-                    promise.reject("ERROR", "Failed to open settings: ${fallbackError.message}", fallbackError)
+                    return
+                } catch (e: ActivityNotFoundException) {
+                    Log.d(TAG, "⚠️ Official API not supported on this device, trying OEM-specific paths...")
+                } catch (e: Exception) {
+                    Log.d(TAG, "⚠️ Error with official API: ${e.message}, trying OEM-specific paths...")
                 }
             }
+
+            // Try 2: OEM-specific paths
+            if (tryOEMSpecificAutofillSettings(activity, manufacturer)) {
+                Log.d(TAG, "✅ Opened OEM-specific autofill settings")
+                promise.resolve(true)
+                return
+            }
+
+            // Fallback 1: Open Settings with default category
+            try {
+                val intent = Intent(Settings.ACTION_SETTINGS).apply {
+                    addCategory(Intent.CATEGORY_DEFAULT)
+                }
+                Log.d(TAG, "📱 Attempt 3: Opening Settings app")
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Opened Settings - Navigate to: Settings → System → Languages & input → More input settings → Autofill (or similar path)")
+                promise.resolve(true)
+                return
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ Failed to open Settings: ${e.message}")
+            }
+
+            // Fallback 2: Try opening app settings for PasswordEpic
+            try {
+                val intent = Intent(Settings.ACTION_APPLICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, "com.passwordepic.mobile")
+                }
+                Log.d(TAG, "📱 Attempt 4: Opening PasswordEpic app settings")
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Opened app settings")
+                promise.resolve(true)
+                return
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ Failed to open app settings: ${e.message}")
+            }
+
+            // If all attempts fail
+            Log.e(TAG, "❌ All attempts to open autofill settings failed")
+            promise.reject("ERROR", "Failed to open autofill settings. Please enable manually in System Settings.")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error requesting autofill enable", e)
             promise.reject("ERROR", "Failed to request autofill enable: ${e.message}", e)
@@ -190,7 +221,68 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
     }
 
     /**
+     * Get OEM-specific instructions for disabling autofill
+     * Returns user-friendly guide for the specific device manufacturer
+     */
+    private fun getOEMDisableInstructions(manufacturer: String): String {
+        return when {
+            manufacturer.contains("HUAWEI") -> 
+                "1. Go to Settings\n" +
+                "2. Tap 'System' or 'Advanced'\n" +
+                "3. Tap 'Languages & input'\n" +
+                "4. Tap 'More input settings' or 'Advanced'\n" +
+                "5. Tap 'Autofill service'\n" +
+                "6. Select 'None' to disable PasswordEpic"
+            
+            manufacturer.contains("SAMSUNG") ->
+                "1. Go to Settings\n" +
+                "2. Tap 'Apps' or 'Applications'\n" +
+                "3. Tap 'Default apps' or 'Default applications'\n" +
+                "4. Tap 'Autofill service'\n" +
+                "5. Select 'None' to disable PasswordEpic"
+            
+            manufacturer.contains("XIAOMI") || manufacturer.contains("REDMI") ->
+                "1. Go to Settings\n" +
+                "2. Tap 'System' or 'Additional settings'\n" +
+                "3. Tap 'Languages and input'\n" +
+                "4. Tap 'Autofill services' or 'Autofill'\n" +
+                "5. Select 'None' to disable PasswordEpic"
+            
+            manufacturer.contains("OPPO") ->
+                "1. Go to Settings\n" +
+                "2. Tap 'System' → 'System apps' → 'Settings'\n" +
+                "3. Tap 'Languages and input' or 'Input & language'\n" +
+                "4. Tap 'Autofill service'\n" +
+                "5. Select 'None' to disable PasswordEpic"
+            
+            manufacturer.contains("ONEPLUS") ->
+                "1. Go to Settings\n" +
+                "2. Tap 'System'\n" +
+                "3. Tap 'System apps' → 'Settings'\n" +
+                "4. Tap 'Languages and input'\n" +
+                "5. Tap 'Autofill services'\n" +
+                "6. Select 'None' to disable PasswordEpic"
+            
+            manufacturer.contains("GOOGLE") || manufacturer.contains("ANDROID") ->
+                "1. Go to Settings\n" +
+                "2. Tap 'System' → 'Languages and input'\n" +
+                "3. Tap 'Autofill service' or 'Autofill'\n" +
+                "4. Select 'None' to disable PasswordEpic"
+            
+            else ->
+                "1. Go to Settings\n" +
+                "2. Look for 'Languages and input' or 'Input methods'\n" +
+                "3. Find 'Autofill service' or 'Autofill'\n" +
+                "4. Select 'None' to disable PasswordEpic"
+        }
+    }
+
+    /**
      * Disable autofill service
+     * Opens system settings for user to disable the service
+     * Tries device-specific paths for different manufacturers
+     * Returns OEM-specific instructions for user guidance
+     * Note: We can't programmatically disable - user must do it through settings
      */
     @ReactMethod
     fun disableAutofill(promise: Promise) {
@@ -212,51 +304,180 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
                 return
             }
 
-            // Note: We can't programmatically disable autofill service
-            // User must do it through settings
-            // We can only guide them to settings
             val activity = reactContext.currentActivity
             
             if (activity == null) {
-                Log.e(TAG, "❌ Activity not available - trying alternative method")
-                // Try alternative: use the app context to start activity
-                try {
-                    val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    reactContext.startActivity(intent)
-                    Log.d(TAG, "✅ Opened autofill settings using ReactContext")
-                    promise.resolve(true)
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Failed to start activity using ReactContext: ${e.message}", e)
-                    promise.reject("ERROR", "Activity not available: ${e.message}", e)
-                }
+                Log.e(TAG, "❌ Activity not available")
+                promise.reject("ERROR", "Activity not available")
                 return
             }
 
-            try {
-                val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
-                Log.d(TAG, "📱 Starting autofill disable settings with intent: ${intent.action}")
-                activity.startActivity(intent)
-                Log.d(TAG, "✅ Opened settings to disable autofill")
-                promise.resolve(true)
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Error starting activity: ${e.message}", e)
-                // Try fallback: open general settings
-                try {
-                    Log.d(TAG, "🔄 Trying fallback: opening general settings")
-                    val fallbackIntent = Intent(Settings.ACTION_SETTINGS)
-                    activity.startActivity(fallbackIntent)
-                    Log.d(TAG, "✅ Opened general settings as fallback")
-                    promise.resolve(true)
-                } catch (fallbackError: Exception) {
-                    Log.e(TAG, "❌ Fallback also failed: ${fallbackError.message}", fallbackError)
-                    promise.reject("ERROR", "Failed to open settings: ${fallbackError.message}", fallbackError)
-                }
+            val manufacturer = Build.MANUFACTURER.uppercase()
+            Log.d(TAG, "📱 Device manufacturer: $manufacturer")
+            
+            // Get OEM-specific instructions for this device
+            val instructions = getOEMDisableInstructions(manufacturer)
+
+            // IMPORTANT: Return data without opening intent yet
+            // Intent will be opened by JavaScript AFTER showing the Alert dialog
+            // This ensures the Alert is visible before app goes to background
+            
+            Log.d(TAG, "✅ Returning disable autofill data with OEM-specific instructions")
+            
+            val result = Arguments.createMap().apply {
+                putBoolean("success", true)
+                putString("instructions", instructions)
+                putString("action", "openAutofillSettings")
             }
+            promise.resolve(result)
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error disabling autofill", e)
             promise.reject("ERROR", "Failed to disable autofill: ${e.message}", e)
         }
+    }
+
+    /**
+     * Actually open autofill settings after user confirms
+     * This is called AFTER the Alert dialog is shown to the user
+     * So the app stays in foreground until user sees the instructions
+     */
+    @ReactMethod
+    fun openAutofillSettingsNow(promise: Promise) {
+        try {
+            Log.d(TAG, "📱 openAutofillSettingsNow called - opening settings intent")
+            
+            val activity = reactContext.currentActivity
+            if (activity == null) {
+                Log.e(TAG, "❌ Activity not available")
+                promise.reject("ERROR", "Activity not available")
+                return
+            }
+
+            val manufacturer = Build.MANUFACTURER.uppercase()
+            Log.d(TAG, "📱 Device manufacturer: $manufacturer")
+
+            // Try 1: Official Android API (preferred method - Android 8.0+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+                    Log.d(TAG, "📱 Attempt 1: Opening autofill service settings via official API")
+                    activity.startActivity(intent)
+                    Log.d(TAG, "✅ Opened autofill settings via official API")
+                    promise.resolve(true)
+                    return
+                } catch (e: ActivityNotFoundException) {
+                    Log.d(TAG, "⚠️ Official API not supported on this device, trying OEM-specific paths...")
+                } catch (e: Exception) {
+                    Log.d(TAG, "⚠️ Error with official API: ${e.message}, trying OEM-specific paths...")
+                }
+            }
+
+            // Try 2: OEM-specific paths
+            if (tryOEMSpecificAutofillSettings(activity, manufacturer)) {
+                Log.d(TAG, "✅ Opened OEM-specific autofill settings")
+                promise.resolve(true)
+                return
+            }
+
+            // Fallback 1: Open Settings with default category
+            try {
+                val intent = Intent(Settings.ACTION_SETTINGS).apply {
+                    addCategory(Intent.CATEGORY_DEFAULT)
+                }
+                Log.d(TAG, "📱 Attempt 3: Opening Settings app")
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Opened Settings")
+                promise.resolve(true)
+                return
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ Failed to open Settings: ${e.message}")
+            }
+
+            // Fallback 2: Try opening app settings for PasswordEpic
+            try {
+                val intent = Intent(Settings.ACTION_APPLICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, "com.passwordepic.mobile")
+                }
+                Log.d(TAG, "📱 Attempt 4: Opening PasswordEpic app settings")
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Opened app settings")
+                promise.resolve(true)
+                return
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ Failed to open app settings: ${e.message}")
+            }
+
+            // If all attempts fail
+            Log.e(TAG, "❌ All attempts to open autofill settings failed")
+            promise.resolve(false)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error opening autofill settings", e)
+            promise.reject("ERROR", "Failed to open autofill settings: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Try to open autofill settings using OEM-specific deep links
+     * Different manufacturers have different paths to autofill settings
+     */
+    private fun tryOEMSpecificAutofillSettings(activity: Activity, manufacturer: String): Boolean {
+        val intentsList = when {
+            // Huawei devices: Settings → System → Languages & input → More input settings → Autofill
+            // Use the direct autofill activity class instead of INPUT_METHOD_SETTINGS
+            manufacturer.contains("HUAWEI") -> listOf(
+                Intent().setClassName("com.android.settings", "com.android.settings.applications.autofill.AutofillPickerTrampolineActivity"),
+                Intent("android.settings.AUTOFILL_SETTINGS"),
+                Intent("android.settings.INPUT_METHOD_SETTINGS"),
+                Intent().setClassName("com.android.settings", "com.android.settings.Settings\$InputMethodAndLanguageSettings")
+            )
+            // Samsung devices: Settings → Apps → Default apps → Autofill service
+            manufacturer.contains("SAMSUNG") -> listOf(
+                Intent().setClassName("com.android.settings", "com.android.settings.applications.autofill.AutofillPickerTrampolineActivity"),
+                Intent("android.settings.DEFAULT_INPUT_METHOD"),
+                Intent("android.settings.AUTOFILL_SETTINGS"),
+                Intent().setClassName("com.android.settings", "com.android.settings.Settings\$InputMethodAndLanguageSettings")
+            )
+            // Xiaomi devices: Settings → System → Languages and input → Autofill services
+            manufacturer.contains("XIAOMI") || manufacturer.contains("REDMI") -> listOf(
+                Intent().setClassName("com.android.settings", "com.android.settings.applications.autofill.AutofillPickerTrampolineActivity"),
+                Intent("android.settings.AUTOFILL_SETTINGS"),
+                Intent("android.settings.INPUT_METHOD_SETTINGS"),
+                Intent().setClassName("com.android.settings", "com.android.settings.Settings\$InputMethodAndLanguageSettings")
+            )
+            // OPPO/OnePlus devices: Settings → System → System apps → Settings → Languages and input
+            manufacturer.contains("OPPO") || manufacturer.contains("ONEPLUS") -> listOf(
+                Intent().setClassName("com.android.settings", "com.android.settings.applications.autofill.AutofillPickerTrampolineActivity"),
+                Intent("android.settings.AUTOFILL_SETTINGS"),
+                Intent("android.settings.INPUT_METHOD_SETTINGS"),
+                Intent().setClassName("com.android.settings", "com.android.settings.Settings\$InputMethodAndLanguageSettings")
+            )
+            // Google/Stock Android devices
+            manufacturer.contains("GOOGLE") || manufacturer.contains("ANDROID") -> listOf(
+                Intent().setClassName("com.android.settings", "com.android.settings.applications.autofill.AutofillPickerTrampolineActivity"),
+                Intent("android.settings.AUTOFILL_SETTINGS"),
+                Intent("android.settings.INPUT_METHOD_SETTINGS")
+            )
+            // Generic fallback for unknown manufacturers
+            else -> listOf(
+                Intent().setClassName("com.android.settings", "com.android.settings.applications.autofill.AutofillPickerTrampolineActivity"),
+                Intent("android.settings.AUTOFILL_SETTINGS"),
+                Intent("android.settings.INPUT_METHOD_SETTINGS"),
+                Intent().setClassName("com.android.settings", "com.android.settings.Settings\$InputMethodAndLanguageSettings")
+            )
+        }
+
+        for ((index, intent) in intentsList.withIndex()) {
+            try {
+                Log.d(TAG, "📱 OEM Attempt ${index + 1} ($manufacturer): ${intent.action ?: intent.component}")
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Successfully opened autofill settings via OEM-specific path")
+                return true
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ OEM Attempt ${index + 1} failed: ${e.message}")
+            }
+        }
+
+        return false
     }
 
     /**

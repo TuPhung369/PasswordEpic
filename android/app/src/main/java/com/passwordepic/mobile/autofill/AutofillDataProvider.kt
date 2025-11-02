@@ -555,4 +555,76 @@ class AutofillDataProvider(private val context: Context? = null) {
         // TODO: Implement decryption using Android Keystore
         return encryptedData
     }
+
+    /**
+     * Checks if biometric authentication is required for autofill
+     * Reads the "requireBiometric" setting from autofill_settings SharedPreferences
+     * 
+     * @return true if biometric is required, false if autofill can proceed without auth
+     */
+    fun isRequireBiometricEnabled(): Boolean {
+        if (context == null) {
+            Log.w(TAG, "⚠️ Context is null - cannot check requireBiometric setting, defaulting to true (safer)")
+            return true  // Default to true for security if we can't read settings
+        }
+
+        try {
+            val prefs = context.getSharedPreferences("autofill_settings", Context.MODE_PRIVATE)
+            val settingsJson = prefs.getString("settings", null)
+
+            if (settingsJson.isNullOrEmpty()) {
+                Log.d(TAG, "⚠️ No settings stored - requireBiometric defaults to true")
+                return true
+            }
+
+            try {
+                val settings = JSONObject(settingsJson)
+                val requireBiometric = settings.optBoolean("requireBiometric", true)
+                Log.d(TAG, "✅ Read requireBiometric from settings: $requireBiometric")
+                return requireBiometric
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to parse settings JSON: ${e.message}")
+                return true  // Default to true for security
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error reading requireBiometric setting: ${e.message}")
+            return true  // Default to true for security
+        }
+    }
+
+    /**
+     * Checks if allow subdomains is enabled for autofill matching
+     * Reads the "allowSubdomains" setting from autofill_settings SharedPreferences
+     * 
+     * @return true if subdomains should be matched, false otherwise
+     */
+    fun isAllowSubdomainsEnabled(): Boolean {
+        if (context == null) {
+            Log.w(TAG, "⚠️ Context is null - cannot check allowSubdomains setting, defaulting to true")
+            return true
+        }
+
+        try {
+            val prefs = context.getSharedPreferences("autofill_settings", Context.MODE_PRIVATE)
+            val settingsJson = prefs.getString("settings", null)
+
+            if (settingsJson.isNullOrEmpty()) {
+                Log.d(TAG, "⚠️ No settings stored - allowSubdomains defaults to true")
+                return true
+            }
+
+            try {
+                val settings = JSONObject(settingsJson)
+                val allowSubdomains = settings.optBoolean("allowSubdomains", true)
+                Log.d(TAG, "✅ Read allowSubdomains from settings: $allowSubdomains")
+                return allowSubdomains
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to parse settings JSON: ${e.message}")
+                return true  // Default to true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error reading allowSubdomains setting: ${e.message}")
+            return true  // Default to true
+        }
+    }
 }

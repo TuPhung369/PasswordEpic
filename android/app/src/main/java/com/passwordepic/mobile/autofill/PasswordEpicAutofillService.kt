@@ -686,6 +686,7 @@ class PasswordEpicAutofillService : AutofillService() {
             // Some credentials may have IV/TAG but isEncrypted=false (data inconsistency)
             var cachedPlaintextPassword: String? = null
             val hasEncryptionMetadata = credential.iv.isNotEmpty() && credential.tag.isNotEmpty()
+            
             if ((credential.isEncrypted || hasEncryptionMetadata)) {
                 Log.d(TAG, "🔍 Encrypted password detected (isEncrypted=${credential.isEncrypted}, hasMetadata=$hasEncryptionMetadata) - checking plaintext cache...")
                 val dataProvider = AutofillDataProvider(this)
@@ -720,46 +721,118 @@ class PasswordEpicAutofillService : AutofillService() {
                 }
                 Log.d(TAG, "✅ Dataset built with cached plaintext values (no auth required)")
             } else {
-                // No cached plaintext - require authentication
-                Log.d(TAG, "🔐 PRODUCTION_MODE - No cached plaintext, requiring authentication before filling")
+                // No cached plaintext - check if biometric is required
+                Log.d(TAG, "🔐 PRODUCTION_MODE - No cached plaintext, checking requireBiometric setting...")
                 
-                // Add field values with presentation
-                // Android autofill stores these values and uses them after auth succeeds
-                parsedData.fields.forEach { field ->
-                    when (field.type) {
-                        FieldType.USERNAME, FieldType.EMAIL -> {
-                            Log.d(TAG, "✍️ Setting USERNAME/EMAIL value (will be filled after auth): '${credential.username}'")
-                            datasetBuilder.setValue(
-                                field.autofillId,
-                                AutofillValue.forText(credential.username),
-                                presentation
-                            )
-                        }
-                        FieldType.PASSWORD -> {
-                            Log.d(TAG, "🔒 Setting PASSWORD value (will be filled after auth)")
-                            Log.d(TAG, "   Password is encrypted: ${credential.isEncrypted}")
-                            Log.d(TAG, "   Will be decrypted by app and replaced with plaintext after auth succeeds")
-                            // For now, set the plaintext if available, otherwise the encrypted password
-                            // After auth succeeds, this might be updated with plaintext by React Native
-                            datasetBuilder.setValue(
-                                field.autofillId,
-                                AutofillValue.forText(credential.password),
-                                presentation
-                            )
-                        }
-                        else -> {
-                            Log.d(TAG, "⏭️ Skipping field type: ${field.type}")
+                // Check if biometric authentication is required
+                val requireBiometric = autofillDataProvider.isRequireBiometricEnabled()
+                Log.d(TAG, "🔐 Biometric requirement: $requireBiometric")
+                
+                if (requireBiometric) {
+                    // ✅ CASE 1: Biometric REQUIRED - Add authentication requirement
+                    Log.d(TAG, "🔐 requireBiometric=TRUE - Requiring authentication before filling")
+                    
+                    // Add field values with presentation
+                    // Android autofill stores these values and uses them after auth succeeds
+                    parsedData.fields.forEach { field ->
+                        when (field.type) {
+                            FieldType.USERNAME, FieldType.EMAIL -> {
+                                Log.d(TAG, "✍️ Setting USERNAME/EMAIL value (will be filled after auth): '${credential.username}'")
+                                datasetBuilder.setValue(
+                                    field.autofillId,
+                                    AutofillValue.forText(credential.username),
+                                    presentation
+                                )
+                            }
+                            FieldType.PASSWORD -> {
+                                Log.d(TAG, "🔒 Setting PASSWORD value (will be filled after auth)")
+                                Log.d(TAG, "   Password is encrypted: ${credential.isEncrypted}")
+                                Log.d(TAG, "   Will be decrypted by app and replaced with plaintext after auth succeeds")
+                                // For now, set the plaintext if available, otherwise the encrypted password
+                                // After auth succeeds, this might be updated with plaintext by React Native
+                                datasetBuilder.setValue(
+                                    field.autofillId,
+                                    AutofillValue.forText(credential.password),
+                                    presentation
+                                )
+                            }
+                            else -> {
+                                Log.d(TAG, "⏭️ Skipping field type: ${field.type}")
+                            }
                         }
                     }
+                    
+                    // NOW set authentication requirement
+                    // Android autofill will use the values we just set after auth succeeds
+                    Log.d(TAG, "🔐 Setting authentication requirement on dataset (biometric REQUIRED)...")
+                    datasetBuilder.setAuthentication(authIntentSender)
+                    
+                    Log.d(TAG, "✅ Dataset built with authentication requirement")
+                    Log.d(TAG, "   Values are set and will be used after successful authentication")
+                } else {
+                    // ❌ CASE 2: Biometric NOT REQUIRED - Fill directly without authentication
+                    Log.d(TAG, "⏭️ requireBiometric=FALSE - Biometric NOT required, filling directly without auth")
+                    Log.d(TAG, "⚠️ WARNING: Filling credentials without biometric verification!")
+                    Log.d(TAG, "   Username: '${credential.username}'")
+                    
+                    // Still check if password is encrypted - if so, we shouldn't fill it without decryption
+                    if ((credential.isEncrypted || hasEncryptionMetadata)) {
+                        Log.e(TAG, "❌ SECURITY ISSUE: Password is ENCRYPTED but requireBiometric=FALSE")
+                        Log.e(TAG, "   Cannot fill encrypted password without decryption!")
+                        Log.e(TAG, "   Falling back to requiring authentication for security")
+                        
+                        // For security, still require auth if password is encrypted
+                        parsedData.fields.forEach { field ->
+                            when (field.type) {
+                                FieldType.USERNAME, FieldType.EMAIL -> {
+                                    datasetBuilder.setValue(
+                                        field.autofillId,
+                                        AutofillValue.forText(credential.username),
+                                        presentation
+                                    )
+                                }
+                                FieldType.PASSWORD -> {
+                                    datasetBuilder.setValue(
+                                        field.autofillId,
+                                        AutofillValue.forText(credential.password),
+                                        presentation
+                                    )
+                                }
+                                else -> {}
+                            }
+                        }
+                        datasetBuilder.setAuthentication(authIntentSender)
+                        Log.d(TAG, "✅ Dataset built with authentication (fallback for encrypted password)")
+                    } else {
+                        // Password is plaintext - safe to fill without auth
+                        Log.d(TAG, "✅ Password is PLAINTEXT - Safe to fill without authentication")
+                        parsedData.fields.forEach { field ->
+                            when (field.type) {
+                                FieldType.USERNAME, FieldType.EMAIL -> {
+                                    Log.d(TAG, "✍️ Filling USERNAME/EMAIL directly: '${credential.username}'")
+                                    datasetBuilder.setValue(
+                                        field.autofillId,
+                                        AutofillValue.forText(credential.username),
+                                        presentation
+                                    )
+                                }
+                                FieldType.PASSWORD -> {
+                                    Log.d(TAG, "🔓 Filling PASSWORD with plaintext directly (NO auth required)")
+                                    datasetBuilder.setValue(
+                                        field.autofillId,
+                                        AutofillValue.forText(credential.password),
+                                        presentation
+                                    )
+                                }
+                                else -> {
+                                    Log.d(TAG, "⏭️ Skipping field type: ${field.type}")
+                                }
+                            }
+                        }
+                        Log.d(TAG, "✅ Dataset built WITHOUT authentication requirement")
+                        Log.d(TAG, "   Credentials will fill immediately when user taps this suggestion")
+                    }
                 }
-                
-                // NOW set authentication requirement
-                // Android autofill will use the values we just set after auth succeeds
-                Log.d(TAG, "🔐 Setting authentication requirement on dataset...")
-                datasetBuilder.setAuthentication(authIntentSender)
-                
-                Log.d(TAG, "✅ Dataset built with authentication requirement")
-                Log.d(TAG, "   Values are set and will be used after successful authentication")
             }
         }
         

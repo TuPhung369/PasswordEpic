@@ -49,44 +49,91 @@ interface AutofillBridgeModule {
 }
 
 // Mock native module for development (fallback if AutofillBridge not available)
-const AutofillBridge: AutofillBridgeModule = NativeModules.AutofillBridge || {
-  isAutofillSupported: async () => false,
-  isAutofillEnabled: async () => false,
-  requestEnableAutofill: async () => true,
-  disableAutofill: async () => true,
-  getCredentialsForDomain: async () => [],
-  prepareCredentials: async () => true,
-  clearCache: async () => true,
-  updateSettings: async () => true,
-  getSettings: async () => ({}),
-  getStatistics: async () => ({
-    totalFills: 0,
-    totalSaves: 0,
-    blockedPhishing: 0,
-    lastUsed: '',
-  }),
-  recordUsage: async () => true,
-  decryptAutofillPassword: async (
-    encryptedPasswordJson: string,
-    masterKey: string,
-  ) => {
+let isUsingMockBridge = false;
+const AutofillBridge: AutofillBridgeModule = (() => {
+  if (NativeModules.AutofillBridge) {
+    console.log('✅ [AutofillService] Using NATIVE AutofillBridge module');
+    return NativeModules.AutofillBridge;
+  } else {
     console.warn(
-      '⚠️ [Mock] AutofillBridge.decryptAutofillPassword called - returning mock response',
+      '⚠️ [AutofillService] NATIVE AutofillBridge not available - using MOCK implementation',
     );
-    return 'mock_decrypted_password';
-  },
-  updateAutofillDecryptResult: async (
-    plainTextPassword: string,
-    success: boolean,
-    errorMessage: string,
-  ) => {
-    console.warn(
-      '⚠️ [Mock] AutofillBridge.updateAutofillDecryptResult called',
-      { success, hasPassword: !!plainTextPassword },
-    );
-    return true;
-  },
-};
+    isUsingMockBridge = true;
+    return {
+      isAutofillSupported: async () => {
+        console.warn('⚠️ [Mock] isAutofillSupported called');
+        return false;
+      },
+      isAutofillEnabled: async () => {
+        console.warn('⚠️ [Mock] isAutofillEnabled called');
+        return false;
+      },
+      requestEnableAutofill: async () => {
+        console.warn(
+          '⚠️ [Mock] requestEnableAutofill called - cannot open real settings in mock',
+        );
+        return true;
+      },
+      disableAutofill: async () => {
+        console.warn('⚠️ [Mock] disableAutofill called');
+        return true;
+      },
+      getCredentialsForDomain: async () => {
+        console.warn('⚠️ [Mock] getCredentialsForDomain called');
+        return [];
+      },
+      prepareCredentials: async () => {
+        console.warn('⚠️ [Mock] prepareCredentials called');
+        return true;
+      },
+      clearCache: async () => {
+        console.warn('⚠️ [Mock] clearCache called');
+        return true;
+      },
+      updateSettings: async () => {
+        console.warn('⚠️ [Mock] updateSettings called');
+        return true;
+      },
+      getSettings: async () => {
+        console.warn('⚠️ [Mock] getSettings called');
+        return {};
+      },
+      getStatistics: async () => {
+        console.warn('⚠️ [Mock] getStatistics called');
+        return {
+          totalFills: 0,
+          totalSaves: 0,
+          blockedPhishing: 0,
+          lastUsed: '',
+        };
+      },
+      recordUsage: async () => {
+        console.warn('⚠️ [Mock] recordUsage called');
+        return true;
+      },
+      decryptAutofillPassword: async (
+        encryptedPasswordJson: string,
+        masterKey: string,
+      ) => {
+        console.warn(
+          '⚠️ [Mock] AutofillBridge.decryptAutofillPassword called - returning mock response',
+        );
+        return 'mock_decrypted_password';
+      },
+      updateAutofillDecryptResult: async (
+        plainTextPassword: string,
+        success: boolean,
+        errorMessage: string,
+      ) => {
+        console.warn(
+          '⚠️ [Mock] AutofillBridge.updateAutofillDecryptResult called',
+          { success, hasPassword: !!plainTextPassword },
+        );
+        return true;
+      },
+    };
+  }
+})();
 
 /**
  * Autofill event types
@@ -466,19 +513,155 @@ class AutofillService {
    */
   async requestEnable(): Promise<boolean> {
     try {
+      console.log('📞 [AutofillService] requestEnable() called');
+
       if (Platform.OS !== 'android') {
-        throw new Error('Autofill is only supported on Android');
+        const errorMsg = 'Autofill is only supported on Android';
+        console.error('❌ [AutofillService]', errorMsg);
+        throw new Error(errorMsg);
       }
 
-      return await AutofillBridge.requestEnableAutofill();
+      console.log(
+        '🔗 [AutofillService] Checking if AutofillBridge is available...',
+      );
+      if (!AutofillBridge) {
+        const errorMsg = 'AutofillBridge native module is not available';
+        console.error('❌ [AutofillService]', errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      console.log(
+        '📞 [AutofillService] Calling AutofillBridge.requestEnableAutofill()...',
+      );
+      const result = await AutofillBridge.requestEnableAutofill();
+      console.log(
+        '✅ [AutofillService] requestEnableAutofill returned:',
+        result,
+      );
+      return result;
     } catch (error) {
-      console.error('Error requesting autofill enable:', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(
+        '❌ [AutofillService] Error requesting autofill enable:',
+        errorMsg,
+      );
+      console.error(
+        'Stack trace:',
+        error instanceof Error ? error.stack : 'N/A',
+      );
       return false;
     }
   }
 
   /**
-   * Disables autofill service
+   * Requests to disable autofill service
+   * Opens system settings for user to disable
+   */
+  async requestDisable(): Promise<boolean> {
+    try {
+      console.log('📞 [AutofillService] requestDisable() called');
+
+      if (Platform.OS !== 'android') {
+        const errorMsg = 'Autofill is only supported on Android';
+        console.error('❌ [AutofillService]', errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      console.log(
+        '🔗 [AutofillService] Checking if AutofillBridge is available...',
+      );
+      if (!AutofillBridge) {
+        const errorMsg = 'AutofillBridge native module is not available';
+        console.error('❌ [AutofillService]', errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      console.log(
+        '📞 [AutofillService] Calling AutofillBridge.disableAutofill()...',
+      );
+      const result = await AutofillBridge.disableAutofill();
+      console.log('✅ [AutofillService] disableAutofill returned:', result);
+      return result;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(
+        '❌ [AutofillService] Error requesting autofill disable:',
+        errorMsg,
+      );
+      console.error(
+        'Stack trace:',
+        error instanceof Error ? error.stack : 'N/A',
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Auto-prompt to enable autofill after Master Password setup
+   * Directly opens autofill settings without showing additional dialogs
+   * Called after user successfully sets up their master password
+   */
+  async autoPromptEnableAutofill(): Promise<boolean> {
+    try {
+      console.log(
+        '📱 [AutofillService] autoPromptEnableAutofill() called - Opening settings for first-time setup',
+      );
+
+      if (Platform.OS !== 'android') {
+        console.warn(
+          '⚠️ [AutofillService] Autofill is only supported on Android',
+        );
+        return false;
+      }
+
+      // Check if already enabled - skip if so
+      const isAlreadyEnabled = await this.isEnabled();
+      if (isAlreadyEnabled) {
+        console.log(
+          '✅ [AutofillService] Autofill is already enabled - skipping prompt',
+        );
+        return true;
+      }
+
+      console.log(
+        '🔗 [AutofillService] Autofill not enabled yet - requesting enable from Master Password setup',
+      );
+
+      if (!AutofillBridge) {
+        console.error(
+          '❌ [AutofillService] AutofillBridge native module is not available',
+        );
+        return false;
+      }
+
+      // Directly call requestEnable without dialog wrapper
+      // The native settings dialog will handle user interaction
+      console.log(
+        '📞 [AutofillService] Calling AutofillBridge.requestEnableAutofill()...',
+      );
+      const result = await AutofillBridge.requestEnableAutofill();
+      console.log(
+        '✅ [AutofillService] requestEnableAutofill completed, result:',
+        result,
+      );
+
+      return result;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(
+        '❌ [AutofillService] Error in autoPromptEnableAutofill:',
+        errorMsg,
+      );
+      console.error(
+        'Stack trace:',
+        error instanceof Error ? error.stack : 'N/A',
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Disables autofill service (legacy method - use requestDisable instead)
    */
   async disable(): Promise<void> {
     try {

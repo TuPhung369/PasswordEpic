@@ -34,6 +34,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { autofillService } from '../services/autofillService';
 import { domainVerificationService } from '../services/domainVerificationService';
+import { useBiometric } from '../hooks/useBiometric';
 
 interface AutofillSettings {
   enabled: boolean;
@@ -57,6 +58,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   onSettingsChange,
 }) => {
   const { theme } = useTheme();
+  const biometric = useBiometric();
   const [loading, setLoading] = useState(true);
   const [isSupported, setIsSupported] = useState(false);
   const [isEnabled, setIsEnabled] = useState(false);
@@ -77,6 +79,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   // Track app state to detect when user returns from settings
   const appStateRef = useRef(AppState.currentState);
   const isCheckingAutofillRef = useRef(false);
+  const [biometricVerifying, setBiometricVerifying] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -163,25 +166,65 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   const handleEnableAutofill = async () => {
     try {
       if (isEnabled) {
-        // Disable autofill
+        // Autofill is enabled - user wants to DISABLE it
+        console.log('🔴 User wants to disable autofill');
+        await handleDisableAutofill();
+      } else {
+        // Autofill is disabled - user wants to ENABLE it
+        console.log('🟢 User wants to enable autofill');
+        await handleEnableAutofillFlow();
+      }
+    } catch (error) {
+      console.error('Error in handleEnableAutofill:', error);
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      Alert.alert('Error', 'Failed to toggle autofill service');
+      isCheckingAutofillRef.current = false;
+    }
+  };
+
+  const handleEnableAutofillFlow = async () => {
+    try {
+      console.log('🔐 Starting biometric verification...');
+      setBiometricVerifying(true);
+
+      // Step 1: Request biometric verification
+      const authenticated = await biometric.authenticate(
+        'Verify to enable Autofill service',
+      );
+
+      if (!authenticated) {
+        console.log('❌ Biometric verification failed or cancelled');
         Alert.alert(
-          'Disable Autofill',
-          'To disable autofill, open your Phone Settings.\n\nFor Pixel phones:\nSettings > System > Languages & input > Advanced > Input assistance > Autofill service\n\nFor other devices:\nSettings > System > Languages & input > Autofill service',
+          'Verification Cancelled',
+          'Biometric verification is required to enable autofill.',
           [{ text: 'OK' }],
         );
-      } else {
-        // Enable autofill - open settings
-        console.log('🎯 Opening autofill settings...');
+        setBiometricVerifying(false);
+        return;
+      }
+
+      console.log('✅ Biometric verification successful');
+      console.log('🎯 Opening autofill service selection...');
+
+      try {
+        console.log('📞 Calling autofillService.requestEnable()...');
         const success = await autofillService.requestEnable();
+        console.log('📞 requestEnable returned:', success);
 
         if (success) {
+          console.log(
+            '✅ Successfully called requestEnable - opening settings',
+          );
           // Mark that we're waiting for user to return from settings
           isCheckingAutofillRef.current = true;
 
           // Show user-friendly message with instructions
           Alert.alert(
-            '📱 Settings Opened',
-            'Please select "PasswordEpic" as your Autofill service in Settings.\n\nWhen done, return to the app and we\'ll verify the setting.',
+            '📱 Select PasswordEpic',
+            'Please select "PasswordEpic" as your Autofill service from the list.\n\nWhen done, return to the app.',
             [
               {
                 text: "I've enabled it",
@@ -194,6 +237,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
               {
                 text: 'Cancel',
                 onPress: () => {
+                  console.log('❌ User cancelled autofill setup');
                   isCheckingAutofillRef.current = false;
                 },
                 style: 'cancel',
@@ -202,17 +246,106 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
             { cancelable: false },
           );
         } else {
-          console.warn('⚠️ Failed to open autofill settings');
+          console.warn('⚠️ requestEnable returned false');
           Alert.alert(
             'Error',
-            'Failed to open autofill settings. Please try again.',
+            "Failed to open autofill settings. This may happen if:\n\n1. You're using an unsupported device or Android version\n2. Settings app is not available\n\nPlease try manually enabling it in Settings > System > Autofill service",
           );
         }
+      } catch (bridgeError) {
+        console.error(
+          '❌ Error calling autofillService.requestEnable:',
+          bridgeError,
+        );
+        console.error('Error details:', {
+          message:
+            bridgeError instanceof Error
+              ? bridgeError.message
+              : String(bridgeError),
+          stack: bridgeError instanceof Error ? bridgeError.stack : undefined,
+        });
+
+        Alert.alert(
+          'Error Opening Settings',
+          'Failed to open autofill settings.\n\nPlease manually enable it:\nSettings > System > Languages & input > Autofill service',
+        );
       }
     } catch (error) {
-      console.error('Error toggling autofill:', error);
-      Alert.alert('Error', 'Failed to toggle autofill service');
-      isCheckingAutofillRef.current = false;
+      console.error('Error in handleEnableAutofillFlow:', error);
+      throw error;
+    } finally {
+      setBiometricVerifying(false);
+    }
+  };
+
+  const handleDisableAutofill = async () => {
+    try {
+      console.log('🔴 Opening autofill disable settings...');
+
+      try {
+        console.log('📞 Calling autofillService.requestDisable()...');
+        const success = await autofillService.requestDisable();
+        console.log('📞 requestDisable returned:', success);
+
+        if (success) {
+          console.log(
+            '✅ Successfully called requestDisable - opening settings',
+          );
+          // Mark that we're waiting for user to return from settings
+          isCheckingAutofillRef.current = true;
+
+          // Show user-friendly message with clear instructions on how to disable
+          Alert.alert(
+            '🔧 Disable Autofill',
+            'Please select "None" or another autofill service to disable PasswordEpic as your autofill provider.\n\nSteps:\n1. Look for "Autofill service" or "Autofill" option\n2. Select "None" or another autofill service\n3. Return to the app when done',
+            [
+              {
+                text: "I've disabled it",
+                onPress: async () => {
+                  console.log('👤 User confirmed they disabled autofill');
+                  // Wait a bit then check status with retries
+                  await checkAutofillDisableStatusWithRetry();
+                },
+              },
+              {
+                text: 'Cancel',
+                onPress: () => {
+                  console.log('❌ User cancelled autofill disable');
+                  isCheckingAutofillRef.current = false;
+                },
+                style: 'cancel',
+              },
+            ],
+            { cancelable: false },
+          );
+        } else {
+          console.warn('⚠️ requestDisable returned false');
+          Alert.alert(
+            'Error',
+            'Failed to open autofill settings.\n\nPlease manually disable it:\nSettings > System > Languages & input > Autofill service > Select "None"',
+          );
+        }
+      } catch (bridgeError) {
+        console.error(
+          '❌ Error calling autofillService.requestDisable:',
+          bridgeError,
+        );
+        console.error('Error details:', {
+          message:
+            bridgeError instanceof Error
+              ? bridgeError.message
+              : String(bridgeError),
+          stack: bridgeError instanceof Error ? bridgeError.stack : undefined,
+        });
+
+        Alert.alert(
+          'Error Opening Settings',
+          'Failed to open autofill settings.\n\nPlease manually disable it in:\nSettings > System > Languages & input > Autofill service',
+        );
+      }
+    } catch (error) {
+      console.error('Error in handleDisableAutofill:', error);
+      throw error;
     }
   };
 
@@ -250,6 +383,43 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
     } catch (error) {
       console.error('Error during autofill status retry:', error);
       Alert.alert('Error', 'Failed to verify autofill status');
+    }
+  };
+
+  const checkAutofillDisableStatusWithRetry = async () => {
+    try {
+      // Retry up to 3 times with increasing delays
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        // Wait longer on each retry
+        const delayMs = attempt * 1500;
+        console.log(
+          `⏳ Autofill disable check attempt ${attempt}/3 (waiting ${delayMs}ms)...`,
+        );
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+
+        const enabled = await autofillService.isEnabled();
+        console.log(`   Result: ${enabled ? 'Enabled ❌' : 'Disabled ✅'}`);
+
+        if (!enabled) {
+          setIsEnabled(false);
+          Alert.alert(
+            '✅ Success!',
+            'Autofill has been disabled successfully. PasswordEpic is no longer your autofill service.',
+          );
+          return;
+        }
+      }
+
+      // If still enabled after retries, show help message
+      console.warn('⚠️ Autofill still enabled after 3 attempts');
+      Alert.alert(
+        '⏳ Still Checking',
+        'Autofill is still enabled. Please make sure to select "None" or another service in Settings > System > Autofill service and return to the app.',
+        [{ text: 'OK' }],
+      );
+    } catch (error) {
+      console.error('Error during autofill disable check retry:', error);
+      Alert.alert('Error', 'Failed to verify autofill disable status');
     }
   };
 
@@ -375,13 +545,19 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
             styles.button,
             {
               backgroundColor: isEnabled ? theme.error : theme.primary,
+              opacity: biometricVerifying ? 0.6 : 1,
             },
           ]}
           onPress={handleEnableAutofill}
+          disabled={biometricVerifying}
         >
-          <Text style={styles.buttonText}>
-            {isEnabled ? 'Disable Autofill' : 'Enable Autofill'}
-          </Text>
+          {biometricVerifying ? (
+            <ActivityIndicator color={theme.surface} size="small" />
+          ) : (
+            <Text style={styles.buttonText}>
+              {isEnabled ? 'Disable Autofill' : 'Enable Autofill'}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
 

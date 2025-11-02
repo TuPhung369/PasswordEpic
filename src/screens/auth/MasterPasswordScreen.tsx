@@ -7,17 +7,20 @@ import {
   ActivityIndicator,
   TextInput,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAppDispatch } from '../../hooks/redux';
+import useBiometric from '../../hooks/useBiometric';
 import {
   setMasterPasswordConfigured,
   setIsInSetupFlow,
 } from '../../store/slices/authSlice';
 import { storeMasterPassword } from '../../services/secureStorageService';
+import { autofillService } from '../../services/autofillService';
 
 interface RequirementItemProps {
   met: boolean;
@@ -63,6 +66,7 @@ interface PasswordStrength {
 export const MasterPasswordScreen: React.FC = () => {
   const { theme } = useTheme();
   const dispatch = useAppDispatch();
+  const biometric = useBiometric();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -90,12 +94,15 @@ export const MasterPasswordScreen: React.FC = () => {
     message: string;
     onConfirm: () => void;
     confirmText?: string;
+    cancelText?: string;
     confirmStyle?: 'default' | 'destructive';
+    onCancel?: () => void;
   }>({
     visible: false,
     title: '',
     message: '',
     onConfirm: () => {},
+    onCancel: () => {},
   });
 
   // Calculate password strength
@@ -134,6 +141,82 @@ export const MasterPasswordScreen: React.FC = () => {
   const isPasswordValid = passwordStrength.score >= 4;
   const doPasswordsMatch =
     password === confirmPassword && confirmPassword.length > 0;
+
+  /**
+   * Show autofill prompt after master password setup
+   * Requires biometric verification first, then enables autofill if verified
+   */
+  const showAutofillPrompt = async () => {
+    try {
+      console.log(
+        '🔐 [MasterPasswordScreen] Starting biometric verification for autofill...',
+      );
+
+      // Step 1: Request biometric verification
+      const authenticated = await biometric.authenticate(
+        'Verify to enable Autofill service',
+      );
+
+      if (!authenticated) {
+        console.log(
+          '❌ [MasterPasswordScreen] Biometric verification failed or cancelled',
+        );
+        Alert.alert(
+          'Verification Failed',
+          'Biometric verification is required to enable autofill. You can enable it later from Settings.',
+          [{ text: 'OK' }],
+        );
+        return;
+      }
+
+      console.log(
+        '✅ [MasterPasswordScreen] Biometric verification successful',
+      );
+
+      // Step 2: Show autofill enable dialog
+      setConfirmDialog({
+        visible: true,
+        title: '📱 Enable Autofill?',
+        message:
+          'Would you like to enable autofill for PasswordEpic now? You can select it from your Android autofill services. You can also enable or disable this anytime from Settings.',
+        confirmText: 'Enable Now',
+        cancelText: 'Skip for Now',
+        onConfirm: async () => {
+          setConfirmDialog(prev => ({ ...prev, visible: false }));
+          setIsLoading(true);
+          try {
+            console.log(
+              '🚀 [MasterPasswordScreen] User accepted autofill prompt - calling autoPromptEnableAutofill()',
+            );
+            await autofillService.autoPromptEnableAutofill();
+            console.log(
+              '✅ [MasterPasswordScreen] Autofill prompt completed - navigation handled by AppNavigator',
+            );
+          } catch (error) {
+            console.error(
+              '❌ [MasterPasswordScreen] Error in autoPromptEnableAutofill:',
+              error,
+            );
+          } finally {
+            setIsLoading(false);
+          }
+        },
+        onCancel: () => {
+          console.log(
+            '⏭️ [MasterPasswordScreen] User skipped autofill prompt - closing dialog',
+          );
+          setConfirmDialog(prev => ({ ...prev, visible: false }));
+          // Navigation will be handled by AppNavigator based on auth state
+        },
+      });
+    } catch (error) {
+      console.error(
+        '❌ [MasterPasswordScreen] Error in showAutofillPrompt:',
+        error,
+      );
+      Alert.alert('Error', 'Failed to verify biometric for autofill setup');
+    }
+  };
 
   const handleSetMasterPassword = async () => {
     // Update loading state and force immediate re-render for instant UI feedback
@@ -190,9 +273,10 @@ export const MasterPasswordScreen: React.FC = () => {
           message:
             'Master password has been set successfully. Your passwords will now be encrypted with this key.',
           confirmText: 'Continue',
-          onConfirm: () => {
+          onConfirm: async () => {
             setConfirmDialog(prev => ({ ...prev, visible: false }));
-            // Navigation will be handled by AppNavigator based on auth state
+            // Show autofill prompt after master password success (with biometric verification)
+            await showAutofillPrompt();
           },
         });
       } catch (error: any) {
@@ -428,9 +512,16 @@ export const MasterPasswordScreen: React.FC = () => {
         title={confirmDialog.title}
         message={confirmDialog.message}
         confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
         confirmStyle={confirmDialog.confirmStyle}
         onConfirm={confirmDialog.onConfirm}
-        onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
+        onCancel={() => {
+          if (confirmDialog.onCancel) {
+            confirmDialog.onCancel();
+          } else {
+            setConfirmDialog(prev => ({ ...prev, visible: false }));
+          }
+        }}
       />
     </SafeAreaView>
   );

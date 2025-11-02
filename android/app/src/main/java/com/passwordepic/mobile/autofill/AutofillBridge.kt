@@ -136,26 +136,55 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
     fun requestEnableAutofill(promise: Promise) {
         try {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                Log.e(TAG, "❌ Autofill not supported (API ${Build.VERSION.SDK_INT} < ${Build.VERSION_CODES.O})")
                 promise.reject("UNSUPPORTED", "Autofill not supported on this device")
                 return
             }
 
             val activity = reactContext.currentActivity
             if (activity == null) {
-                promise.reject("ERROR", "Activity not available")
+                Log.e(TAG, "❌ Activity not available - trying alternative method")
+                // Try alternative: use the app context to start activity
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+                    intent.data = android.net.Uri.parse("package:${reactContext.packageName}")
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    reactContext.startActivity(intent)
+                    Log.d(TAG, "✅ Opened autofill settings using ReactContext")
+                    promise.resolve(true)
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Failed to start activity using ReactContext: ${e.message}", e)
+                    promise.reject("ERROR", "Activity not available: ${e.message}", e)
+                }
                 return
             }
 
             // Open autofill settings
-            val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
-            intent.data = android.net.Uri.parse("package:${reactContext.packageName}")
-            
-            activity.startActivity(intent)
-            
-            Log.d(TAG, "Opened autofill settings")
-            promise.resolve(true)
+            try {
+                val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+                intent.data = android.net.Uri.parse("package:${reactContext.packageName}")
+                Log.d(TAG, "📱 Starting autofill settings with intent: ${intent.action}")
+                
+                activity.startActivity(intent)
+                
+                Log.d(TAG, "✅ Opened autofill settings")
+                promise.resolve(true)
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error starting activity: ${e.message}", e)
+                // Try fallback: open general settings
+                try {
+                    Log.d(TAG, "🔄 Trying fallback: opening general settings")
+                    val fallbackIntent = Intent(Settings.ACTION_SETTINGS)
+                    activity.startActivity(fallbackIntent)
+                    Log.d(TAG, "✅ Opened general settings as fallback")
+                    promise.resolve(true)
+                } catch (fallbackError: Exception) {
+                    Log.e(TAG, "❌ Fallback also failed: ${fallbackError.message}", fallbackError)
+                    promise.reject("ERROR", "Failed to open settings: ${fallbackError.message}", fallbackError)
+                }
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error requesting autofill enable", e)
+            Log.e(TAG, "❌ Error requesting autofill enable", e)
             promise.reject("ERROR", "Failed to request autofill enable: ${e.message}", e)
         }
     }
@@ -178,6 +207,7 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
             }
             
             if (autofillManager == null) {
+                Log.e(TAG, "❌ AutofillManager not available")
                 promise.reject("ERROR", "AutofillManager not available")
                 return
             }
@@ -186,15 +216,45 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
             // User must do it through settings
             // We can only guide them to settings
             val activity = reactContext.currentActivity
-            if (activity != null) {
-                val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
-                activity.startActivity(intent)
+            
+            if (activity == null) {
+                Log.e(TAG, "❌ Activity not available - trying alternative method")
+                // Try alternative: use the app context to start activity
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    reactContext.startActivity(intent)
+                    Log.d(TAG, "✅ Opened autofill settings using ReactContext")
+                    promise.resolve(true)
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Failed to start activity using ReactContext: ${e.message}", e)
+                    promise.reject("ERROR", "Activity not available: ${e.message}", e)
+                }
+                return
             }
 
-            Log.d(TAG, "Opened settings to disable autofill")
-            promise.resolve(true)
+            try {
+                val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+                Log.d(TAG, "📱 Starting autofill disable settings with intent: ${intent.action}")
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Opened settings to disable autofill")
+                promise.resolve(true)
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error starting activity: ${e.message}", e)
+                // Try fallback: open general settings
+                try {
+                    Log.d(TAG, "🔄 Trying fallback: opening general settings")
+                    val fallbackIntent = Intent(Settings.ACTION_SETTINGS)
+                    activity.startActivity(fallbackIntent)
+                    Log.d(TAG, "✅ Opened general settings as fallback")
+                    promise.resolve(true)
+                } catch (fallbackError: Exception) {
+                    Log.e(TAG, "❌ Fallback also failed: ${fallbackError.message}", fallbackError)
+                    promise.reject("ERROR", "Failed to open settings: ${fallbackError.message}", fallbackError)
+                }
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error disabling autofill", e)
+            Log.e(TAG, "❌ Error disabling autofill", e)
             promise.reject("ERROR", "Failed to disable autofill: ${e.message}", e)
         }
     }

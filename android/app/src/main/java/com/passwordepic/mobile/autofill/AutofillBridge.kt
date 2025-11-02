@@ -43,6 +43,19 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
         
         // Request codes
         private const val REQUEST_CODE_ENABLE_AUTOFILL = 1001
+        
+        /**
+         * Static reference to the AutofillBridge instance
+         * Used by AutofillDecryptionReceiver to emit events
+         */
+        @Volatile
+        private var instance: AutofillBridge? = null
+        
+        fun getInstance(): AutofillBridge? = instance
+        
+        fun setInstance(bridge: AutofillBridge?) {
+            instance = bridge
+        }
     }
 
     init {
@@ -55,6 +68,10 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
             } else {
                 Log.w(TAG, "⚠️ Could not cast to MainApplication")
             }
+            
+            // Store this instance statically for AutofillDecryptionReceiver
+            setInstance(this)
+            Log.d(TAG, "✅ AutofillBridge instance stored statically")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error storing React context", e)
         }
@@ -524,44 +541,6 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
     // ==================== Helper Methods ====================
 
     /**
-     * Store decrypted (plaintext) password for autofill with time-limited cache
-     * After successful biometric authentication and decryption, store plaintext
-     * in a temporary cache that expires in 60 seconds for security
-     * 
-     * This allows the autofill service to retrieve plaintext passwords without
-     * accessing React Native's master key
-     */
-    @ReactMethod
-    fun storeDecryptedPasswordForAutofill(passwordId: String, plaintextPassword: String, promise: Promise) {
-        try {
-            Log.d(TAG, "📦 Storing decrypted password for autofill (ID: $passwordId)")
-            
-            val prefs = reactContext.getSharedPreferences("autofill_plaintext_cache", Context.MODE_PRIVATE)
-            val currentTime = System.currentTimeMillis()
-            val expiryTime = currentTime + 60_000  // 60-second expiry for security
-            
-            val cacheEntry = JSONObject().apply {
-                put("password", plaintextPassword)
-                put("storedAt", currentTime)
-                put("expiresAt", expiryTime)
-                put("passwordId", passwordId)
-            }
-            
-            prefs.edit().apply {
-                putString("plaintext_$passwordId", cacheEntry.toString())
-                putLong("stored_at_$passwordId", currentTime)
-                apply()
-            }
-            
-            Log.d(TAG, "✅ Plaintext password cached for 60 seconds")
-            promise.resolve(true)
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error storing decrypted password", e)
-            promise.reject("ERROR", "Failed to store plaintext password: ${e.message}", e)
-        }
-    }
-    
-    /**
      * Retrieve cached plaintext password from autofill cache
      * Checks expiry time and returns plaintext only if not expired
      */
@@ -674,7 +653,7 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
             // Check what autofill service is currently enabled in system settings
             val enabledService = Settings.Secure.getString(
                 reactContext.contentResolver,
-                Settings.Secure.AUTOFILL_SERVICE
+                "autofill_service"  // Android O+ autofill service setting
             )
             
             // If no service is enabled, return false
@@ -705,6 +684,83 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
         return normalized1 == normalized2 || 
                normalized1.endsWith(".$normalized2") || 
                normalized2.endsWith(".$normalized1")
+    }
+
+    /**
+     * 🔐 Cache decrypted plaintext password for autofill
+     * Called by React Native after successful decryption
+     * 
+     * @param credentialId The credential ID
+     * @param plaintextPassword The decrypted plaintext password
+     * @param promise Resolution promise
+     */
+    @ReactMethod
+    fun storeDecryptedPasswordForAutofill(
+        credentialId: String,
+        plaintextPassword: String,
+        promise: Promise
+    ) {
+        try {
+            Log.d(TAG, "🔐 Storing decrypted password for autofill (ID: $credentialId)")
+            
+            val dataProvider = AutofillDataProvider(reactContext)
+            val success = dataProvider.cacheDecryptedPasswordForAutofill(
+                credentialId,
+                plaintextPassword
+            )
+            
+            if (success) {
+                Log.d(TAG, "✅ Password cached successfully for autofill")
+                promise.resolve(true)
+            } else {
+                Log.w(TAG, "⚠️ Failed to cache password (context unavailable?)")
+                promise.resolve(false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error storing decrypted password", e)
+            promise.reject("ERROR", "Failed to store password: ${e.message}", e)
+        }
+    }
+
+    /**
+     * 📡 Emit autofill decryption request to React Native
+     * This is called by AutofillDecryptionReceiver when auth succeeds
+     * 
+     * @param credentialId The credential ID
+     * @param encryptedPassword The encrypted password
+     * @param iv The initialization vector
+     * @param tag The authentication tag
+     * @param salt The salt for PBKDF2
+     * @param username The username
+     * @param domain The domain
+     */
+    fun emitDecryptionRequest(
+        credentialId: String,
+        encryptedPassword: String,
+        iv: String,
+        tag: String,
+        salt: String,
+        username: String,
+        domain: String
+    ) {
+        try {
+            Log.d(TAG, "📤 Emitting decryption request to React Native...")
+            
+            val eventData = Arguments.createMap().apply {
+                putString("credentialId", credentialId)
+                putString("encryptedPassword", encryptedPassword)
+                putString("iv", iv)
+                putString("tag", tag)
+                putString("salt", salt)
+                putString("username", username)
+                putString("domain", domain)
+            }
+            
+            sendEvent("AUTOFILL_DECRYPT_REQUEST", eventData)
+            Log.d(TAG, "✅ Decryption request emitted to React Native")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error emitting decryption request", e)
+        }
     }
 
     /**

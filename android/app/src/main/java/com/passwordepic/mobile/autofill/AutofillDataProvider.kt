@@ -127,6 +127,80 @@ class AutofillDataProvider(private val context: Context? = null) {
     }
 
     /**
+     * 🔐 CRITICAL: Stores plaintext password for autofill with time-limited cache
+     * After successful biometric authentication and decryption, store plaintext
+     * in a temporary cache that expires in 60 seconds for security
+     * 
+     * This allows the autofill service to retrieve plaintext passwords without
+     * needing React Native's master key for subsequent fills
+     * 
+     * @param credentialId The credential ID
+     * @param plaintextPassword The decrypted plaintext password
+     * @return true if stored successfully
+     */
+    fun cacheDecryptedPasswordForAutofill(credentialId: String, plaintextPassword: String): Boolean {
+        return try {
+            if (context == null) {
+                Log.w(TAG, "⚠️ Context is null - cannot cache plaintext password")
+                return false
+            }
+            
+            Log.d(TAG, "📦 Caching decrypted password for autofill (ID: $credentialId)")
+            
+            val prefs = context.getSharedPreferences("autofill_plaintext_cache", Context.MODE_PRIVATE)
+            val currentTime = System.currentTimeMillis()
+            val expiryTime = currentTime + 60_000  // 60-second expiry for security
+            
+            val cacheEntry = JSONObject().apply {
+                put("password", plaintextPassword)
+                put("storedAt", currentTime)
+                put("expiresAt", expiryTime)
+                put("credentialId", credentialId)
+            }
+            
+            prefs.edit().apply {
+                putString("plaintext_$credentialId", cacheEntry.toString())
+                putLong("stored_at_$credentialId", currentTime)
+                apply()
+            }
+            
+            Log.d(TAG, "✅ Plaintext password cached successfully (expires in 60s)")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error caching plaintext password", e)
+            false
+        }
+    }
+
+    /**
+     * 🗑️ Clears cached plaintext password for security
+     * Called after autofill completes or when session ends
+     * 
+     * @param credentialId The credential ID
+     * @return true if cleared successfully
+     */
+    fun clearDecryptedPasswordCache(credentialId: String): Boolean {
+        return try {
+            if (context == null) return false
+            
+            Log.d(TAG, "🗑️ Clearing cached plaintext password (ID: $credentialId)")
+            
+            val prefs = context.getSharedPreferences("autofill_plaintext_cache", Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                remove("plaintext_$credentialId")
+                remove("stored_at_$credentialId")
+                apply()
+            }
+            
+            Log.d(TAG, "✅ Cache cleared")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error clearing cache", e)
+            false
+        }
+    }
+
+    /**
      * Retrieves credentials from SharedPreferences
      * 
      * @param domain The domain to match

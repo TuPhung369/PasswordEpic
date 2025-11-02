@@ -290,6 +290,7 @@ export const usePasswordManagement = (masterPassword?: string) => {
         id: `pwd_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         createdAt: new Date(),
         updatedAt: new Date(),
+        lastUsed: undefined, // 🔥 Initialize lastUsed for new passwords
         accessCount: 0,
         frequencyScore: 0,
       };

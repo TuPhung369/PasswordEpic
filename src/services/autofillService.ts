@@ -21,6 +21,7 @@ import {
   generateIV,
 } from './cryptoService';
 import { secureStorageService } from './secureStorageService';
+import { autofillStatisticsService } from './autofillStatisticsService';
 import type { PasswordEntry } from '../types/password';
 
 // Native module interface - matches Kotlin AutofillBridge @ReactMethod methods
@@ -184,6 +185,12 @@ class AutofillService {
               console.error(
                 '❌ [AutofillService] Master password not available in session',
               );
+              // Record failed autofill event
+              await autofillStatisticsService.recordFill(
+                eventData.domain || 'unknown',
+                false,
+                'Master password not available',
+              );
               await this.sendDecryptResultToNative(
                 '',
                 false,
@@ -242,6 +249,12 @@ class AutofillService {
                   passwordAuthTag: !!passwordAuthTag,
                 },
               );
+              // Record failed autofill event
+              await autofillStatisticsService.recordFill(
+                eventData.domain || 'unknown',
+                false,
+                'Missing encryption components',
+              );
               await this.sendDecryptResultToNative(
                 '',
                 false,
@@ -270,6 +283,12 @@ class AutofillService {
               console.error(
                 '❌ [AutofillService] Decryption resulted in empty password',
               );
+              // Record failed autofill event
+              await autofillStatisticsService.recordFill(
+                eventData.domain || 'unknown',
+                false,
+                'Decryption resulted in empty password',
+              );
               await this.sendDecryptResultToNative(
                 '',
                 false,
@@ -282,6 +301,12 @@ class AutofillService {
               '✅ [AutofillService] Decryption successful - sending result to native',
             );
 
+            // Record successful autofill event
+            await autofillStatisticsService.recordFill(
+              eventData.domain || 'unknown',
+              true,
+            );
+
             // Send the plaintext password back to native code
             await this.sendDecryptResultToNative(plainTextPassword, true, '');
           } catch (error) {
@@ -291,6 +316,12 @@ class AutofillService {
             );
             const errorMessage =
               error instanceof Error ? error.message : String(error);
+            // Record failed autofill event
+            await autofillStatisticsService.recordFill(
+              eventData.domain || 'unknown',
+              false,
+              errorMessage,
+            );
             await this.sendDecryptResultToNative('', false, errorMessage);
           }
         },

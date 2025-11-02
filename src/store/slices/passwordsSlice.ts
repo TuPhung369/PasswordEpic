@@ -290,6 +290,25 @@ const passwordsSlice = createSlice({
       state.frequentlyUsed = [];
       state.categories = [];
     },
+    updatePasswordLastUsed: (state, action: PayloadAction<string>) => {
+      const passwordId = action.payload;
+      const passwordEntry = state.passwords.find(p => p.id === passwordId);
+      if (passwordEntry) {
+        console.log(
+          '🔄 [Redux] Updating lastUsed for password:',
+          passwordId,
+          'to',
+          new Date(),
+        );
+        passwordEntry.lastUsed = new Date();
+        console.log(
+          '✅ [Redux] Updated. lastUsed is now:',
+          passwordEntry.lastUsed,
+        );
+      } else {
+        console.warn('⚠️ [Redux] Password not found:', passwordId);
+      }
+    },
   },
   extraReducers: builder => {
     // Load passwords
@@ -412,6 +431,7 @@ export const {
   setSelectedCategory,
   clearError,
   clearPasswords,
+  updatePasswordLastUsed,
 } = passwordsSlice.actions;
 
 export default passwordsSlice.reducer;

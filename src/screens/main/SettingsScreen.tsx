@@ -92,8 +92,10 @@ export const SettingsScreen: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigation = useNavigation();
   const { user } = useAppSelector((state: RootState) => state.auth);
-  const { security } = useAppSelector((state: RootState) => state.settings);
-  const { theme } = useTheme();
+  const { security, theme: themeMode } = useAppSelector(
+    (state: RootState) => state.settings,
+  );
+  const { theme, isDarkMode } = useTheme();
   const [themeModalVisible, setThemeModalVisible] = useState(false);
   const [securityWarningVisible, setSecurityWarningVisible] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
@@ -114,7 +116,6 @@ export const SettingsScreen: React.FC = () => {
   }>({ summary: '', details: [], isValid: false });
 
   // Autofill state
-  const [isAutofillEnabled, setIsAutofillEnabled] = useState(false);
   const [isCheckingAutofill, setIsCheckingAutofill] = useState(false);
 
   // Avatar state
@@ -345,8 +346,18 @@ export const SettingsScreen: React.FC = () => {
     setIsCheckingAutofill(true);
     try {
       const enabled = await AutofillTestService.isAutofillEnabled();
-      setIsAutofillEnabled(enabled);
-      console.log(`✅ Autofill enabled: ${enabled}`);
+
+      if (enabled) {
+        console.log(`✅ Autofill enabled: ${enabled}`);
+      } else {
+        console.log(`❌ Autofill disabled - suggest enabling`);
+        // Show toast suggesting to enable autofill (non-intrusive)
+        setToastMessage(
+          '💡 Tip: Enable PasswordEpic as autofill service in Settings',
+        );
+        setToastType('success');
+        setShowToast(true);
+      }
     } catch (error) {
       console.error('❌ Error checking autofill status:', error);
     } finally {
@@ -356,8 +367,14 @@ export const SettingsScreen: React.FC = () => {
 
   const handleLaunchAutofillTest = async () => {
     try {
-      console.log('🚀 Launching autofill test...');
-      const success = await AutofillTestService.launchTestActivity();
+      console.log('🚀 Launching autofill test with theme...');
+      console.log(`📱 Current theme: ${themeMode}, isDarkMode: ${isDarkMode}`);
+
+      // Pass theme data to native activity
+      const success = await AutofillTestService.launchTestActivity(
+        themeMode,
+        isDarkMode,
+      );
       if (success) {
         setToastMessage('✅ Test activity launched');
         setToastType('success');
@@ -375,26 +392,24 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
-  const handleOpenAutofillSettings = async () => {
-    try {
-      console.log('🔧 Opening autofill settings...');
-      const success = await AutofillTestService.openAutofillSettings();
-      if (success) {
-        setToastMessage('✅ Autofill settings opened');
-        setToastType('success');
-        setShowToast(true);
-      }
-    } catch (error) {
-      console.error('❌ Error opening settings:', error);
-    }
-  };
-
-  // Check autofill status on mount
+  // Check autofill status on mount and when screen gains focus
   useEffect(() => {
     if (Platform.OS === 'android') {
       checkAutofillStatus();
     }
   }, []);
+
+  // Refresh autofill status every time screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      if (Platform.OS === 'android') {
+        console.log(
+          '🔄 [SettingsScreen] Screen focused - checking autofill status...',
+        );
+        checkAutofillStatus();
+      }
+    }, []),
+  );
 
   const handleViewSecurityStatus = async () => {
     await checkSecurity(true);
@@ -1303,62 +1318,9 @@ export const SettingsScreen: React.FC = () => {
           />
         </View>
 
-        {/* Autofill Testing Section - Android Only */}
+        {/* Test Autofill - Android Only */}
         {Platform.OS === 'android' && (
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>
-              🧪 Autofill Service Testing
-            </Text>
-
-            <SettingItem
-              icon={isAutofillEnabled ? 'checkmark-circle' : 'close-circle'}
-              title={`Autofill Service: ${
-                isAutofillEnabled ? 'Enabled ✅' : 'Disabled ❌'
-              }`}
-              subtitle={
-                isAutofillEnabled
-                  ? 'PasswordEpic is set as default autofill service'
-                  : 'Tap below to enable PasswordEpic autofill'
-              }
-              theme={theme}
-              rightElement={
-                <Ionicons
-                  name={isAutofillEnabled ? 'checkmark-circle' : 'close-circle'}
-                  size={24}
-                  color={isAutofillEnabled ? theme.success : theme.error}
-                />
-              }
-            />
-
-            {!isAutofillEnabled && (
-              <TouchableOpacity
-                style={[
-                  styles.settingItem,
-                  { backgroundColor: theme.card, borderColor: theme.primary },
-                ]}
-                onPress={handleOpenAutofillSettings}
-              >
-                <Ionicons
-                  name="settings-outline"
-                  size={24}
-                  color={theme.primary}
-                />
-                <View style={styles.settingContent}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>
-                    Enable Autofill Service
-                  </Text>
-                  <Text
-                    style={[
-                      styles.settingSubtitle,
-                      { color: theme.textSecondary },
-                    ]}
-                  >
-                    Open system settings to enable PasswordEpic autofill
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            )}
-
             <SettingItem
               icon="flask-outline"
               title="Test Autofill"

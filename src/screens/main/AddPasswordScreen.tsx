@@ -430,6 +430,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
         passwordHistory: [],
         createdAt: new Date(),
         updatedAt: new Date(),
+        lastUsed: undefined, // 🔥 Initialize lastUsed for new passwords
       };
 
       const newPasswordEntry: Omit<

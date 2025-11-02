@@ -13,6 +13,7 @@
  */
 
 import { secureStorageService } from './secureStorageService';
+import { autofillStatisticsService } from './autofillStatisticsService';
 
 /**
  * Domain verification result
@@ -120,10 +121,24 @@ class DomainVerificationService {
       await this.saveTrustedDomains(trustedDomains);
       this.trustedDomainsCache = null; // Clear cache
 
+      // Record verification event
+      await autofillStatisticsService.recordVerification(
+        normalizedDomain,
+        true,
+        autoApproved,
+      );
+
       console.log(`Added trusted domain: ${normalizedDomain}`);
       return true;
     } catch (error) {
       console.error('Error adding trusted domain:', error);
+      // Record failed verification event
+      await autofillStatisticsService.recordVerification(
+        domain,
+        false,
+        autoApproved,
+        error instanceof Error ? error.message : String(error),
+      );
       throw error;
     }
   }

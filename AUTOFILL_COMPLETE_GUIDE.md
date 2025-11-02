@@ -181,6 +181,12 @@ adb start-server
 adb logcat --clear
 adb logcat > "$HOME\Desktop\autofill_test.log" 2>&1
 code "$HOME\Desktop\autofill_test.log" => Open file with VSCode
+adb logcat | Tee-Object -FilePath "C:\Users\Think\Desktop\autofill_full.log" => capture full log
+
+### filter the logcat
+adb logcat > "C:\Users\Think\Desktop\autofill_fresh.log"
+Select-String -Path "C:\Users\Think\Desktop\autofill_fresh.log" -Pattern "Auth success receiver registered|Auth succeeded|BroadcastReceiver.onReceive|Refill via callback" -Context 1
+
 ```
 
 ### Step 4: Run Test (3 min)

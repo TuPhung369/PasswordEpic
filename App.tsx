@@ -17,10 +17,22 @@ import { ActivityIndicator, View, StyleSheet, AppState } from 'react-native';
 import { NavigationPersistenceService } from './src/services/navigationPersistenceService';
 import { sessionManager } from './src/utils/sessionManager';
 import { UserActivityService } from './src/services/userActivityService';
+import { useAutofillDecryption } from './src/hooks/useAutofillDecryption';
 
 // Import polyfills for crypto and URL
 import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
+
+/**
+ * 🔐 AutofillDecryptionListener
+ *
+ * Internal component that sets up the autofill decryption listener.
+ * Must be inside the Redux Provider to access store state.
+ */
+const AutofillDecryptionListener: React.FC = () => {
+  useAutofillDecryption();
+  return null; // This component doesn't render anything
+};
 
 const App: React.FC = () => {
   const navigationRef = useRef<any>(null);
@@ -181,6 +193,9 @@ const App: React.FC = () => {
 
   return (
     <Provider store={store}>
+      {/* 🔐 Setup autofill decryption listener */}
+      <AutofillDecryptionListener />
+
       <PersistGate
         loading={
           <View style={styles.loadingContainer}>

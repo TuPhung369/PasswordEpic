@@ -38,7 +38,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     icon: 'business-outline',
     color: '#4CAF50',
     settings: {
-      length: 20,
+      length: 30,
       includeUppercase: true,
       includeLowercase: true,
       includeNumbers: true,
@@ -54,7 +54,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     icon: 'people-outline',
     color: '#FF9800',
     settings: {
-      length: 16,
+      length: 20,
       includeUppercase: true,
       includeLowercase: true,
       includeNumbers: true,
@@ -86,7 +86,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     icon: 'briefcase-outline',
     color: '#9C27B0',
     settings: {
-      length: 16,
+      length: 26,
       includeUppercase: true,
       includeLowercase: true,
       includeNumbers: true,
@@ -148,7 +148,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     icon: 'bulb-outline',
     color: '#795548',
     settings: {
-      length: 12,
+      length: 16,
       includeUppercase: true,
       includeLowercase: true,
       includeNumbers: true,

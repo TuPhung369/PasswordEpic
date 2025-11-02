@@ -30,6 +30,7 @@ import { getEffectiveMasterPassword } from '../../services/staticMasterPasswordS
 import {
   loadPasswordsLazy,
   decryptAllAndPrepareAutofill,
+  updatePasswordLastUsed,
 } from '../../store/slices/passwordsSlice';
 import { restoreSettings as restoreSettingsAction } from '../../store/slices/settingsSlice';
 import PasswordEntryComponent from '../../components/PasswordEntry';
@@ -1685,6 +1686,51 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         onEdit={() => handlePasswordEdit(item)}
         onDelete={() => handlePasswordDelete(item)}
         onToggleFavorite={() => handleToggleFavorite(item)}
+        onPasswordUsed={async () => {
+          console.log(
+            '👁️ [PasswordsScreen] onPasswordUsed callback triggered for:',
+            item.id,
+          );
+
+          // 1️⃣ Update Redux state immediately
+          dispatch(updatePasswordLastUsed(item.id));
+
+          // 2️⃣ Also persist to storage
+          try {
+            const masterPasswordResult = await getEffectiveMasterPassword();
+            if (
+              !masterPasswordResult.success ||
+              !masterPasswordResult.password
+            ) {
+              console.warn(
+                '⚠️ [PasswordsScreen] Cannot get master password for persistence',
+              );
+              return;
+            }
+
+            // Update the item directly (it's already in memory)
+            const updatedPassword = {
+              ...item,
+              lastUsed: new Date(),
+            };
+
+            console.log(
+              '💾 [PasswordsScreen] Saving password with updated lastUsed to storage...',
+            );
+            await encryptedDatabase.savePasswordEntry(
+              updatedPassword,
+              masterPasswordResult.password,
+            );
+            console.log(
+              '✅ [PasswordsScreen] Password with lastUsed saved to storage',
+            );
+          } catch (error) {
+            console.error(
+              '❌ [PasswordsScreen] Failed to persist password usage:',
+              error,
+            );
+          }
+        }}
         selectable={bulkMode}
         selected={selectedPasswords.includes(item.id)}
         onSelect={_selected => togglePasswordSelection(item.id)}

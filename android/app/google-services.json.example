@@ -18,7 +18,7 @@
           "client_type": 1,
           "android_info": {
             "package_name": "com.passwordepic.mobile",
-            "certificate_hash": "ee7b8c2102d996cf5497cd4c2b85099f7fa3372f"
+            "certificate_hash": "REPLACE_WITH_YOUR_SHA1_HASH"
           }
         },
         {

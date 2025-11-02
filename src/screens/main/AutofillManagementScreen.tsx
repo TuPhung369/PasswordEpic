@@ -34,6 +34,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { autofillService } from '../../services/autofillService';
 import { domainVerificationService } from '../../services/domainVerificationService';
 import AutofillSettingsPanel from '../../components/AutofillSettingsPanel';
+import { AutofillStatisticsPanel } from '../../components/AutofillStatisticsPanel';
 import { DEFAULT_DOMAINS } from '../../constants/defaultDomains';
 
 interface TrustedDomain {
@@ -538,21 +539,12 @@ export const AutofillManagementScreen: React.FC = () => {
 
   const renderStatisticsTab = () => (
     <View style={styles.tabContent}>
-      <View style={[styles.section, { backgroundColor: theme.surface }]}>
-        <View style={styles.sectionHeader}>
-          <Ionicons
-            name="stats-chart-outline"
-            size={24}
-            color={theme.primary}
-          />
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Autofill Statistics
-          </Text>
-        </View>
-        <Text style={[styles.helpText, { color: theme.textSecondary }]}>
-          Detailed statistics are available in the Settings tab.
-        </Text>
-      </View>
+      <AutofillStatisticsPanel
+        trustedDomainsCount={trustedDomains.length}
+        onRefresh={() => {
+          console.log('Statistics refreshed');
+        }}
+      />
     </View>
   );
 

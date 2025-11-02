@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Animated,
   Dimensions,
+  ScrollView,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -275,52 +276,63 @@ export const FilterDropdown: React.FC<FilterDropdownProps> = ({
             </Text>
           </View>
 
-          {/* Main Filter Options */}
-          {FILTER_OPTIONS.map(renderFilterOption)}
-
-          {/* Categories Section */}
-          {categories.length > 0 && (
-            <>
-              <View
-                style={[
-                  styles.categoryHeader,
-                  { borderTopColor: theme.border },
-                ]}
-              >
-                <Text
-                  style={[styles.categoryTitle, { color: theme.textSecondary }]}
-                >
-                  Categories
-                </Text>
-              </View>
-              {categories.map(renderCategoryOption)}
-            </>
-          )}
-
-          {/* Reset Option */}
-          <TouchableOpacity
-            style={[styles.resetOption, { borderTopColor: theme.border }]}
-            onPress={() => {
-              const resetFilters: MultipleFilterOptions = {
-                weak: false,
-                compromised: false,
-                duplicate: false,
-                favorite: false,
-                categories: [],
-              };
-              onFiltersChange(resetFilters);
-              onClose();
-            }}
+          {/* Scrollable Content */}
+          <ScrollView
+            style={styles.scrollContent}
+            showsVerticalScrollIndicator={true}
+            scrollEnabled={true}
+            nestedScrollEnabled={true}
           >
-            <Ionicons
-              name="close-circle-outline"
-              size={18}
-              color={theme.textSecondary}
-            />
-            <Text style={[styles.resetText, { color: theme.textSecondary }]}>
-              Clear All
-            </Text>
-          </TouchableOpacity>
+            {/* Main Filter Options */}
+            {FILTER_OPTIONS.map(renderFilterOption)}
+
+            {/* Categories Section */}
+            {categories.length > 0 && (
+              <>
+                <View
+                  style={[
+                    styles.categoryHeader,
+                    { borderTopColor: theme.border },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.categoryTitle,
+                      { color: theme.textSecondary },
+                    ]}
+                  >
+                    Categories
+                  </Text>
+                </View>
+                {categories.map(renderCategoryOption)}
+              </>
+            )}
+
+            {/* Reset Option */}
+            <TouchableOpacity
+              style={[styles.resetOption, { borderTopColor: theme.border }]}
+              onPress={() => {
+                const resetFilters: MultipleFilterOptions = {
+                  weak: false,
+                  compromised: false,
+                  duplicate: false,
+                  favorite: false,
+                  categories: [],
+                };
+                onFiltersChange(resetFilters);
+                onClose();
+              }}
+            >
+              <Ionicons
+                name="close-circle-outline"
+                size={18}
+                color={theme.textSecondary}
+              />
+              <Text style={[styles.resetText, { color: theme.textSecondary }]}>
+                Clear All
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
         </Animated.View>
       </TouchableOpacity>
     </>
@@ -350,6 +362,11 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
     zIndex: 1001,
+    overflow: 'hidden',
+  },
+  scrollContent: {
+    maxHeight: 340, // Account for header height (~60px)
+    flexGrow: 0,
   },
   header: {
     padding: 12,

@@ -84,5 +84,17 @@
           <category android:name="android.intent.category.DEFAULT" />
         </intent-filter>
       </activity>
+
+      <!-- Autofill Decryption Receiver - receives decryption requests from AutofillAuthActivity -->
+      <receiver
+        android:name=".autofill.AutofillDecryptionReceiver"
+        android:exported="false">
+        <intent-filter>
+          <action android:name="com.passwordepic.mobile.DECRYPT_FOR_AUTOFILL" />
+        </intent-filter>
+      </receiver>
+
+      <!-- NOTE: AutofillAuthSuccessReceiver is NOT registered here because it uses LocalBroadcastManager
+           which only works with programmatic registration in the service (onCreate method) -->
     </application>
 </manifest>

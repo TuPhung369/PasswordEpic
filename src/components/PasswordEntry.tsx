@@ -30,6 +30,7 @@ interface PasswordEntryComponentProps {
   onDelete?: () => void;
   onShare?: () => void;
   onToggleFavorite?: () => void;
+  onPasswordUsed?: () => void; // Called when password is copied or viewed
   showActions?: boolean;
   selectable?: boolean;
   selected?: boolean;
@@ -137,6 +138,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   onDelete,
   onShare: _onShare,
   onToggleFavorite,
+  onPasswordUsed,
   showActions: _showActions = true,
   selectable = false,
   selected = false,
@@ -194,6 +196,12 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       message: 'Password copied to clipboard',
       type: 'success',
     });
+
+    // Track usage
+    console.log(
+      '📝 [PasswordEntry] Copy password - calling onPasswordUsed callback',
+    );
+    onPasswordUsed?.();
   };
 
   const handleCopyUrl = async () => {
@@ -257,6 +265,12 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       message: 'Authentication successful',
       type: 'success',
     });
+
+    // Track usage
+    console.log(
+      '📝 [PasswordEntry] Copy password - calling onPasswordUsed callback',
+    );
+    onPasswordUsed?.();
   };
 
   const handleBiometricError = (error: string) => {
@@ -291,6 +305,12 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       message: 'Authentication successful',
       type: 'success',
     });
+
+    // Track usage
+    console.log(
+      '📝 [PasswordEntry] Copy password - calling onPasswordUsed callback',
+    );
+    onPasswordUsed?.();
   };
 
   const handlePinCancel = () => {
@@ -363,6 +383,12 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   };
 
   const getLastUsedText = () => {
+    console.log(
+      '⏰ [PasswordEntry] getLastUsedText called for:',
+      password.id,
+      'lastUsed:',
+      password.lastUsed,
+    );
     if (!password.lastUsed) return 'Never used';
 
     const now = new Date();

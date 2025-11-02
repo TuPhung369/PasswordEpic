@@ -9,6 +9,8 @@ import android.widget.TextView
 import android.widget.ImageButton
 import android.content.Context
 import android.view.autofill.AutofillManager
+import android.graphics.Color
+import android.widget.LinearLayout
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONException
@@ -47,6 +49,16 @@ class AutofillTestActivity : AppCompatActivity() {
     private var pendingPlaintextPassword: String? = null
     private var pendingCredential: JSONObject? = null
 
+    // Theme colors from Intent extras
+    private var themeBackground: Int = Color.parseColor("#000000")
+    private var themeSurface: Int = Color.parseColor("#1C1C1E")
+    private var themePrimary: Int = Color.parseColor("#007AFF")
+    private var themeText: Int = Color.parseColor("#FFFFFF")
+    private var themeTextSecondary: Int = Color.parseColor("#8E8E93")
+    private var themeError: Int = Color.parseColor("#FF453A")
+    private var themeSuccess: Int = Color.parseColor("#30D158")
+    private var isDarkMode: Boolean = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "🚀 AutofillTestActivity created - testing autofill")
@@ -54,14 +66,23 @@ class AutofillTestActivity : AppCompatActivity() {
         // Register this activity instance globally so AutofillBridge can access it
         setInstance(this)
         
+        // Extract theme colors from Intent extras FIRST (before layout inflate)
+        extractThemeFromIntent()
+        
+        // Log extracted theme data
+        Log.d(TAG, "🎨 Theme extracted - Background: #${Integer.toHexString(themeBackground and 0xFFFFFF).uppercase()}, isDarkMode: $isDarkMode")
+        
+        // Create simple layout programmatically
+        setContentView(R.layout.activity_autofill_test)
+
+        // Apply theme colors to all views IMMEDIATELY after layout inflation
+        applyThemeToViews()
+        
         // Check autofill service status
         checkAutofillServiceStatus()
         
         // Log available credentials from React Native
         verifyCredentialsFromApp()
-
-        // Create simple layout programmatically
-        setContentView(R.layout.activity_autofill_test)
 
         val backButton = findViewById<ImageButton>(R.id.backButton)
         val emailField = findViewById<EditText>(R.id.emailField)
@@ -71,10 +92,46 @@ class AutofillTestActivity : AppCompatActivity() {
         this.encryptedPasswordText = findViewById<TextView>(R.id.encryptedPasswordText)
         this.decryptedPasswordText = findViewById<TextView>(R.id.decryptedPasswordText)
 
+        // 🔍 DEBUG: Verify views are found correctly
+        Log.d(TAG, "🔍 View references after findViewById:")
+        Log.d(TAG, "   ✓ encryptedPasswordText: ${if (this.encryptedPasswordText != null) "FOUND (id=${this.encryptedPasswordText?.id})" else "❌ NULL"}")
+        Log.d(TAG, "   ✓ decryptedPasswordText: ${if (this.decryptedPasswordText != null) "FOUND (id=${this.decryptedPasswordText?.id})" else "❌ NULL"}")
+        Log.d(TAG, "   ✓ resultText: ${if (resultText != null) "FOUND" else "❌ NULL"}")
+
         backButton.setOnClickListener {
             Log.d(TAG, "🔙 Back button clicked - finishing activity")
             finish()
         }
+
+        // 🔧 FIX Issue 1: Prevent highlight from spanning full/2/3 screen after autofill
+        // Add text watcher to clear selection immediately after autofill fills the text
+        emailField.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (s != null && s.isNotEmpty()) {
+                    // Autofill just filled - clear selection to prevent highlight
+                    Log.d(TAG, "📝 Email field text changed - clearing selection to prevent highlight")
+                    emailField.post {
+                        emailField.setSelection(0, 0)  // Place cursor at start, no selection
+                    }
+                }
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+
+        passwordField.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (s != null && s.isNotEmpty()) {
+                    // Autofill just filled - clear selection to prevent highlight
+                    Log.d(TAG, "📝 Password field text changed - clearing selection to prevent highlight")
+                    passwordField.post {
+                        passwordField.setSelection(0, 0)  // Place cursor at start, no selection
+                    }
+                }
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
 
         // Log when fields get focus (autofill should trigger here)
         emailField.setOnFocusChangeListener { _, hasFocus ->
@@ -265,15 +322,37 @@ class AutofillTestActivity : AppCompatActivity() {
                     resultText.text = "Email: $email\n✅ Password: $passwordField\n(plaintext - no decryption needed)"
                     
                     // Show in encrypted password section (since this is what autofill would have filled)
+                    Log.d(TAG, "📝 Attempting to update encrypted password display (plaintext)...")
+                    Log.d(TAG, "   encryptedPasswordText is null: ${this.encryptedPasswordText == null}")
                     if (this.encryptedPasswordText != null) {
-                        this.encryptedPasswordText!!.text = passwordField
-                        this.encryptedPasswordText!!.setTextColor(android.graphics.Color.parseColor("#1B5E20"))
+                        try {
+                            this.encryptedPasswordText!!.text = passwordField
+                            this.encryptedPasswordText!!.visibility = android.view.View.VISIBLE
+                            // Use white color for plaintext password display
+                            this.encryptedPasswordText!!.setTextColor(android.graphics.Color.WHITE)
+                            Log.d(TAG, "✅ Updated encrypted password display (plaintext)")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ ERROR setting encrypted password text: ${e.message}", e)
+                        }
+                    } else {
+                        Log.e(TAG, "❌ ERROR: encryptedPasswordText is NULL - cannot display")
                     }
                     
                     // Also show in decrypted password section
+                    Log.d(TAG, "📝 Attempting to update decrypted password display (plaintext)...")
+                    Log.d(TAG, "   decryptedPasswordText is null: ${this.decryptedPasswordText == null}")
                     if (this.decryptedPasswordText != null) {
-                        this.decryptedPasswordText!!.text = passwordField
-                        this.decryptedPasswordText!!.setTextColor(android.graphics.Color.parseColor("#228B22"))
+                        try {
+                            this.decryptedPasswordText!!.text = passwordField
+                            this.decryptedPasswordText!!.visibility = android.view.View.VISIBLE
+                            // Use white color for plaintext password display
+                            this.decryptedPasswordText!!.setTextColor(android.graphics.Color.WHITE)
+                            Log.d(TAG, "✅ Updated decrypted password display (plaintext)")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ ERROR setting decrypted password text (plaintext): ${e.message}", e)
+                        }
+                    } else {
+                        Log.e(TAG, "❌ ERROR: decryptedPasswordText is NULL - cannot display")
                     }
                 }
                 
@@ -299,10 +378,24 @@ class AutofillTestActivity : AppCompatActivity() {
             Log.d(TAG, "📦 First 100 chars: ${encryptedPasswordJson.substring(0, Math.min(100, encryptedPasswordJson.length))}")
             
             // Display the encrypted password for user to see
-            if (encryptedPasswordText != null) {
-                encryptedPasswordText!!.text = encryptedPasswordJson
-                encryptedPasswordText!!.setTextColor(android.graphics.Color.parseColor("#B71C1C"))
-                Log.d(TAG, "✅ Displayed encrypted password (hex/JSON)")
+            Log.d(TAG, "📝 Attempting to display encrypted password...")
+            Log.d(TAG, "   encryptedPasswordText is null: ${this.encryptedPasswordText == null}")
+            Log.d(TAG, "   encrypted data length: ${encryptedPasswordJson.length}")
+            if (this.encryptedPasswordText != null) {
+                try {
+                    this.encryptedPasswordText!!.text = encryptedPasswordJson
+                    Log.d(TAG, "✅ setText called for encrypted password")
+                    this.encryptedPasswordText!!.visibility = android.view.View.VISIBLE
+                    Log.d(TAG, "✅ visibility set to VISIBLE for encrypted password")
+                    // Use gray/muted color for encrypted display
+                    val errorColor = android.graphics.Color.GRAY  // 0xFF808080
+                    this.encryptedPasswordText!!.setTextColor(errorColor)
+                    Log.d(TAG, "✅ Displayed encrypted password (hex/JSON)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ ERROR displaying encrypted password: ${e.message}", e)
+                }
+            } else {
+                Log.e(TAG, "❌ ERROR: encryptedPasswordText is NULL - cannot display encrypted password")
             }
             
             // Check if it's JSON format or hex-encoded ciphertext
@@ -500,10 +593,26 @@ class AutofillTestActivity : AppCompatActivity() {
                     """.trimIndent()
                     
                     // Also show the decrypted password in the dedicated section
-                    if (decryptedPasswordText != null) {
-                        decryptedPasswordText!!.text = plainTextPassword
-                        decryptedPasswordText!!.setTextColor(android.graphics.Color.parseColor("#228B22"))
-                        Log.d(TAG, "✅ Updated decrypted password display")
+                    Log.d(TAG, "📝 Attempting to update decrypted password display...")
+                    Log.d(TAG, "   decryptedPasswordText is null: ${this.decryptedPasswordText == null}")
+                    Log.d(TAG, "   plainTextPassword length: ${plainTextPassword.length}")
+                    Log.d(TAG, "   plainTextPassword value: '$plainTextPassword'")
+                    Log.d(TAG, "   plainTextPassword bytes: ${plainTextPassword.toByteArray().joinToString(",") { it.toInt().toString() }}")
+                    if (this.decryptedPasswordText != null) {
+                        try {
+                            this.decryptedPasswordText!!.text = plainTextPassword
+                            Log.d(TAG, "✅ setText called successfully")
+                            Log.d(TAG, "   After setText - actual text: '${this.decryptedPasswordText!!.text}'")
+                            this.decryptedPasswordText!!.visibility = android.view.View.VISIBLE
+                            Log.d(TAG, "✅ visibility set to VISIBLE")
+                            // Use theme's textColorPrimary (auto-adapts to light/dark theme) - same as Encrypted Password
+                            // Don't override color from XML: android:textColor="?android:attr/textColorPrimary"
+                            Log.d(TAG, "✅ Updated decrypted password display (using theme's textColorPrimary)")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ ERROR setting decrypted password text: ${e.message}", e)
+                        }
+                    } else {
+                        Log.e(TAG, "❌ ERROR: decryptedPasswordText is NULL - cannot display decrypted password")
                     }
                     
                     // 🔑 CRITICAL: Store plaintext password in cache for autofill to access
@@ -528,9 +637,21 @@ class AutofillTestActivity : AppCompatActivity() {
                     resultText.text = "❌ Decryption failed: $errorMessage"
                     
                     // Show error in decrypted password section
-                    if (decryptedPasswordText != null) {
-                        decryptedPasswordText!!.text = "❌ $errorMessage"
-                        decryptedPasswordText!!.setTextColor(android.graphics.Color.parseColor("#D32F2F"))
+                    Log.d(TAG, "📝 Attempting to display decryption error...")
+                    Log.d(TAG, "   decryptedPasswordText is null: ${this.decryptedPasswordText == null}")
+                    if (this.decryptedPasswordText != null) {
+                        try {
+                            this.decryptedPasswordText!!.text = "❌ $errorMessage"
+                            this.decryptedPasswordText!!.visibility = android.view.View.VISIBLE
+                            // Use red/orange color for error display
+                            val errorColor = android.graphics.Color.parseColor("#FF6B6B")  // Red
+                            this.decryptedPasswordText!!.setTextColor(errorColor)
+                            Log.d(TAG, "✅ Displayed decryption error message")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ ERROR displaying error message: ${e.message}", e)
+                        }
+                    } else {
+                        Log.e(TAG, "❌ ERROR: decryptedPasswordText is NULL - cannot display error")
                     }
                 }
             } catch (e: Exception) {
@@ -549,13 +670,9 @@ class AutofillTestActivity : AppCompatActivity() {
      */
     private fun storeDecryptedPasswordInCache(passwordId: String, plainTextPassword: String) {
         try {
-            Log.d(TAG, "🔐 Calling AutofillBridge to cache plaintext password...")
+            Log.d(TAG, "🔐 Caching plaintext password for autofill service...")
             
-            val module = com.passwordepic.mobile.autofill.AutofillBridge(
-                (application as com.facebook.react.ReactApplication).reactNativeHost.reactInstanceManager.currentReactContext as com.facebook.react.bridge.ReactApplicationContext
-            )
-            
-            // Call the native method directly to store the plaintext
+            // Store the plaintext password in SharedPreferences cache
             val prefs = getSharedPreferences("autofill_plaintext_cache", android.content.Context.MODE_PRIVATE)
             val currentTime = System.currentTimeMillis()
             val expiryTime = currentTime + 60_000  // 60-second expiry
@@ -742,6 +859,156 @@ class AutofillTestActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error in JSON decryption: ${e.message}", e)
             "ERROR_JSON_DECRYPT"
+        }
+    }
+
+    /**
+     * Extract theme colors from Intent extras
+     * Called early in onCreate to get colors before applying them to views
+     */
+    private fun extractThemeFromIntent() {
+        try {
+            val intent = intent
+            if (intent != null) {
+                val background = intent.getStringExtra("theme_background")
+                val surface = intent.getStringExtra("theme_surface")
+                val primary = intent.getStringExtra("theme_primary")
+                val text = intent.getStringExtra("theme_text")
+                val textSecondary = intent.getStringExtra("theme_textSecondary")
+                val error = intent.getStringExtra("theme_error")
+                val success = intent.getStringExtra("theme_success")
+                val isDarkModeExtra = intent.getBooleanExtra("theme_isDarkMode", true)
+                
+                Log.d(TAG, "📦 Intent extras received:")
+                Log.d(TAG, "   theme_background: $background")
+                Log.d(TAG, "   theme_primary: $primary")
+                Log.d(TAG, "   theme_text: $text")
+                Log.d(TAG, "   theme_isDarkMode: $isDarkModeExtra")
+                
+                themeBackground = parseColor(background ?: "#000000")
+                themeSurface = parseColor(surface ?: "#1C1C1E")
+                themePrimary = parseColor(primary ?: "#007AFF")
+                themeText = parseColor(text ?: "#FFFFFF")
+                themeTextSecondary = parseColor(textSecondary ?: "#8E8E93")
+                themeError = parseColor(error ?: "#FF453A")
+                themeSuccess = parseColor(success ?: "#30D158")
+                isDarkMode = isDarkModeExtra
+                
+                Log.d(TAG, "🎨 Theme parsed and applied")
+                Log.d(TAG, "   Background: #${Integer.toHexString(themeBackground and 0xFFFFFF).uppercase()}")
+                Log.d(TAG, "   Primary: #${Integer.toHexString(themePrimary and 0xFFFFFF).uppercase()}")
+                Log.d(TAG, "   Text: #${Integer.toHexString(themeText and 0xFFFFFF).uppercase()}")
+                Log.d(TAG, "   isDarkMode: $isDarkMode")
+            } else {
+                Log.w(TAG, "⚠️ Intent is null - using default theme colors")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error extracting theme from Intent", e)
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Apply theme colors to all views in the activity
+     * This ensures the test activity matches the app's current theme
+     */
+    private fun applyThemeToViews() {
+        try {
+            // Apply background color to root view and all parent layouts
+            val contentView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+            applyThemeToViewGroup(contentView, themeBackground)
+            
+            // Find and style all views by ID
+            val backButton = findViewById<ImageButton>(R.id.backButton)
+            val emailField = findViewById<EditText>(R.id.emailField)
+            val passwordField = findViewById<EditText>(R.id.passwordField)
+            val loginButton = findViewById<Button>(R.id.loginButton)
+            val resultText = findViewById<TextView>(R.id.resultText)
+            val encryptedPasswordText = findViewById<TextView>(R.id.encryptedPasswordText)
+            val decryptedPasswordText = findViewById<TextView>(R.id.decryptedPasswordText)
+            
+            // Style back button
+            backButton?.setColorFilter(themePrimary)
+            
+            // Style login button
+            loginButton?.setBackgroundColor(themePrimary)
+            loginButton?.setTextColor(themeText)
+            
+            // Style text input fields - text and hints
+            emailField?.apply {
+                setTextColor(themeText)
+                setHintTextColor(themeTextSecondary)
+                // Background is from drawable, but we can tint it
+            }
+            
+            passwordField?.apply {
+                setTextColor(themeText)
+                setHintTextColor(themeTextSecondary)
+            }
+            
+            // Style text displays
+            resultText?.setTextColor(themeText)
+            
+            // Style encrypted/decrypted password displays with theme colors
+            encryptedPasswordText?.apply {
+                setTextColor(themeText)
+                // Label color was hardcoded to red - change to theme error color
+            }
+            
+            decryptedPasswordText?.apply {
+                setTextColor(themeText)
+                // Label color was hardcoded to green - change to theme success color
+            }
+            
+            Log.d(TAG, "✅ Theme applied to all views successfully")
+            Log.d(TAG, "   Background: #${Integer.toHexString(themeBackground and 0xFFFFFF).uppercase()}")
+            Log.d(TAG, "   Primary: #${Integer.toHexString(themePrimary and 0xFFFFFF).uppercase()}")
+            Log.d(TAG, "   Text: #${Integer.toHexString(themeText and 0xFFFFFF).uppercase()}")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error applying theme to views", e)
+            e.printStackTrace()
+        }
+    }
+    
+    /**
+     * Recursively apply theme colors to a ViewGroup and its children
+     */
+    private fun applyThemeToViewGroup(viewGroup: android.view.ViewGroup?, backgroundColor: Int) {
+        if (viewGroup == null) return
+        try {
+            viewGroup.setBackgroundColor(backgroundColor)
+            
+            // Recursively apply to child ViewGroups
+            for (i in 0 until viewGroup.childCount) {
+                val child = viewGroup.getChildAt(i)
+                when (child) {
+                    is android.view.ViewGroup -> applyThemeToViewGroup(child, backgroundColor)
+                    is TextView -> if (child.id != R.id.encryptedPasswordText && 
+                                      child.id != R.id.decryptedPasswordText) {
+                        child.setTextColor(themeText)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error applying theme to ViewGroup", e)
+        }
+    }
+
+    /**
+     * Parse hex color string to Color integer
+     * Handles both formats: "#RRGGBB" and "RRGGBB"
+     */
+    private fun parseColor(colorString: String): Int {
+        return try {
+            val hex = if (colorString.startsWith("#")) {
+                colorString
+            } else {
+                "#$colorString"
+            }
+            Color.parseColor(hex)
+        } catch (e: Exception) {
+            Log.w(TAG, "⚠️ Failed to parse color: $colorString, using default")
+            Color.parseColor("#000000")
         }
     }
 

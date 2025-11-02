@@ -2,14 +2,15 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:orientation="vertical"
+    android:background="?android:attr/colorBackground">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="8dp"
-        android:background="#f5f5f5">
+        android:background="?android:attr/colorBackground">
         
         <ImageButton
             android:id="@+id/backButton"
@@ -28,12 +29,14 @@
             android:textSize="18sp"
             android:textStyle="bold"
             android:gravity="center_vertical"
-            android:layout_marginStart="8dp" />
+            android:layout_marginStart="8dp"
+            android:textColor="?android:attr/textColorPrimary" />
     </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:background="?android:attr/colorBackground">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -47,14 +50,15 @@
                 android:text="Autofill Test Form"
                 android:textSize="24sp"
                 android:textStyle="bold"
-                android:layout_marginBottom="24dp" />
+                android:layout_marginBottom="24dp"
+                android:textColor="?android:attr/textColorPrimary" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Tap on fields below to trigger autofill"
                 android:textSize="14sp"
-                android:textColor="#666666"
+                android:textColor="?android:attr/textColorSecondary"
                 android:layout_marginBottom="16dp" />
 
             <TextView
@@ -62,7 +66,8 @@
                 android:layout_height="wrap_content"
                 android:text="Email:"
                 android:textStyle="bold"
-                android:layout_marginTop="16dp" />
+                android:layout_marginTop="16dp"
+                android:textColor="?android:attr/textColorPrimary" />
 
             <EditText
                 android:id="@+id/emailField"
@@ -71,14 +76,19 @@
                 android:inputType="textEmailAddress"
                 android:hint="Enter email"
                 android:importantForAutofill="yes"
-                android:layout_marginBottom="16dp" />
+                android:selectAllOnFocus="false"
+                android:layout_marginBottom="16dp"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textColorHint="?android:attr/textColorHint"
+                android:background="@drawable/rn_edit_text_material" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Password:"
                 android:textStyle="bold"
-                android:layout_marginTop="16dp" />
+                android:layout_marginTop="16dp"
+                android:textColor="?android:attr/textColorPrimary" />
 
             <EditText
                 android:id="@+id/passwordField"
@@ -87,7 +97,11 @@
                 android:inputType="textPassword"
                 android:hint="Enter password"
                 android:importantForAutofill="yes"
-                android:layout_marginBottom="24dp" />
+                android:selectAllOnFocus="false"
+                android:layout_marginBottom="24dp"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textColorHint="?android:attr/textColorHint"
+                android:background="@drawable/rn_edit_text_material" />
 
             <Button
                 android:id="@+id/loginButton"
@@ -102,7 +116,7 @@
                 android:layout_height="wrap_content"
                 android:text="Result will appear here"
                 android:textSize="14sp"
-                android:textColor="#0066cc"
+                android:textColor="?android:attr/textColorPrimary"
                 android:layout_marginBottom="24dp" />
 
             <!-- Encrypted Password Display -->
@@ -111,7 +125,7 @@
                 android:layout_height="wrap_content"
                 android:text="🔒 Encrypted Password (from autofill):"
                 android:textStyle="bold"
-                android:textColor="#D32F2F"
+                android:textColor="#FF0000"
                 android:layout_marginTop="16dp"
                 android:layout_marginBottom="8dp" />
 
@@ -121,9 +135,9 @@
                 android:layout_height="wrap_content"
                 android:text="(Will show encrypted hex here)"
                 android:textSize="12sp"
-                android:textColor="#B71C1C"
+                android:textColor="?android:attr/textColorPrimary"
                 android:padding="12dp"
-                android:background="#FFEBEE"
+                android:background="@drawable/rn_edit_text_material"
                 android:layout_marginBottom="24dp"
                 android:textIsSelectable="true"
                 android:fontFamily="monospace" />
@@ -134,7 +148,7 @@
                 android:layout_height="wrap_content"
                 android:text="🔓 Decrypted Password (after biometric):"
                 android:textStyle="bold"
-                android:textColor="#228B22"
+                android:textColor="#00AA00"
                 android:layout_marginTop="16dp"
                 android:layout_marginBottom="8dp" />
 
@@ -144,9 +158,9 @@
                 android:layout_height="wrap_content"
                 android:text="(Will show here after login)"
                 android:textSize="12sp"
-                android:textColor="#1B5E20"
+                android:textColor="?android:attr/textColorPrimary"
                 android:padding="12dp"
-                android:background="#E8F5E9"
+                android:background="@drawable/rn_edit_text_material"
                 android:layout_marginBottom="24dp"
                 android:textIsSelectable="true"
                 android:fontFamily="monospace" />

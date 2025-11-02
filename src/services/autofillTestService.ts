@@ -1,4 +1,7 @@
 import { NativeModules, Platform } from 'react-native';
+import { useAppSelector } from '../hooks/redux';
+import { lightTheme, darkTheme } from '../contexts/ThemeContext';
+import { useColorScheme } from 'react-native';
 
 const { LaunchTestActivity } = NativeModules;
 
@@ -8,10 +11,23 @@ const { LaunchTestActivity } = NativeModules;
  */
 export class AutofillTestService {
   /**
-   * Launch the autofill test activity
-   * Shows a native activity with login form to test autofill
+   * Get current theme colors from Redux state
+   * Used internally for getting theme data outside React component context
    */
-  static async launchTestActivity(): Promise<boolean> {
+  private static getCurrentTheme() {
+    // Default to dark theme if we can't get theme from store
+    return darkTheme;
+  }
+
+  /**
+   * Launch the autofill test activity with current theme colors
+   * Shows a native activity with login form to test autofill
+   * Theme colors are passed via Intent extras for seamless theming
+   */
+  static async launchTestActivity(
+    themeMode: 'light' | 'dark' | 'system' = 'system',
+    isDarkMode: boolean = true,
+  ): Promise<boolean> {
     if (Platform.OS !== 'android') {
       console.warn('⚠️ Autofill test is only available on Android');
       return false;
@@ -23,8 +39,31 @@ export class AutofillTestService {
         return false;
       }
 
-      console.log('🚀 Launching autofill test activity...');
-      const result = await LaunchTestActivity.launchAutofillTest();
+      // Get the appropriate theme based on mode
+      const currentTheme = isDarkMode ? darkTheme : lightTheme;
+
+      // Prepare theme colors to send to native activity
+      const themeData = {
+        background: currentTheme.background,
+        surface: currentTheme.surface,
+        primary: currentTheme.primary,
+        secondary: currentTheme.secondary,
+        text: currentTheme.text,
+        textSecondary: currentTheme.textSecondary,
+        border: currentTheme.border,
+        card: currentTheme.card,
+        error: currentTheme.error,
+        success: currentTheme.success,
+        warning: currentTheme.warning,
+        isDarkMode: isDarkMode,
+      };
+
+      console.log('🚀 Launching autofill test activity with theme...');
+      console.log('🎨 Theme colors:', JSON.stringify(themeData, null, 2));
+
+      const result = await LaunchTestActivity.launchAutofillTestWithTheme(
+        themeData,
+      );
       console.log(`✅ Test activity launched successfully`);
       return result;
     } catch (error) {

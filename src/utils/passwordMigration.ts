@@ -66,11 +66,18 @@ export const migratePasswordEntry = (
     severity: 'low',
   };
 
+  // 🔥 Ensure lastUsed is initialized (handle string conversion from storage)
+  let lastUsed = password.lastUsed;
+  if (lastUsed && typeof lastUsed === 'string') {
+    lastUsed = new Date(lastUsed);
+  }
+
   return {
     ...password,
     passwordHistory,
     auditData,
     breachStatus,
+    lastUsed, // 🔥 Preserve and convert lastUsed field
   };
 };
 

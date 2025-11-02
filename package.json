@@ -15,7 +15,13 @@
     "type-check": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json}\"",
     "format-check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json}\"",
-    "clear-app": "adb shell pm clear com.passwordepic.mobile"
+    "clear-app": "adb shell pm clear com.passwordepic.mobile",
+    "update:firebase:debug": "node update-google-services-debug.js",
+    "update:firebase:release": "node update-google-services-release.js",
+    "android:debug": "npm run update:firebase:debug && react-native run-android",
+    "android:release": "npm run update:firebase:release",
+    "android:build-apk": "npm run update:firebase:release && cd android && ./gradlew assembleRelease",
+    "android:build-aab": "npm run update:firebase:release && cd android && ./gradlew bundleRelease"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^1.24.0",

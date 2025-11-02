@@ -2,12 +2,14 @@ package com.passwordepic.mobile.autofill
 
 import android.app.assist.AssistStructure
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.CancellationSignal
 import android.service.autofill.*
 import android.util.Log
 import android.view.autofill.AutofillId
 import android.view.autofill.AutofillValue
 import android.widget.RemoteViews
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.passwordepic.mobile.R
 
 /**
@@ -31,9 +33,173 @@ class PasswordEpicAutofillService : AutofillService() {
         private const val AUTHENTICATION_REQUEST_CODE = 1001
         
         // DEBUG MODE: When true, bypass auth and fill directly (for testing)
-        private const val DEBUG_MODE = true  // ⚠️ SET TO FALSE IN PRODUCTION
+        // ⚠️ SECURITY: Set to FALSE for production to enable biometric authentication
+        // When FALSE: Users must authenticate with biometric before autofilling
+        private const val DEBUG_MODE = false  // 🔐 BIOMETRIC AUTH ENABLED
         
         private val authenticatedCredentials = mutableMapOf<String, AutofillCredential>()
+        
+        private var lastFillRequest: FillRequest? = null
+        private var lastFillCallback: FillCallback? = null
+        private var serviceInstance: PasswordEpicAutofillService? = null
+        
+        // 🔄 Cache for refilling after auth succeeds
+        private var cachedCallback: FillCallback? = null
+        private var cachedParsedData: ParsedStructureData? = null
+        private var cachedCredentials: List<AutofillCredential>? = null
+        
+        fun setCachedCallbackAndData(
+            callback: FillCallback,
+            parsedData: ParsedStructureData,
+            credentials: List<AutofillCredential>
+        ) {
+            cachedCallback = callback
+            cachedParsedData = parsedData
+            cachedCredentials = credentials
+            Log.d(TAG, "💾 Cached callback, parsed data and ${credentials.size} credentials for refill after auth")
+        }
+        
+        fun triggerRefillAfterAuth() {
+            Log.d(TAG, "┌──────────────────────────────────────────────────────────────")
+            Log.d(TAG, "🔄 Triggering refill after auth succeeded...")
+            try {
+                val callback = cachedCallback
+                val parsedData = cachedParsedData
+                val credentials = cachedCredentials
+                
+                Log.d(TAG, "📋 Cache state:")
+                Log.d(TAG, "   - Callback available: ${callback != null}")
+                Log.d(TAG, "   - ParsedData available: ${parsedData != null}")
+                Log.d(TAG, "   - Credentials count: ${credentials?.size ?: 0}")
+                
+                if (callback == null || parsedData == null || credentials == null) {
+                    Log.e(TAG, "❌ CRITICAL: Cannot refill - missing required cache!")
+                    Log.e(TAG, "   callback=${ callback==null}, data=${parsedData==null}, creds=${credentials==null}")
+                    Log.d(TAG, "└──────────────────────────────────────────────────────────────")
+                    return
+                }
+                
+                // 🔐 CRITICAL FIX: Wait for plaintext to be cached before building response
+                // This gives React Native additional time if decryption is still in progress
+                waitForPlaintextCache(credentials)
+                
+                Log.d(TAG, "✅ All cached data available! Building filled response...")
+                Log.d(TAG, "   Domain: ${parsedData.domain}")
+                Log.d(TAG, "   Fields count: ${parsedData.fields.size}")
+                Log.d(TAG, "   Credentials: ${credentials.map { it.username }.joinToString(", ")}")
+                
+                val response = serviceInstance?.buildFillResponse(parsedData, credentials)
+                
+                if (response == null) {
+                    Log.e(TAG, "❌ Failed to build response - serviceInstance returned null")
+                    Log.d(TAG, "└──────────────────────────────────────────────────────────────")
+                    return
+                }
+                
+                Log.d(TAG, "✅ FillResponse built successfully")
+                try {
+                    Log.d(TAG, "📤 Calling callback.onSuccess to deliver filled response to framework...")
+                    callback.onSuccess(response)
+                    Log.d(TAG, "✅ Refill via callback successful! Fields should now auto-fill.")
+                } catch (e: IllegalStateException) {
+                    Log.w(TAG, "⚠️ Callback already invoked (expected behavior): ${e.message}")
+                    // This is OK - means first callback was already used for auth-required response
+                    Log.w(TAG, "⚠️ This means Android already called the callback with auth-required response")
+                    Log.w(TAG, "⚠️ The fields should fill when you return from the auth activity")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Error calling callback: ${e.message}", e)
+                }
+                
+                Log.d(TAG, "🧹 Clearing cache after refill attempt...")
+                // Clear cache after refill attempt
+                cachedCallback = null
+                cachedParsedData = null
+                cachedCredentials = null
+                Log.d(TAG, "✅ Cache cleared")
+                Log.d(TAG, "└──────────────────────────────────────────────────────────────")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error in triggerRefillAfterAuth: ${e.message}", e)
+                Log.d(TAG, "└──────────────────────────────────────────────────────────────")
+            }
+        }
+        
+        /**
+         * 🔐 CRITICAL: Waits for plaintext passwords to be cached for all credentials
+         * 
+         * This method ensures that if passwords are encrypted, React Native has had
+         * enough time to decrypt and cache them before we try to fill them.
+         * 
+         * Waits up to 5 seconds with polling every 100ms.
+         * 
+         * @param credentials List of credentials to check for cached plaintext
+         */
+        private fun waitForPlaintextCache(credentials: List<AutofillCredential>) {
+            val encryptedCredentials = credentials.filter { 
+                it.isEncrypted && it.iv.isNotEmpty() && it.tag.isNotEmpty() 
+            }
+            
+            if (encryptedCredentials.isEmpty()) {
+                Log.d(TAG, "✅ No encrypted credentials - no need to wait for plaintext cache")
+                return
+            }
+            
+            Log.d(TAG, "⏳ Waiting for plaintext cache for ${encryptedCredentials.size} encrypted credential(s)...")
+            
+            val startTime = System.currentTimeMillis()
+            val maxWaitTime = 5000 // 5 seconds for refill (shorter than auth activity's 10s)
+            var allCached = false
+            var checkCount = 0
+            
+            while (System.currentTimeMillis() - startTime < maxWaitTime) {
+                checkCount++
+                val dataProvider = AutofillDataProvider(serviceInstance!!)
+                
+                // Check if all encrypted credentials have cached plaintext
+                val allCachedNow = encryptedCredentials.all { credential ->
+                    dataProvider.getDecryptedPasswordForAutofill(credential.id) != null
+                }
+                
+                if (allCachedNow) {
+                    val elapsedTime = System.currentTimeMillis() - startTime
+                    Log.d(TAG, "✅ ALL PLAINTEXT CACHED - took ${elapsedTime}ms (${checkCount} checks)")
+                    Log.d(TAG, "✅ Ready to build filled response with decrypted passwords")
+                    allCached = true
+                    break
+                }
+                
+                // Only log every 3 checks to avoid spam
+                if (checkCount % 3 == 0) {
+                    val elapsed = System.currentTimeMillis() - startTime
+                    val cachedCount = encryptedCredentials.count { 
+                        dataProvider.getDecryptedPasswordForAutofill(it.id) != null 
+                    }
+                    Log.d(TAG, "⏳ Waiting... ${cachedCount}/${encryptedCredentials.size} cached (${elapsed}ms)")
+                }
+                
+                Thread.sleep(100)
+            }
+            
+            if (!allCached) {
+                val totalElapsed = System.currentTimeMillis() - startTime
+                val dataProvider = AutofillDataProvider(serviceInstance!!)
+                val cachedCount = encryptedCredentials.count { 
+                    dataProvider.getDecryptedPasswordForAutofill(it.id) != null 
+                }
+                
+                Log.w(TAG, "⚠️ PLAINTEXT CACHE WAIT TIMEOUT after ${totalElapsed}ms")
+                Log.w(TAG, "⚠️ ${cachedCount}/${encryptedCredentials.size} credentials cached")
+                
+                if (cachedCount == 0) {
+                    Log.e(TAG, "❌ CRITICAL: NO PLAINTEXT CACHED AT ALL!")
+                    Log.e(TAG, "❌ React Native decryption may have failed:")
+                    Log.e(TAG, "   - Check if useAutofillDecryption hook is running")
+                    Log.e(TAG, "   - Check if cryptoService is available")
+                    Log.e(TAG, "   - Check if master password session is active")
+                } else {
+                    Log.w(TAG, "⚠️ Some credentials cached but not all - proceeding anyway")
+                }
+            }
+        }
         
         fun setAuthenticatedCredential(credentialId: String, credential: AutofillCredential) {
             authenticatedCredentials[credentialId] = credential
@@ -48,20 +214,74 @@ class PasswordEpicAutofillService : AutofillService() {
             }
             return credential
         }
+        
+        fun getInstance(): PasswordEpicAutofillService? = serviceInstance
+        
+        fun storeFillContext(request: FillRequest, callback: FillCallback) {
+            lastFillRequest = request
+            lastFillCallback = callback
+        }
+        
+        fun getLastFillRequest(): FillRequest? = lastFillRequest
+        
+        fun getLastFillCallback(): FillCallback? = lastFillCallback
+        
+        fun clearFillContext() {
+            lastFillRequest = null
+            lastFillCallback = null
+            Log.d(TAG, "🧹 Fill context cleared")
+        }
     }
 
     private val viewNodeParser = ViewNodeParser()
     private val domainVerifier = DomainVerifier()
     private lateinit var autofillDataProvider: AutofillDataProvider
+    
+    // 📡 Local broadcast receiver for auth success events
+    private var authSuccessReceiver: AutofillAuthSuccessReceiver? = null
 
     override fun onCreate() {
         super.onCreate()
+        serviceInstance = this
         Log.d(TAG, "🚀 Service.onCreate() called! Initializing AutofillDataProvider")
         try {
             autofillDataProvider = AutofillDataProvider(this)
             Log.d(TAG, "✅ AutofillDataProvider initialized with context")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to initialize AutofillDataProvider", e)
+        }
+        
+        // 📡 Register local broadcast receiver for auth success
+        registerAuthSuccessReceiver()
+    }
+    
+    /**
+     * 📡 Registers local broadcast receiver to listen for auth success events
+     * This allows the service to trigger refill when user completes biometric auth
+     */
+    private fun registerAuthSuccessReceiver() {
+        try {
+            authSuccessReceiver = AutofillAuthSuccessReceiver()
+            val intentFilter = IntentFilter(AutofillAuthSuccessReceiver.ACTION_AUTH_SUCCEED)
+            LocalBroadcastManager.getInstance(this).registerReceiver(authSuccessReceiver!!, intentFilter)
+            Log.d(TAG, "📡 Auth success receiver registered successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to register auth success receiver: ${e.message}")
+        }
+    }
+    
+    /**
+     * 📡 Unregisters local broadcast receiver when service is disconnected
+     */
+    private fun unregisterAuthSuccessReceiver() {
+        try {
+            if (authSuccessReceiver != null) {
+                LocalBroadcastManager.getInstance(this).unregisterReceiver(authSuccessReceiver!!)
+                authSuccessReceiver = null
+                Log.d(TAG, "📡 Auth success receiver unregistered successfully")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to unregister auth success receiver: ${e.message}")
         }
     }
 
@@ -91,6 +311,9 @@ class PasswordEpicAutofillService : AutofillService() {
         Log.d(TAG, "📥 onFillRequest: Autofill request received")
         Log.d(TAG, "📦 FillContexts count: ${request.fillContexts.size}")
         Log.d(TAG, "🔐 Cached credentials count: ${authenticatedCredentials.size}")
+        
+        // Store for later refill triggered by auth activity
+        storeFillContext(request, callback)
 
         try {
             // Extract the view structure from the request
@@ -136,16 +359,52 @@ class PasswordEpicAutofillService : AutofillService() {
                 Log.d(TAG, "   Credential: ${cachedCredential.username} for ${cachedCredential.domain}")
                 Log.d(TAG, "   Encrypted: ${cachedCredential.isEncrypted}, has IV: ${cachedCredential.iv.isNotEmpty()}, has TAG: ${cachedCredential.tag.isNotEmpty()}")
                 
-                // Check if password is encrypted - if so, we need to handle it specially
+                // Check if password is encrypted - if so, try to get plaintext from cache
                 if (cachedCredential.isEncrypted && cachedCredential.iv.isNotEmpty() && cachedCredential.tag.isNotEmpty()) {
+                    Log.d(TAG, "🔒 Encrypted password detected - checking plaintext cache...")
+                    val plaintext = autofillDataProvider.getDecryptedPasswordForAutofill(cachedCredential.id)
+                    
+                    if (plaintext != null) {
+                        Log.d(TAG, "✅ FOUND PLAINTEXT IN CACHE - Using decrypted password for fill")
+                        // Use plaintext password for fill
+                        val responseBuilder = FillResponse.Builder()
+                        val datasetBuilder = Dataset.Builder()
+                        
+                        parsedData.fields.forEach { field ->
+                            when (field.type) {
+                                FieldType.USERNAME, FieldType.EMAIL -> {
+                                    Log.d(TAG, "✍️ Filling USERNAME/EMAIL with: '${cachedCredential.username}'")
+                                    datasetBuilder.setValue(
+                                        field.autofillId,
+                                        AutofillValue.forText(cachedCredential.username)
+                                    )
+                                }
+                                FieldType.PASSWORD -> {
+                                    Log.d(TAG, "🔓 Filling PASSWORD field with decrypted plaintext from cache")
+                                    datasetBuilder.setValue(
+                                        field.autofillId,
+                                        AutofillValue.forText(plaintext)
+                                    )
+                                }
+                                else -> {}
+                            }
+                        }
+                        
+                        responseBuilder.addDataset(datasetBuilder.build())
+                        Log.d(TAG, "✅ Sending response with decrypted plaintext password")
+                        Log.d(TAG, "└─────────────────────────────────────────────")
+                        callback.onSuccess(responseBuilder.build())
+                        return
+                    }
+                    
+                    Log.w(TAG, "⚠️ NO PLAINTEXT CACHE FOUND - Password still encrypted")
                     Log.e(TAG, "❌ CRITICAL: Password is ENCRYPTED but autofill cannot decrypt it!")
                     Log.e(TAG, "🔐 Password is encrypted with:")
                     Log.e(TAG, "   - Ciphertext: ${cachedCredential.password.substring(0, minOf(50, cachedCredential.password.length))}...")
                     Log.e(TAG, "   - IV: ${cachedCredential.iv}")
                     Log.e(TAG, "   - TAG: ${cachedCredential.tag}")
-                    Log.e(TAG, "🚨 SECURITY ISSUE: Encrypted password cannot be decrypted in autofill service context")
-                    Log.e(TAG, "💡 Solution: Decrypt password through React Native before caching credential")
-                    Log.e(TAG, "💡 Or: Implement secure decryption endpoint in the app")
+                    Log.e(TAG, "💡 Make sure React Native called cacheDecryptedPasswordForAutofill()")
+                    Log.e(TAG, "💡 Or the decryption broadcast receiver is not working")
                     
                     // Don't fill encrypted passwords - this is a security issue
                     Log.d(TAG, "⚠️ Aborting autofill - refusing to fill encrypted password directly")
@@ -208,6 +467,10 @@ class PasswordEpicAutofillService : AutofillService() {
             credentials.forEach { cred ->
                 Log.d(TAG, "   - domain: '${cred.domain}', username: '${cred.username}'")
             }
+
+            // 💾 Cache callback and data for potential refill after auth
+            // (in case Android framework doesn't auto-trigger onFillRequest again)
+            setCachedCallbackAndData(callback, parsedData, credentials)
 
             // Build the autofill response
             val response = buildFillResponse(parsedData, credentials)
@@ -419,9 +682,12 @@ class PasswordEpicAutofillService : AutofillService() {
             Log.d(TAG, "🔐 PRODUCTION_MODE - Checking for cached plaintext...")
             
             // 🔑 Check if we have cached plaintext password
+            // CRITICAL FIX: Check for encryption EITHER by isEncrypted flag OR by presence of IV/TAG
+            // Some credentials may have IV/TAG but isEncrypted=false (data inconsistency)
             var cachedPlaintextPassword: String? = null
-            if (credential.isEncrypted && credential.iv.isNotEmpty() && credential.tag.isNotEmpty()) {
-                Log.d(TAG, "🔍 Encrypted password detected - checking plaintext cache...")
+            val hasEncryptionMetadata = credential.iv.isNotEmpty() && credential.tag.isNotEmpty()
+            if ((credential.isEncrypted || hasEncryptionMetadata)) {
+                Log.d(TAG, "🔍 Encrypted password detected (isEncrypted=${credential.isEncrypted}, hasMetadata=$hasEncryptionMetadata) - checking plaintext cache...")
                 val dataProvider = AutofillDataProvider(this)
                 cachedPlaintextPassword = dataProvider.getDecryptedPasswordForAutofill(credential.id)
             }
@@ -457,26 +723,27 @@ class PasswordEpicAutofillService : AutofillService() {
                 // No cached plaintext - require authentication
                 Log.d(TAG, "🔐 PRODUCTION_MODE - No cached plaintext, requiring authentication before filling")
                 
-                // Set authentication requirement with presentation
-                datasetBuilder.setAuthentication(authIntentSender)
-                
-                // Add presentation to show the username in the dropdown
-                // but don't set any field values yet (will be filled after auth)
+                // Add field values with presentation
+                // Android autofill stores these values and uses them after auth succeeds
                 parsedData.fields.forEach { field ->
                     when (field.type) {
                         FieldType.USERNAME, FieldType.EMAIL -> {
-                            Log.d(TAG, "📍 Adding presentation for USERNAME/EMAIL field (auth required)")
+                            Log.d(TAG, "✍️ Setting USERNAME/EMAIL value (will be filled after auth): '${credential.username}'")
                             datasetBuilder.setValue(
                                 field.autofillId,
-                                null,
+                                AutofillValue.forText(credential.username),
                                 presentation
                             )
                         }
                         FieldType.PASSWORD -> {
-                            Log.d(TAG, "📍 Adding presentation for PASSWORD field (auth required)")
+                            Log.d(TAG, "🔒 Setting PASSWORD value (will be filled after auth)")
+                            Log.d(TAG, "   Password is encrypted: ${credential.isEncrypted}")
+                            Log.d(TAG, "   Will be decrypted by app and replaced with plaintext after auth succeeds")
+                            // For now, set the plaintext if available, otherwise the encrypted password
+                            // After auth succeeds, this might be updated with plaintext by React Native
                             datasetBuilder.setValue(
                                 field.autofillId,
-                                null,
+                                AutofillValue.forText(credential.password),
                                 presentation
                             )
                         }
@@ -485,7 +752,14 @@ class PasswordEpicAutofillService : AutofillService() {
                         }
                     }
                 }
-                Log.d(TAG, "✅ Dataset built with authentication requirement (values will be filled after auth)")
+                
+                // NOW set authentication requirement
+                // Android autofill will use the values we just set after auth succeeds
+                Log.d(TAG, "🔐 Setting authentication requirement on dataset...")
+                datasetBuilder.setAuthentication(authIntentSender)
+                
+                Log.d(TAG, "✅ Dataset built with authentication requirement")
+                Log.d(TAG, "   Values are set and will be used after successful authentication")
             }
         }
         
@@ -506,6 +780,9 @@ class PasswordEpicAutofillService : AutofillService() {
     override fun onDisconnected() {
         super.onDisconnected()
         Log.d(TAG, "Autofill service disconnected")
+        
+        // 📡 Unregister local broadcast receiver
+        unregisterAuthSuccessReceiver()
     }
 }
 

@@ -58,7 +58,7 @@ react {
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -77,14 +77,19 @@ android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
+    
+    packagingOptions {
+        pickFirst 'lib/armeabi-v7a/libc++_shared.so'
+        pickFirst 'lib/arm64-v8a/libc++_shared.so'
+    }
 
     namespace "com.passwordepic.mobile"
     defaultConfig {
         applicationId "com.passwordepic.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 7
+        versionName "1.0.7"
         
         buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", (findProperty("newArchEnabled") ?: "false")
         buildConfigField "boolean", "IS_HERMES_ENABLED", (findProperty("hermesEnabled") ?: "true")
@@ -98,9 +103,9 @@ android {
         }
         release {
             storeFile file('release.keystore')
-            storePassword 'Thanhcongfinland6('  // ⚠️ Thay bằng password của bạn
+            storePassword 'Thanhcongfinland6('
             keyAlias 'passwordepic-release'
-            keyPassword 'Thanhcongfinland6('  // ⚠️ Thay bằng key password của bạn
+            keyPassword 'Thanhcongfinland6('
         }
     }
     buildTypes {
@@ -127,6 +132,12 @@ dependencies {
 
     // AndroidX Biometric - using stable version 1.1.0 (was working before)
     implementation 'androidx.biometric:biometric:1.1.0'
+
+    // AndroidX LocalBroadcastManager - for inter-process communication
+    implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.1.0'
+
+    // Google Play Integrity API - for app integrity verification
+    implementation 'com.google.android.play:integrity:1.5.0'
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

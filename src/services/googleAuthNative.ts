@@ -12,7 +12,7 @@ const GOOGLE_CLIENT_IDS = {
   WEB: '816139401561-minpjbh47bm5v274th8cj9i4qnr7tidj.apps.googleusercontent.com',
   // Android Client ID - For native Google Sign-In (from google-services.json)
   ANDROID:
-    '816139401561-at47rh069kjqrv3b2t1b8cl7b97lcuqv.apps.googleusercontent.com',
+    '816139401561-j3uj5cki96ii1qov2p3ilnaekgr285fh.apps.googleusercontent.com',
   // iOS Client ID - For native iOS Google Sign-In (from GoogleService-Info.plist)
   IOS: '816139401561-fugf3vqjji9dvvnuc2kqj133m2tbuf2e.apps.googleusercontent.com',
 };

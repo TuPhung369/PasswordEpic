@@ -124,6 +124,7 @@ export const DEFAULT_DOMAINS = [
   'python.org',
 
   // ============ Security & Verification ============
+  'com.passwordepic.mobile',
   'facebook.com/login',
   'instagram.com/accounts/login',
   '2fa.com',

@@ -108,7 +108,6 @@ export const DEFAULT_DOMAINS = [
   'mail.protonmail.com',
 
   // ============ Search Engines ============
-  'google.com',
   'bing.com',
   'duckduckgo.com',
 

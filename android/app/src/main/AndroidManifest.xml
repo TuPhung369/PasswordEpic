@@ -28,6 +28,9 @@
     
     <!-- Declare biometric hardware feature (not required, allows app to work without it) -->
     <uses-feature android:name="android.hardware.fingerprint" android:required="false" />
+    
+    <!-- Accessibility Service Permission for autofill refill mechanism -->
+    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
 
     <application
       android:name=".MainApplication"
@@ -66,11 +69,31 @@
           android:resource="@xml/autofill_service_config" />
       </service>
 
+      <!-- Accessibility Service for autofill refill mechanism -->
+      <service
+        android:name=".autofill.AutofillRefillAccessibilityService"
+        android:label="PasswordEpic Autofill Refill"
+        android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+        android:exported="true">
+        <intent-filter>
+          <action android:name="android.accessibilityservice.AccessibilityService" />
+        </intent-filter>
+        <meta-data
+          android:name="android.accessibilityservice"
+          android:resource="@xml/autofill_refill_accessibility_config" />
+      </service>
+
       <!-- Autofill Authentication Activity -->
       <activity
         android:name=".autofill.AutofillAuthActivity"
         android:label="Autofill Authentication"
         android:theme="@android:style/Theme.Translucent.NoTitleBar"
+        android:exported="false" />
+
+      <!-- Autofill Decryption Service - bound service for decryption requests -->
+      <service
+        android:name=".autofill.AutofillDecryptionService"
+        android:label="PasswordEpic Autofill Decryption"
         android:exported="false" />
 
       <!-- Autofill Test Activity - for testing autofill service -->
@@ -94,7 +117,7 @@
         </intent-filter>
       </receiver>
 
-      <!-- NOTE: AutofillAuthSuccessReceiver is NOT registered here because it uses LocalBroadcastManager
-           which only works with programmatic registration in the service (onCreate method) -->
+      <!-- NOTE: AutofillRefillAccessibilityService registers broadcast receiver programmatically
+           in onServiceConnected() for system broadcasts -->
     </application>
 </manifest>

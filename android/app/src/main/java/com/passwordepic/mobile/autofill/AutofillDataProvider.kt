@@ -161,7 +161,7 @@ class AutofillDataProvider(private val context: Context? = null) {
             prefs.edit().apply {
                 putString("plaintext_$credentialId", cacheEntry.toString())
                 putLong("stored_at_$credentialId", currentTime)
-                apply()
+                commit()
             }
             
             Log.d(TAG, "✅ Plaintext password cached successfully (expires in 60s)")

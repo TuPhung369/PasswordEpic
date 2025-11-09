@@ -228,7 +228,12 @@ Set-Location "e:\IT\Mobile\PasswordEpic\android"
 # kill all task before build
 taskkill /IM adb.exe /F
 taskkill /IM node.exe /F
+change version into app/android/build.gradle
+# run this command to update google-services.json
+node .\update-google-services-release.js
 .\gradlew clean bundleRelease
+# Access the website the create the new release
+https://play.google.com/console
 ```
 
 ### ❌ Play Integrity API Failing

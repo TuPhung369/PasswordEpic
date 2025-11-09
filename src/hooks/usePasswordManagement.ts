@@ -192,6 +192,17 @@ export const usePasswordManagement = (masterPassword?: string) => {
         return;
       }
 
+      // Check if domain is in popular/suggested domains list
+      const isPopularDomain = DEFAULT_DOMAINS.some(
+        d => d.toLowerCase() === domain.toLowerCase(),
+      );
+      if (isPopularDomain) {
+        console.log(
+          `ℹ️ autoVerifyDomain: Domain ${domain} is in popular domains list - skipping auto-add (user can add manually from suggestions if desired)`,
+        );
+        return;
+      }
+
       // Check if domain is already trusted
       const isTrusted = await domainVerificationService.isTrustedDomain(domain);
       if (isTrusted) {
@@ -201,7 +212,7 @@ export const usePasswordManagement = (masterPassword?: string) => {
         return;
       }
 
-      // Auto-add domain to trusted list (with autoApproved flag)
+      // Auto-add domain to trusted list (with autoApproved flag) - only for non-popular domains
       await domainVerificationService.addTrustedDomain(domain, true);
       console.log(
         `✅ autoVerifyDomain: Domain ${domain} auto-verified and added to trusted list`,

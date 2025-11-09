@@ -50,6 +50,10 @@ interface AutofillBridgeModule {
     encryptedPasswordJson: string,
     masterKey: string,
   ): Promise<string>;
+  storeDecryptedPasswordForAutofill(
+    credentialId: string,
+    plaintextPassword: string,
+  ): Promise<boolean>;
   updateAutofillDecryptResult(
     plainTextPassword: string,
     success: boolean,
@@ -139,6 +143,16 @@ const AutofillBridge: AutofillBridgeModule = (() => {
           '⚠️ [Mock] AutofillBridge.decryptAutofillPassword called - returning mock response',
         );
         return 'mock_decrypted_password';
+      },
+      storeDecryptedPasswordForAutofill: async (
+        credentialId: string,
+        plaintextPassword: string,
+      ) => {
+        console.warn(
+          '⚠️ [Mock] AutofillBridge.storeDecryptedPasswordForAutofill called',
+          { credentialId, hasPassword: !!plaintextPassword },
+        );
+        return true;
       },
       updateAutofillDecryptResult: async (
         plainTextPassword: string,
@@ -235,12 +249,12 @@ class AutofillService {
             console.log(
               '🔔 [AutofillService] Received decryption request from native:',
               {
+                credentialId: eventData.credentialId,
                 hasEncryptedPassword: !!eventData.encryptedPassword,
-                hasSalt: !!eventData.passwordSalt,
-                hasIv: !!eventData.passwordIv,
-                hasTag: !!eventData.passwordAuthTag,
-                email: eventData.email,
-                format: eventData.format,
+                hasSalt: !!eventData.salt,
+                hasIv: !!eventData.iv,
+                hasTag: !!eventData.tag,
+                domain: eventData.domain,
               },
             );
 
@@ -258,6 +272,7 @@ class AutofillService {
                 'Master password not available',
               );
               await this.sendDecryptResultToNative(
+                eventData.credentialId,
                 '',
                 false,
                 'Master password not available - user must unlock the app first',
@@ -265,63 +280,50 @@ class AutofillService {
               return;
             }
 
-            // Extract encrypted password data
+            // Extract encrypted password data from native side event
             const {
+              credentialId,
               encryptedPassword,
-              passwordSalt,
-              passwordIv,
-              passwordAuthTag,
+              salt,
+              iv,
+              tag,
             } = eventData;
 
             console.log(
-              '🔍 [DETAILED DEBUG] Full eventData object:',
-              JSON.stringify(eventData, null, 2),
-            );
-            console.log(
-              '🔍 [DETAILED DEBUG] eventData keys:',
-              Object.keys(eventData),
-            );
-            console.log(
-              '🔍 [DETAILED DEBUG] passwordSalt value:',
-              passwordSalt,
-              'type:',
-              typeof passwordSalt,
-            );
-            console.log(
-              '🔍 [DETAILED DEBUG] passwordIv value:',
-              passwordIv,
-              'type:',
-              typeof passwordIv,
-            );
-            console.log(
-              '🔍 [DETAILED DEBUG] passwordAuthTag value:',
-              passwordAuthTag,
-              'type:',
-              typeof passwordAuthTag,
+              '🔍 [DEBUG] Extracted values:',
+              {
+                credentialId,
+                hasEncryptedPassword: !!encryptedPassword,
+                hasSalt: !!salt,
+                hasIv: !!iv,
+                hasTag: !!tag,
+              },
             );
 
             if (
+              !credentialId ||
               !encryptedPassword ||
-              !passwordSalt ||
-              !passwordIv ||
-              !passwordAuthTag
+              !salt ||
+              !iv ||
+              !tag
             ) {
               console.error(
                 '❌ [AutofillService] Missing encryption components:',
                 {
+                  credentialId: !!credentialId,
                   encryptedPassword: !!encryptedPassword,
-                  passwordSalt: !!passwordSalt,
-                  passwordIv: !!passwordIv,
-                  passwordAuthTag: !!passwordAuthTag,
+                  salt: !!salt,
+                  iv: !!iv,
+                  tag: !!tag,
                 },
               );
-              // Record failed autofill event
               await autofillStatisticsService.recordFill(
                 eventData.domain || 'unknown',
                 false,
                 'Missing encryption components',
               );
               await this.sendDecryptResultToNative(
+                credentialId || '',
                 '',
                 false,
                 'Missing encryption components',
@@ -332,7 +334,7 @@ class AutofillService {
             // Derive the encryption key using master password + salt
             const encryptionKey = deriveKeyFromPassword(
               masterPassword,
-              passwordSalt,
+              salt,
               CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC,
             );
 
@@ -341,21 +343,21 @@ class AutofillService {
             const plainTextPassword = decryptData(
               encryptedPassword,
               encryptionKey,
-              passwordIv,
-              passwordAuthTag,
+              iv,
+              tag,
             );
 
             if (!plainTextPassword) {
               console.error(
                 '❌ [AutofillService] Decryption resulted in empty password',
               );
-              // Record failed autofill event
               await autofillStatisticsService.recordFill(
                 eventData.domain || 'unknown',
                 false,
                 'Decryption resulted in empty password',
               );
               await this.sendDecryptResultToNative(
+                credentialId,
                 '',
                 false,
                 'Decryption resulted in empty password',
@@ -364,7 +366,7 @@ class AutofillService {
             }
 
             console.log(
-              '✅ [AutofillService] Decryption successful - sending result to native',
+              '✅ [AutofillService] Decryption successful - caching plaintext password',
             );
 
             // Record successful autofill event
@@ -373,8 +375,8 @@ class AutofillService {
               true,
             );
 
-            // Send the plaintext password back to native code
-            await this.sendDecryptResultToNative(plainTextPassword, true, '');
+            // Cache plaintext password and send result to native code
+            await this.sendDecryptResultToNative(credentialId, plainTextPassword, true, '');
           } catch (error) {
             console.error(
               '❌ [AutofillService] Error processing decrypt request:',
@@ -382,13 +384,17 @@ class AutofillService {
             );
             const errorMessage =
               error instanceof Error ? error.message : String(error);
-            // Record failed autofill event
             await autofillStatisticsService.recordFill(
               eventData.domain || 'unknown',
               false,
               errorMessage,
             );
-            await this.sendDecryptResultToNative('', false, errorMessage);
+            await this.sendDecryptResultToNative(
+              eventData.credentialId || '',
+              '',
+              false,
+              errorMessage,
+            );
           }
         },
       );
@@ -441,23 +447,53 @@ class AutofillService {
   }
 
   /**
-   * Send decryption result back to native code
-   * This notifies the AutofillTestActivity of the decryption result
+   * Send decryption result back to native code and cache plaintext password
+   * @param credentialId The credential ID
    * @param plainTextPassword Decrypted password (empty if failed)
    * @param success Whether decryption was successful
    * @param errorMessage Error message if decryption failed
    */
   private async sendDecryptResultToNative(
+    credentialId: string,
     plainTextPassword: string,
     success: boolean,
     errorMessage: string,
   ) {
     try {
       console.log(
-        `📤 [AutofillService] Sending decrypt result to native: success=${success}`,
+        `📤 [AutofillService] Sending decrypt result to native: credentialId=${credentialId}, success=${success}`,
       );
 
-      // Try to use AutofillBridge module to send result back
+      // If decryption was successful, cache plaintext password for autofill
+      if (success && plainTextPassword && credentialId) {
+        try {
+          console.log(`💾 [AutofillService] Caching plaintext password for credential: ${credentialId}`);
+          
+          if (!AutofillBridge.storeDecryptedPasswordForAutofill) {
+            console.warn(
+              '⚠️ [AutofillService] storeDecryptedPasswordForAutofill not available in AutofillBridge',
+            );
+          } else {
+            const cacheSuccess = await AutofillBridge.storeDecryptedPasswordForAutofill(
+              credentialId,
+              plainTextPassword,
+            );
+            
+            if (cacheSuccess) {
+              console.log(`✅ [AutofillService] Plaintext password cached successfully`);
+            } else {
+              console.warn(`⚠️ [AutofillService] Failed to cache plaintext password`);
+            }
+          }
+        } catch (cacheError) {
+          console.error(
+            '❌ [AutofillService] Error caching plaintext password:',
+            cacheError,
+          );
+        }
+      }
+
+      // Also notify activity via updateAutofillDecryptResult for backward compatibility
       if (!AutofillBridge.updateAutofillDecryptResult) {
         console.warn(
           '⚠️ [AutofillService] updateAutofillDecryptResult not available in AutofillBridge',
@@ -557,6 +593,12 @@ class AutofillService {
         '✅ [AutofillService] requestEnableAutofill returned:',
         result,
       );
+      
+      if (result) {
+        console.log('🔑 [CRITICAL] Autofill enable succeeded - initializing default settings...');
+        await this.ensureDefaultSettingsAreSaved();
+      }
+      
       return result;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -569,6 +611,37 @@ class AutofillService {
         error instanceof Error ? error.stack : 'N/A',
       );
       return false;
+    }
+  }
+
+  /**
+   * 🔑 CRITICAL: Ensure default settings are saved to native side
+   * This is called when autofill is first enabled to guarantee that
+   * the requireBiometric setting is persisted to SharedPreferences
+   */
+  private async ensureDefaultSettingsAreSaved(): Promise<void> {
+    try {
+      console.log('🔑 Ensuring autofill settings are initialized with defaults...');
+      const currentSettings = await this.getSettings();
+      
+      // If settings don't exist or are incomplete, save defaults
+      if (!currentSettings || !currentSettings.requireBiometric === undefined) {
+        const defaultSettings: AutofillSettings = {
+          enabled: true,
+          requireBiometric: true,
+          allowSubdomains: true,
+          trustedDomains: [],
+        };
+        
+        console.log('💾 Saving default settings to ensure biometric is REQUIRED:', defaultSettings);
+        await this.updateSettings(defaultSettings);
+        console.log('✅ Default settings saved - biometric WILL be required');
+      } else {
+        console.log('✅ Settings already exist - no action needed', currentSettings);
+      }
+    } catch (error) {
+      console.error('⚠️ Error ensuring default settings:', error);
+      // Don't throw - continue anyway
     }
   }
 
@@ -772,6 +845,9 @@ class AutofillService {
           })),
         );
       }
+
+      console.log('🔑 [CRITICAL] Before preparing credentials, ensure default settings are saved to native...');
+      await this.ensureDefaultSettingsAreSaved();
 
       // 🔑 CRITICAL FIX: Get autofill settings to determine if we should encrypt or send plaintext
       let requireBiometric = true; // Default: require biometric for security

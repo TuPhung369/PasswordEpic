@@ -1037,7 +1037,7 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
                 putString("domain", domain)
             }
             
-            sendEvent("AUTOFILL_DECRYPT_REQUEST", eventData)
+            sendEvent("onAutofillDecryptRequest", eventData)
             Log.d(TAG, "✅ Decryption request emitted to React Native")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error emitting decryption request", e)

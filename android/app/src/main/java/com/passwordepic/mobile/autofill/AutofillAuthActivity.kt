@@ -1,34 +1,23 @@
 package com.passwordepic.mobile.autofill
 
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.os.Bundle
-import android.os.CancellationSignal
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
-import android.service.autofill.Dataset
-import android.service.autofill.FillResponse
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import android.util.Log
 import android.widget.Toast
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import com.passwordepic.mobile.R
 import java.util.concurrent.Executor
+import android.view.autofill.AutofillManager
 
-/**
- * AutofillAuthActivity
- * 
- * Handles authentication for autofill operations.
- * Presents biometric prompt or master password input before filling credentials.
- * 
- * Security Features:
- * - Biometric authentication (fingerprint, face)
- * - Master password fallback
- * - Session timeout
- * - Secure credential delivery
- */
+
 class AutofillAuthActivity : FragmentActivity() {
 
     companion object {
@@ -48,49 +37,68 @@ class AutofillAuthActivity : FragmentActivity() {
     private var credentialId: String? = null
     private var credentialIndex: Int = -1
 
+    private var decryptionService: AutofillDecryptionService? = null
+    private var isBound = false
+    private var credentialToDecrypt: AutofillCredential? = null
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            Log.d(TAG, "DEBUG_AUTOFILL: 📡 Decryption service connected")
+            val binder = service as AutofillDecryptionService.LocalBinder
+            decryptionService = binder.getService()
+            isBound = true
+            credentialToDecrypt?.let {
+                Log.d(TAG, "DEBUG_AUTOFILL: Service is now bound, performing deferred decryption request.")
+                performDecryptionRequest(it)
+                credentialToDecrypt = null // Clear after use
+            }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            Log.d(TAG, "DEBUG_AUTOFILL: 📡 Decryption service disconnected")
+            decryptionService = null
+            isBound = false
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        Log.d(TAG, "AutofillAuthActivity created")
+        Log.d(TAG, "DEBUG_AUTOFILL: AutofillAuthActivity created")
 
-        // Extract intent extras
         domain = intent.getStringExtra(EXTRA_DOMAIN)
         packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME)
         credentialCount = intent.getIntExtra(EXTRA_CREDENTIAL_COUNT, 0)
         credentialId = intent.getStringExtra("credentialId")
         credentialIndex = intent.getIntExtra("credentialIndex", -1)
 
-        Log.d(TAG, "Domain: $domain, Package: $packageName, Credentials: $credentialCount, CredentialId: $credentialId")
+        Log.d(TAG, "DEBUG_AUTOFILL: Domain: $domain, Package: $packageName, Credentials: $credentialCount, CredentialId: $credentialId")
 
-        // Check if biometric authentication is available
         val biometricManager = BiometricManager.from(this)
         when (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)) {
             BiometricManager.BIOMETRIC_SUCCESS -> {
-                Log.d(TAG, "Biometric authentication available")
+                Log.d(TAG, "DEBUG_AUTOFILL: Biometric authentication available")
                 setupBiometricAuthentication()
             }
             BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE -> {
-                Log.w(TAG, "No biometric hardware available")
+                Log.w(TAG, "DEBUG_AUTOFILL: No biometric hardware available")
                 showMasterPasswordPrompt()
             }
             BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> {
-                Log.w(TAG, "Biometric hardware unavailable")
+                Log.w(TAG, "DEBUG_AUTOFILL: Biometric hardware unavailable")
                 showMasterPasswordPrompt()
             }
             BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
-                Log.w(TAG, "No biometric credentials enrolled")
+                Log.w(TAG, "DEBUG_AUTOFILL: No biometric credentials enrolled")
                 showMasterPasswordPrompt()
             }
             else -> {
-                Log.w(TAG, "Biometric authentication not available")
+                Log.w(TAG, "DEBUG_AUTOFILL: Biometric authentication not available")
                 showMasterPasswordPrompt()
             }
         }
     }
 
-    /**
-     * Sets up biometric authentication
-     */
     private fun setupBiometricAuthentication() {
         executor = ContextCompat.getMainExecutor(this)
 
@@ -98,10 +106,9 @@ class AutofillAuthActivity : FragmentActivity() {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
-                    Log.e(TAG, "Authentication error: $errString")
+                    Log.e(TAG, "DEBUG_AUTOFILL: Authentication error: $errString")
                     
                     if (errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
-                        // User clicked "Use password" button
                         showMasterPasswordPrompt()
                     } else {
                         Toast.makeText(
@@ -115,7 +122,8 @@ class AutofillAuthActivity : FragmentActivity() {
 
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
-                    Log.d(TAG, "Authentication succeeded")
+                    Log.d(TAG, "DEBUG_AUTOFILL: ═══ BIOMETRIC AUTH SUCCEEDED ═══")
+                    Log.d(TAG, "DEBUG_AUTOFILL: ✅ User completed biometric authentication successfully")
                     
                     Toast.makeText(
                         applicationContext,
@@ -128,7 +136,7 @@ class AutofillAuthActivity : FragmentActivity() {
 
                 override fun onAuthenticationFailed() {
                     super.onAuthenticationFailed()
-                    Log.w(TAG, "Authentication failed")
+                    Log.w(TAG, "DEBUG_AUTOFILL: Authentication failed")
                     
                     Toast.makeText(
                         applicationContext,
@@ -145,18 +153,12 @@ class AutofillAuthActivity : FragmentActivity() {
             .setNegativeButtonText("Use master password")
             .build()
 
-        // Show biometric prompt
         biometricPrompt.authenticate(promptInfo)
     }
 
-    /**
-     * Shows master password prompt
-     */
     private fun showMasterPasswordPrompt() {
-        Log.d(TAG, "Showing master password prompt")
+        Log.d(TAG, "DEBUG_AUTOFILL: Showing master password prompt")
         
-        // TODO: Implement master password input dialog
-        // For now, just fail the authentication
         Toast.makeText(
             this,
             "Master password authentication not yet implemented",
@@ -166,14 +168,11 @@ class AutofillAuthActivity : FragmentActivity() {
         setResultAndFinish(RESULT_CANCELED)
     }
 
-    /**
-     * Handles successful authentication
-     */
     private fun handleAuthenticationSuccess() {
-        Log.d(TAG, "Handling authentication success")
+        AutofillLogger.logStep("Fetch credentials for domain")
+        Log.d(TAG, "DEBUG_AUTOFILL: Domain: $domain, Package: $packageName")
 
         try {
-            // Get credentials from data provider
             val dataProvider = AutofillDataProvider(this)
             val credentials = dataProvider.getCredentialsForDomain(
                 domain ?: "",
@@ -181,268 +180,192 @@ class AutofillAuthActivity : FragmentActivity() {
             )
 
             if (credentials.isEmpty()) {
-                Log.w(TAG, "No credentials found after authentication")
+                Log.w(TAG, "DEBUG_AUTOFILL: No credentials found after authentication")
                 Toast.makeText(this, "No credentials found", Toast.LENGTH_SHORT).show()
                 setResultAndFinish(RESULT_CANCELED)
                 return
             }
 
-            // If multiple credentials, show selection UI
             if (credentials.size > 1) {
+                Log.d(TAG, "DEBUG_AUTOFILL: 📋 Multiple credentials found (${credentials.size}) - showing selection")
                 showCredentialSelection(credentials)
             } else {
-                // Single credential, use it directly
+                Log.d(TAG, "DEBUG_AUTOFILL: ✅ Single credential found - using directly")
                 deliverCredential(credentials.first())
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error handling authentication success", e)
+            Log.e(TAG, "DEBUG_AUTOFILL: Error handling authentication success", e)
             Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
             setResultAndFinish(RESULT_CANCELED)
         }
     }
 
-
-
-    /**
-     * Shows credential selection UI
-     * 
-     * @param credentials List of credentials to choose from
-     */
     private fun showCredentialSelection(credentials: List<AutofillCredential>) {
-        Log.d(TAG, "Showing credential selection for ${credentials.size} credentials")
-
-        // TODO: Implement credential selection UI
-        // For now, just use the first credential
+        Log.d(TAG, "DEBUG_AUTOFILL: Showing credential selection for ${credentials.size} credentials")
         deliverCredential(credentials.first())
     }
 
-    /**
-     * Delivers the selected credential back to the autofill service
-     * Caches the credential and finishes activity to trigger autofill again
-     * 
-     * ⚠️ SECURITY NOTE: If password is encrypted (iv and tag present), it needs decryption
-     * before being filled into forms. The password must be decrypted through React Native
-     * using the master key or obtained from the app session.
-     * 
-     * 🔐 DECRYPTION FLOW:
-     * 1. After biometric auth succeeds here
-     * 2. Send broadcast to main app to request decryption
-     * 3. Main app calls React Native to decrypt and cache plaintext
-     * 4. Finish activity to trigger onFillRequest again
-     * 5. onFillRequest finds plaintext cache and fills without auth requirement
-     * 
-     * @param credential The credential to deliver
-     */
     private fun deliverCredential(credential: AutofillCredential) {
-        Log.d(TAG, "🔐 Delivering credential: ${credential.username}")
-        Log.d(TAG, "📦 Credential encrypted: ${credential.isEncrypted}")
-        Log.d(TAG, "🔑 Has IV: ${credential.iv.isNotEmpty()}, Has TAG: ${credential.tag.isNotEmpty()}")
+        AutofillLogger.logStep("Deliver credential to autofill service")
+        Log.d(TAG, "DEBUG_AUTOFILL: 📧 Username: ${credential.username}")
+        Log.d(TAG, "DEBUG_AUTOFILL: 📦 Credential encrypted: ${credential.isEncrypted}")
 
+        // If the password is not encrypted, proceed immediately.
+        if (!credential.isEncrypted || credential.iv.isEmpty() || credential.tag.isEmpty()) {
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Password is plaintext - proceeding directly.")
+            proceedWithCredential(credential)
+            return
+        }
+
+        // --- ASYNCHRONOUS DECRYPTION FLOW ---
+        Log.d(TAG, "DEBUG_AUTOFILL: 🔒 Password is encrypted - starting non-blocking decryption flow.")
+        
+        // 1. Request decryption from the service.
+        requestDecryptionViaService(credential)
+        
+        // 2. Start polling for the result without blocking the main thread.
+        Log.d(TAG, "DEBUG_AUTOFILL: ⏳ Starting non-blocking poll for decrypted password cache (max 10000ms)...")
+        pollForDecryptionResult(credential, System.currentTimeMillis())
+    }
+
+    private fun pollForDecryptionResult(credential: AutofillCredential, startTime: Long) {
+        val dataProvider = AutofillDataProvider(this)
+        val cachedPlaintext = dataProvider.getDecryptedPasswordForAutofill(credential.id)
+
+        if (cachedPlaintext != null) {
+            val elapsedTime = System.currentTimeMillis() - startTime
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ DECRYPTION COMPLETE - plaintext cached after ${elapsedTime}ms")
+            val decryptedCredential = credential.copy(password = cachedPlaintext, isEncrypted = false)
+            proceedWithCredential(decryptedCredential)
+            return
+        }
+
+        val elapsedTime = System.currentTimeMillis() - startTime
+        if (elapsedTime > 10000) {
+            Log.e(TAG, "DEBUG_AUTOFILL: ❌ DECRYPTION TIMEOUT - Waited 10s but plaintext was not cached.")
+            Toast.makeText(this, "Decryption timed out.", Toast.LENGTH_LONG).show()
+            setResultAndFinish(RESULT_CANCELED)
+            return
+        }
+
+        // Schedule the next check
+        Handler(Looper.getMainLooper()).postDelayed({
+            pollForDecryptionResult(credential, startTime)
+        }, 200) // Check every 200ms
+    }
+
+    private fun proceedWithCredential(credential: AutofillCredential) {
+        AutofillLogger.logStep("Cache plaintext credential in service")
+        
         try {
-            // Check if password needs decryption
-            if (credential.isEncrypted && credential.iv.isNotEmpty() && credential.tag.isNotEmpty()) {
-                Log.d(TAG, "🔒 Password is encrypted - requesting decryption from React Native")
-                Log.d(TAG, "📝 Encrypted password length: ${credential.password.length} chars")
-                
-                // 🔐 CRITICAL: Send broadcast to main app to decrypt and cache plaintext password
-                // The main app will call React Native to decrypt using the master key
-                requestDecryptionFromMainApp(credential)
-                
-                Log.d(TAG, "📡 Broadcast sent to main app for decryption")
-                Log.d(TAG, "⏳ Waiting for decryption to complete...")
-                
-                // IMPROVED WAIT: Give React Native time to decrypt and cache plaintext
-                // Using LONGER timeout (10 seconds) with polling to detect when cache is ready
-                val startTime = System.currentTimeMillis()
-                val maxWaitTime = 10000 // 10 seconds max - gives React Native plenty of time
-                var decrypted = false
-                var checkCount = 0
-                
-                Log.d(TAG, "⏳ Starting polling for decrypted password cache (max ${maxWaitTime}ms)...")
-                
-                while (System.currentTimeMillis() - startTime < maxWaitTime) {
-                    // Check if plaintext has been cached
-                    val dataProvider = AutofillDataProvider(this)
-                    val cachedPlaintext = dataProvider.getDecryptedPasswordForAutofill(credential.id)
-                    checkCount++
-                    
-                    if (cachedPlaintext != null) {
-                        val elapsedTime = System.currentTimeMillis() - startTime
-                        Log.d(TAG, "✅ DECRYPTION COMPLETE - plaintext cached after ${elapsedTime}ms (check #$checkCount)")
-                        Log.d(TAG, "✅ Cached plaintext length: ${cachedPlaintext.length} chars")
-                        decrypted = true
-                        break
-                    }
-                    
-                    // Only log every 5 checks to avoid log spam (every ~500ms)
-                    if (checkCount % 5 == 0) {
-                        val elapsed = System.currentTimeMillis() - startTime
-                        Log.d(TAG, "⏳ Still waiting for decryption... (${elapsed}ms elapsed, check #$checkCount)")
-                    }
-                    
-                    // Wait 100ms before checking again
-                    Thread.sleep(100)
-                }
-                
-                if (!decrypted) {
-                    val totalElapsed = System.currentTimeMillis() - startTime
-                    Log.e(TAG, "❌ DECRYPTION TIMEOUT - waited ${totalElapsed}ms (${checkCount} checks) but plaintext NOT cached!")
-                    Log.e(TAG, "❌ This is a CRITICAL ISSUE - React Native decryption did not complete")
-                    Log.e(TAG, "❌ Possible causes:")
-                    Log.e(TAG, "   1. React Native event listener not registered in useAutofillDecryption hook")
-                    Log.e(TAG, "   2. AutofillBridge.getInstance() returning null")
-                    Log.e(TAG, "   3. cryptoService.decrypt() taking too long")
-                    Log.e(TAG, "   4. App not in foreground during decryption")
-                    Log.e(TAG, "⚠️ Autofill will NOT work - encrypted password cannot be decrypted")
-                } else {
-                    Log.d(TAG, "✅ Proceeding with autofill using decrypted plaintext")
-                }
-            } else {
-                Log.d(TAG, "✅ Password is plaintext - ready for immediate autofill")
-            }
-
-            // Cache the authenticated credential in the service
-            // When autofill is requested again, the service will use this cached credential
-            // (either with plaintext if decrypted, or encrypted if couldn't decrypt)
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔐 User authenticated - caching credential")
+            Log.d(TAG, "DEBUG_AUTOFILL: 📦 Username: ${credential.username}")
+            
             PasswordEpicAutofillService.setAuthenticatedCredential(credential.id, credential)
-            Log.d(TAG, "✅ Credential cached in service: ${credential.id}")
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Cached: ${credential.id}")
             
-            // Set result for the activity
-            val resultIntent = Intent().apply {
-                putExtra("credential_id", credential.id)
-                putExtra("username", credential.username)
-                putExtra("domain", credential.domain)
-                putExtra("isEncrypted", credential.isEncrypted)
+            AutofillLogger.logStep("Trigger autofill refill via accessibility service")
+            Log.d(TAG, "DEBUG_AUTOFILL: 📡 Sending refill trigger broadcast...")
+            try {
+                val refillIntent = Intent(AutofillRefillAccessibilityService.ACTION_TRIGGER_REFILL)
+                refillIntent.putExtra("targetPackage", packageName)
+                refillIntent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
+                sendBroadcast(refillIntent)
+                Log.d(TAG, "DEBUG_AUTOFILL: ✅ Broadcast sent successfully")
+            } catch (e: Exception) {
+                Log.w(TAG, "DEBUG_AUTOFILL: ⚠️ Failed to send broadcast: ${e.message}")
             }
-            setResult(RESULT_OK, resultIntent)
             
-            Log.d(TAG, "✅ Finishing auth activity with RESULT_OK")
-            Log.d(TAG, "🔄 Broadcasting auth success to trigger refill...")
+            AutofillLogger.logStep("Complete auth - return to target app")
+            Log.d(TAG, "DEBUG_AUTOFILL: 📤 Returning RESULT_OK to framework")
+            setResult(RESULT_OK)
             
-            // 📡 Send broadcast to trigger refill via cached callback
-            // (Android framework may not auto-trigger onFillRequest again on all devices)
-            sendBroadcastRefillTrigger()
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Credential cached - finishing after 500ms to release focus")
+            Handler(Looper.getMainLooper()).postDelayed({
+                Log.d(TAG, "DEBUG_AUTOFILL: ⏳ Finishing auth activity")
+                finish()
+            }, 500)
             
-            // 🔄 Also call notifyAutofillToRefill for backup
-            notifyAutofillToRefill(credential)
-            
-            finish()
-
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error delivering credential", e)
+            Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error", e)
             setResultAndFinish(RESULT_CANCELED)
         }
     }
-    
-    /**
-     * 🔄 CRITICAL FIX: Delivers credentials immediately using stored callback
-     * 
-     * Android Autofill Framework limitation: FillCallback can only be called once per request.
-     * However, we can call it from the auth activity AFTER credential is cached!
-     * 
-     * Solution: Instead of waiting for user to re-focus field (which triggers 2nd request),
-     * we use the FIRST callback to deliver the cached credential immediately.
-     * 
-     * This makes autofill instant after biometric verification!
-     * 
-     * @param credential The authenticated credential to fill
-     */
-    private fun notifyAutofillToRefill(credential: AutofillCredential) {
-        try {
-            Log.d(TAG, "✅ Auth succeeded with RESULT_OK")
-            Log.d(TAG, "📋 Android will now automatically fill fields using values from dataset")
-            Log.d(TAG, "⏳ Fields should fill within 1-2 seconds...")
-            
-            // ⚠️ CRITICAL: Do NOT try to call callback or clear context!
-            // 
-            // Why? Android's autofill has this behavior:
-            // 1. When dataset has setAuthentication() and values set
-            // 2. Framework calls callback.onSuccess(response) with that dataset
-            // 3. User taps → auth activity launches
-            // 4. Biometric succeeds → return RESULT_OK
-            // 5. ✅ Android AUTOMATICALLY fills fields from dataset values
-            //
-            // If we try to call callback again → "Already called" error
-            // If we clear context → autofill stops working
-            //
-            // Solution: Just finish the activity, Android handles the rest!
-            
-            Log.d(TAG, "🎯 Credential authenticated and cached")
-            Log.d(TAG, "   ID: ${credential.id}")
-            Log.d(TAG, "   Username: ${credential.username}")
-            Log.d(TAG, "   Domain: ${credential.domain}")
-            
-            // 🚀 Just finish the activity with RESULT_OK
-            // The framework will auto-fill the fields using the dataset values
-            // that were set BEFORE setAuthentication() was called
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Unexpected error in notifyAutofillToRefill: ${e.message}", e)
-        }
-    }
 
-    /**
-     * 📡 Sends broadcast to trigger autofill refill after authentication succeeds
-     * This ensures fields are filled even if Android framework doesn't auto-trigger onFillRequest again
-     */
-    private fun sendBroadcastRefillTrigger() {
+    private fun requestDecryptionViaService(credential: AutofillCredential) {
         try {
-            Log.d(TAG, "┌──────────────────────────────────────────────────────────────")
-            Log.d(TAG, "📡 Sending autofill refill trigger broadcast...")
-            Log.d(TAG, "📡 Using LocalBroadcastManager (local, in-process only)")
-            
-            val refillIntent = Intent(AutofillAuthSuccessReceiver.ACTION_AUTH_SUCCEED)
-            Log.d(TAG, "📡 Intent action: ${refillIntent.action}")
-            
-            val result = LocalBroadcastManager.getInstance(this).sendBroadcast(refillIntent)
-            Log.d(TAG, "📡 Broadcast sent successfully")
-            Log.d(TAG, "📡 Action: com.passwordepic.mobile.AUTOFILL_AUTH_SUCCEED")
-            Log.d(TAG, "✅ LocalBroadcast sent to registered receivers in this process")
-            Log.d(TAG, "└──────────────────────────────────────────────────────────────")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error sending refill broadcast", e)
-            Log.e(TAG, "❌ Stack trace: ${e.stackTraceToString()}")
-            // Continue anyway - we also have notifyAutofillToRefill as backup
-        }
-    }
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔗 Requesting decryption via bound service...")
 
-    /**
-     * 🔐 Sends broadcast to main app requesting password decryption
-     * The main app (React Native) will decrypt the password and cache plaintext
-     * 
-     * @param credential The credential to decrypt
-     */
-    private fun requestDecryptionFromMainApp(credential: AutofillCredential) {
-        try {
-            Log.d(TAG, "📡 Sending decryption request broadcast...")
-            
-            val decryptIntent = Intent("com.passwordepic.mobile.DECRYPT_FOR_AUTOFILL").apply {
-                putExtra("credentialId", credential.id)
-                putExtra("encryptedPassword", credential.password)
-                putExtra("iv", credential.iv)
-                putExtra("tag", credential.tag)
-                putExtra("salt", credential.salt)
-                putExtra("username", credential.username)
-                putExtra("domain", credential.domain)
+            if (!isBound || decryptionService == null) {
+                Log.w(TAG, "DEBUG_AUTOFILL: ⚠️ Service not bound yet, binding now...")
+                credentialToDecrypt = credential
+                bindToDecryptionService()
+                return
             }
-            
-            // 🔴 FIX: Send via GLOBAL broadcast (not LocalBroadcastManager)
-            // because AutofillDecryptionReceiver is registered in AndroidManifest.xml
-            // Manifest receivers ONLY catch global broadcasts, not local ones!
-            sendBroadcast(decryptIntent)
-            Log.d(TAG, "📡 Broadcast sent GLOBALLY: DECRYPT_FOR_AUTOFILL")
+
+            performDecryptionRequest(credential)
+
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error sending decryption broadcast", e)
-            // Continue anyway - encryption might not be necessary for this case
+            Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error requesting decryption via service", e)
         }
     }
 
-    /**
-     * Sets result and finishes activity
-     * 
-     * @param resultCode The result code
-     */
+    private fun performDecryptionRequest(credential: AutofillCredential) {
+        try {
+            val service = decryptionService
+            if (service == null) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Decryption service is null")
+                return
+            }
+
+            Log.d(TAG, "DEBUG_AUTOFILL: 📤 Sending decryption request to service...")
+            service.requestDecryption(
+                credentialId = credential.id,
+                encryptedPassword = credential.password,
+                iv = credential.iv,
+                tag = credential.tag,
+                salt = credential.salt,
+                username = credential.username,
+                domain = credential.domain,
+                callback = object : AutofillDecryptionService.DecryptionCallback {
+                    override fun onDecryptionRequested() {
+                        Log.d(TAG, "DEBUG_AUTOFILL: ✅ Decryption request sent successfully to service.")
+                    }
+
+                    override fun onDecryptionFailed(error: String) {
+                        Log.e(TAG, "DEBUG_AUTOFILL: ❌ Decryption request failed via callback: $error")
+                    }
+                }
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error performing decryption request", e)
+        }
+    }
+
+    private fun bindToDecryptionService() {
+        try {
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔗 Binding to AutofillDecryptionService...")
+            val intent = Intent(this, AutofillDecryptionService::class.java)
+            bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+            Log.d(TAG, "DEBUG_AUTOFILL: 📡 Service binding initiated")
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error binding to decryption service", e)
+        }
+    }
+
+    private fun unbindFromDecryptionService() {
+        try {
+            if (isBound) {
+                unbindService(serviceConnection)
+                isBound = false
+                Log.d(TAG, "DEBUG_AUTOFILL: ✅ Unbound from decryption service")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error unbinding from decryption service", e)
+        }
+    }
+
     private fun setResultAndFinish(resultCode: Int) {
         setResult(resultCode)
         finish()
@@ -450,7 +373,7 @@ class AutofillAuthActivity : FragmentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "AutofillAuthActivity destroyed")
-        // Global broadcast receiver (GlobalAutofillRefillReceiver) will handle refill
+        Log.d(TAG, "DEBUG_AUTOFILL: AutofillAuthActivity destroyed")
+        unbindFromDecryptionService()
     }
 }

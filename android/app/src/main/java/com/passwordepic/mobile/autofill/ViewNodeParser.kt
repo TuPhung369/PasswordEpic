@@ -58,10 +58,17 @@ class ViewNodeParser {
             parseViewNode(rootNode, fields)
         }
 
-        // If no domain found from web view, use package name
+        // If no domain found from web view, use package name only for native apps
         if (domain.isNullOrEmpty() && !packageName.isNullOrEmpty()) {
-            domain = packageName
-            Log.d(TAG, "Using package name as domain: $domain")
+            // Don't use browser package names as domain!
+            // For browsers, we should fail gracefully instead of using "com.android.chrome"
+            if (!AutofillHelper.isBrowserPackage(packageName)) {
+                domain = packageName
+                Log.d(TAG, "Using package name as domain (native app): $domain")
+            } else {
+                Log.w(TAG, "⚠️ Browser package but no domain extracted - autofill may not work: $packageName")
+                domain = packageName  // Use it anyway as fallback, but log warning
+            }
         }
 
         Log.d(TAG, "Parsing complete. Found ${fields.size} autofillable fields")
@@ -212,8 +219,13 @@ class ViewNodeParser {
      * @return Domain string or null
      */
     private fun extractDomainFromNode(node: AssistStructure.ViewNode): String? {
+        Log.d(TAG, "🔍 Attempting to extract domain from node...")
+        Log.d(TAG, "   webDomain: '${node.webDomain}'")
+        Log.d(TAG, "   webScheme: '${node.webScheme}'")
+        
         // Check web domain first
         node.webDomain?.let { webDomain ->
+            Log.d(TAG, "   Trying webDomain: '$webDomain'")
             val domain = AutofillHelper.extractDomain(webDomain)
             if (domain != null) {
                 Log.d(TAG, "✅ Extracted domain from webDomain: $domain")
@@ -224,6 +236,7 @@ class ViewNodeParser {
         // Check web scheme + domain (build URL)
         if (node.webScheme != null && node.webDomain != null) {
             val url = "${node.webScheme}://${node.webDomain}"
+            Log.d(TAG, "   Trying webScheme+webDomain URL: '$url'")
             val domain = AutofillHelper.extractDomain(url)
             if (domain != null) {
                 Log.d(TAG, "✅ Extracted domain from webScheme+webDomain: $domain")
@@ -231,10 +244,35 @@ class ViewNodeParser {
             }
         }
 
+        // Try HTML form action/data attributes EARLY (before text content)
+        // These often contain the actual destination domain
+        Log.d(TAG, "   Checking HTML attributes for action/data URLs...")
+        node.htmlInfo?.attributes?.forEach { attr ->
+            if (attr != null) {
+                @Suppress("UNCHECKED_CAST")
+                val pair = attr as? Pair<String?, String?>
+                if (pair != null) {
+                    val attrName = pair.first?.toString()?.lowercase() ?: ""
+                    val attrValue = pair.second?.toString() ?: ""
+                    
+                    // Check action, data, href attributes that might contain URLs
+                    if (attrName in listOf("action", "data", "href", "formaction")) {
+                        Log.d(TAG, "   Found HTML $attrName='$attrValue'")
+                        val domain = AutofillHelper.extractDomain(attrValue)
+                        if (domain != null && domain != "localhost" && !domain.startsWith("file:")) {
+                            Log.d(TAG, "✅ Extracted domain from HTML $attrName: $domain")
+                            return domain
+                        }
+                    }
+                }
+            }
+        }
+
         // Fallback: Try to extract domain from text content or hints
         // Chrome sometimes puts URL in accessibility text
         val text = node.text?.toString()
         if (!text.isNullOrEmpty()) {
+            Log.d(TAG, "   Trying node text: '$text'")
             val domain = AutofillHelper.extractDomain(text)
             if (domain != null) {
                 Log.d(TAG, "✅ Extracted domain from node text: $domain")
@@ -245,30 +283,11 @@ class ViewNodeParser {
         // Try hint text
         val hint = node.hint
         if (!hint.isNullOrEmpty()) {
+            Log.d(TAG, "   Trying node hint: '$hint'")
             val domain = AutofillHelper.extractDomain(hint)
             if (domain != null) {
                 Log.d(TAG, "✅ Extracted domain from node hint: $domain")
                 return domain
-            }
-        }
-
-        // Try HTML attributes for web forms
-        // htmlInfo.attributes is a List of Pair<String, String>
-        node.htmlInfo?.attributes?.forEach { attr ->
-            if (attr != null) {
-                @Suppress("UNCHECKED_CAST")
-                val pair = attr as? Pair<String?, String?>
-                if (pair != null) {
-                    val attrName = pair.first?.toString()?.lowercase() ?: ""
-                    val attrValue = pair.second?.toString() ?: ""
-                    if (attrName == "action" || attrName == "data") {
-                        val domain = AutofillHelper.extractDomain(attrValue)
-                        if (domain != null) {
-                            Log.d(TAG, "✅ Extracted domain from HTML $attrName: $domain")
-                            return domain
-                        }
-                    }
-                }
             }
         }
 
@@ -280,7 +299,7 @@ class ViewNodeParser {
             }
         }
 
-        Log.d(TAG, "⚠️ Could not extract domain from node")
+        Log.d(TAG, "⚠️ Could not extract domain from node - will use package name as fallback")
         return null
     }
 

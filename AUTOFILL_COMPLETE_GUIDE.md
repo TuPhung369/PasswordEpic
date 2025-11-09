@@ -329,6 +329,8 @@ private const val DEBUG_MODE = false
 ## 📞 Android Log Search Commands
 
 ```powershell
+Get-Content 'E:\IT\Mobile\PasswordEpic\autofill_refill_fix_v2.log' | Select-String 'DEBUG_AUTOFILL'
+
 # Find all DEBUG logs
 adb logcat | findstr /I "DEBUG"
 

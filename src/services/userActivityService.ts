@@ -167,10 +167,10 @@ export class UserActivityService {
         // Notify callbacks
         this.notifyCallbacks();
 
-        console.log(
-          '🎯 User interaction recorded:',
-          new Date(now).toLocaleTimeString(),
-        );
+        // console.log(
+        //   '🎯 User interaction recorded:',
+        //   new Date(now).toLocaleTimeString(),
+        // );
       } catch (error) {
         console.error('Failed to record user interaction:', error);
       }
@@ -281,13 +281,13 @@ export class UserActivityService {
         const previousState = this.lastAppState;
         this.lastAppState = nextAppState;
 
-        console.log(`🎯 App state changed: ${previousState} → ${nextAppState}`);
+        // console.log(`🎯 App state changed: ${previousState} → ${nextAppState}`);
 
         // Track if app is in foreground
         this.isAppInForeground = nextAppState === 'active';
 
         if (nextAppState === 'active' && previousState !== 'active') {
-          console.log('🎯 App became active from background');
+          // console.log('🎯 App became active from background');
 
           // Check if we should auto-lock based on time spent in background
           const now = Date.now();
@@ -295,23 +295,23 @@ export class UserActivityService {
           const timeoutMs = this.config.inactivityTimeout * 60 * 1000;
 
           if (timeSinceLastInteraction >= timeoutMs) {
-            console.log(
-              `🎯 App was in background for ${Math.round(
-                timeSinceLastInteraction / 1000,
-              )}s, triggering auto-lock`,
-            );
+            // console.log(
+            //   `🎯 App was in background for ${Math.round(
+            //     timeSinceLastInteraction / 1000,
+            //   )}s, triggering auto-lock`,
+            // );
             this.triggerAutoLock();
           } else {
-            console.log(
-              `🎯 App was in background for ${Math.round(
-                timeSinceLastInteraction / 1000,
-              )}s, no auto-lock needed`,
-            );
+            // console.log(
+            //   `🎯 App was in background for ${Math.round(
+            //     timeSinceLastInteraction / 1000,
+            //   )}s, no auto-lock needed`,
+            // );
             // Restart timer for remaining time
             this.startInactivityTimer();
           }
         } else if (nextAppState !== 'active') {
-          console.log('🎯 App went to background, pausing inactivity timer');
+          // console.log('🎯 App went to background, pausing inactivity timer');
           // Don't clear the timer, just let it continue
           // This way if user is away for too long, they'll be locked when returning
         }
@@ -326,9 +326,9 @@ export class UserActivityService {
 
     const timeoutMs = this.config.inactivityTimeout * 60 * 1000;
 
-    console.log(
-      `🎯 Starting inactivity timer: ${this.config.inactivityTimeout} minutes`,
-    );
+    // console.log(
+    //   `🎯 Starting inactivity timer: ${this.config.inactivityTimeout} minutes`,
+    // );
 
     this.inactivityTimer = setTimeout(() => {
       // Only trigger auto-lock if app is in foreground

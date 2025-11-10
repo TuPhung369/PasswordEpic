@@ -144,7 +144,7 @@ export class SessionService {
 
       // Restart timer if extend on activity is enabled
       if (this.config.extendOnActivity) {
-        console.log('🔐 Session extended due to user activity');
+        // console.log('🔐 Session extended due to user activity');
         this.startTimer();
       }
     } catch (error) {

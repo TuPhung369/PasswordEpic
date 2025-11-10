@@ -45,8 +45,8 @@ describe('SessionManager', () => {
     );
 
     // Reset sessionManager's internal state
-    sessionManager['appStateSubscription'] = null;
-    sessionManager['lastActiveTime'] = Date.now();
+    sessionManager.appStateSubscription = null;
+    sessionManager.lastActiveTime = Date.now();
 
     // Clear console mocks
     jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -68,7 +68,7 @@ describe('SessionManager', () => {
         'change',
         expect.any(Function),
       );
-      expect(sessionManager['appStateSubscription']).toBe(mockSubscription);
+      expect(sessionManager.appStateSubscription).toBe(mockSubscription);
     });
 
     test('should set lastActiveTime to current time', () => {
@@ -76,7 +76,7 @@ describe('SessionManager', () => {
       sessionManager.init();
       const afterTime = Date.now();
 
-      const storedTime = sessionManager['lastActiveTime'];
+      const storedTime = sessionManager.lastActiveTime;
       expect(storedTime).toBeGreaterThanOrEqual(beforeTime);
       expect(storedTime).toBeLessThanOrEqual(afterTime);
     });
@@ -96,13 +96,13 @@ describe('SessionManager', () => {
     });
 
     test('should handle cleanup when no subscription exists', () => {
-      sessionManager['appStateSubscription'] = null;
+      sessionManager.appStateSubscription = null;
       expect(() => sessionManager.cleanup()).not.toThrow();
     });
 
     test('should clear subscription reference after cleanup', () => {
       sessionManager.init();
-      expect(sessionManager['appStateSubscription']).toBeTruthy();
+      expect(sessionManager.appStateSubscription).toBeTruthy();
       sessionManager.cleanup();
       // The subscription should still exist (we don't set to null in cleanup)
       // but it should have been removed
@@ -119,7 +119,7 @@ describe('SessionManager', () => {
     describe('when app becomes active', () => {
       test('should not clear session if app was active for less than timeout', () => {
         const TIMEOUT = 5 * 60 * 1000; // 5 minutes
-        sessionManager['lastActiveTime'] = Date.now();
+        sessionManager.lastActiveTime = Date.now();
 
         // Advance time by 2 minutes (less than timeout)
         jest.advanceTimersByTime(2 * 60 * 1000);
@@ -133,7 +133,7 @@ describe('SessionManager', () => {
 
       test('should clear session if app was inactive for more than timeout', () => {
         const TIMEOUT = 5 * 60 * 1000; // 5 minutes
-        sessionManager['lastActiveTime'] = Date.now();
+        sessionManager.lastActiveTime = Date.now();
 
         // Advance time by 6 minutes (more than timeout)
         jest.advanceTimersByTime(6 * 60 * 1000);
@@ -147,7 +147,7 @@ describe('SessionManager', () => {
 
       test('should clear session if app was inactive for exactly timeout duration', () => {
         const TIMEOUT = 5 * 60 * 1000; // 5 minutes
-        sessionManager['lastActiveTime'] = Date.now();
+        sessionManager.lastActiveTime = Date.now();
 
         // Advance time by exactly timeout + 1ms
         jest.advanceTimersByTime(TIMEOUT + 1);
@@ -161,7 +161,7 @@ describe('SessionManager', () => {
 
       test('should update lastActiveTime when app becomes active', () => {
         const initialTime = Date.now();
-        sessionManager['lastActiveTime'] = initialTime;
+        sessionManager.lastActiveTime = initialTime;
 
         jest.advanceTimersByTime(1000);
 
@@ -169,12 +169,12 @@ describe('SessionManager', () => {
           mockAppStateListener('active');
         }
 
-        expect(sessionManager['lastActiveTime']).toBeGreaterThan(initialTime);
+        expect(sessionManager.lastActiveTime).toBeGreaterThan(initialTime);
       });
 
       test('should log message when clearing session due to inactivity', () => {
         const consoleSpy = jest.spyOn(console, 'log');
-        sessionManager['lastActiveTime'] = Date.now();
+        sessionManager.lastActiveTime = Date.now();
 
         jest.advanceTimersByTime(6 * 60 * 1000);
 
@@ -190,7 +190,7 @@ describe('SessionManager', () => {
 
     describe('when app goes to background', () => {
       test('should not clear session immediately on background', () => {
-        sessionManager['lastActiveTime'] = Date.now();
+        sessionManager.lastActiveTime = Date.now();
 
         if (mockAppStateListener) {
           mockAppStateListener('background');
@@ -201,7 +201,7 @@ describe('SessionManager', () => {
 
       test('should update lastActiveTime on background', () => {
         const initialTime = Date.now();
-        sessionManager['lastActiveTime'] = initialTime;
+        sessionManager.lastActiveTime = initialTime;
 
         jest.advanceTimersByTime(1000);
 
@@ -209,12 +209,12 @@ describe('SessionManager', () => {
           mockAppStateListener('background');
         }
 
-        expect(sessionManager['lastActiveTime']).toBeGreaterThan(initialTime);
+        expect(sessionManager.lastActiveTime).toBeGreaterThan(initialTime);
       });
 
       test('should log background message', () => {
         const consoleSpy = jest.spyOn(console, 'log');
-        sessionManager['lastActiveTime'] = Date.now();
+        sessionManager.lastActiveTime = Date.now();
 
         if (mockAppStateListener) {
           mockAppStateListener('background');
@@ -228,7 +228,7 @@ describe('SessionManager', () => {
 
     describe('when app becomes inactive', () => {
       test('should not clear session immediately on inactive', () => {
-        sessionManager['lastActiveTime'] = Date.now();
+        sessionManager.lastActiveTime = Date.now();
 
         if (mockAppStateListener) {
           mockAppStateListener('inactive');
@@ -239,7 +239,7 @@ describe('SessionManager', () => {
 
       test('should update lastActiveTime on inactive', () => {
         const initialTime = Date.now();
-        sessionManager['lastActiveTime'] = initialTime;
+        sessionManager.lastActiveTime = initialTime;
 
         jest.advanceTimersByTime(1000);
 
@@ -247,7 +247,7 @@ describe('SessionManager', () => {
           mockAppStateListener('inactive');
         }
 
-        expect(sessionManager['lastActiveTime']).toBeGreaterThan(initialTime);
+        expect(sessionManager.lastActiveTime).toBeGreaterThan(initialTime);
       });
     });
 
@@ -264,14 +264,14 @@ describe('SessionManager', () => {
 
   describe('clearSensitiveData()', () => {
     test('should call sessionCache.clear()', () => {
-      sessionManager['clearSensitiveData']();
+      sessionManager.clearSensitiveData();
 
       expect(sessionCacheModule.sessionCache.clear).toHaveBeenCalled();
     });
 
     test('should clear session cache exactly once per call', () => {
-      sessionManager['clearSensitiveData']();
-      sessionManager['clearSensitiveData']();
+      sessionManager.clearSensitiveData();
+      sessionManager.clearSensitiveData();
 
       expect(sessionCacheModule.sessionCache.clear).toHaveBeenCalledTimes(2);
     });
@@ -311,7 +311,7 @@ describe('SessionManager', () => {
     });
 
     test('should return false if session is not expired', () => {
-      sessionManager['lastActiveTime'] = Date.now();
+      sessionManager.lastActiveTime = Date.now();
       jest.advanceTimersByTime(2 * 60 * 1000); // 2 minutes
 
       const isExpired = sessionManager.isSessionExpired();
@@ -320,7 +320,7 @@ describe('SessionManager', () => {
     });
 
     test('should return true if session is expired', () => {
-      sessionManager['lastActiveTime'] = Date.now();
+      sessionManager.lastActiveTime = Date.now();
       jest.advanceTimersByTime(6 * 60 * 1000); // 6 minutes (exceeds 5 min timeout)
 
       const isExpired = sessionManager.isSessionExpired();
@@ -330,7 +330,7 @@ describe('SessionManager', () => {
 
     test('should return true at exact timeout boundary', () => {
       const TIMEOUT = 5 * 60 * 1000;
-      sessionManager['lastActiveTime'] = Date.now();
+      sessionManager.lastActiveTime = Date.now();
       jest.advanceTimersByTime(TIMEOUT + 1);
 
       const isExpired = sessionManager.isSessionExpired();
@@ -340,7 +340,7 @@ describe('SessionManager', () => {
 
     test('should return false just before timeout', () => {
       const TIMEOUT = 5 * 60 * 1000;
-      sessionManager['lastActiveTime'] = Date.now();
+      sessionManager.lastActiveTime = Date.now();
       jest.advanceTimersByTime(TIMEOUT - 1);
 
       const isExpired = sessionManager.isSessionExpired();
@@ -349,7 +349,7 @@ describe('SessionManager', () => {
     });
 
     test('should correctly track expiration after multiple state changes', () => {
-      sessionManager['lastActiveTime'] = Date.now();
+      sessionManager.lastActiveTime = Date.now();
       jest.advanceTimersByTime(2 * 60 * 1000);
       expect(sessionManager.isSessionExpired()).toBe(false);
 
@@ -432,7 +432,7 @@ describe('SessionManager', () => {
   describe('Timeout constant', () => {
     test('should use 5-minute timeout constant', () => {
       const EXPECTED_TIMEOUT = 5 * 60 * 1000; // 5 minutes in milliseconds
-      expect(sessionManager['INACTIVE_TIMEOUT']).toBe(EXPECTED_TIMEOUT);
+      expect(sessionManager.INACTIVE_TIMEOUT).toBe(EXPECTED_TIMEOUT);
     });
   });
 });

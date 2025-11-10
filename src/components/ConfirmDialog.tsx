@@ -53,17 +53,20 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             )}
 
             <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={[styles.button, styles.cancelButton]}
-                onPress={onCancel}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelButtonText}>{cancelText}</Text>
-              </TouchableOpacity>
+              {cancelText && (
+                <TouchableOpacity
+                  style={[styles.button, styles.cancelButton]}
+                  onPress={onCancel}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.cancelButtonText}>{cancelText}</Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity
                 style={[
                   styles.button,
+                  !cancelText && styles.fullWidthButton,
                   confirmStyle === 'destructive'
                     ? styles.destructiveButton
                     : styles.confirmButton,
@@ -142,6 +145,9 @@ const createStyles = (theme: any) =>
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    fullWidthButton: {
+      flex: 1,
     },
     cancelButton: {
       backgroundColor: theme.surface,

@@ -10,12 +10,11 @@ const KEYCHAIN_SERVICE = 'PasswordEpic';
 // Get keychain options - lazy load to ensure mocks are ready
 const getKeychainOptions = () => {
   const accessControl =
-    Keychain.ACCESS_CONTROL?.BIOMETRY_CURRENT_SET_OR_DEVICE_PASSCODE ||
-    'BiometryCurrentSetOrDevicePasscode';
+    Keychain.ACCESS_CONTROL?.BIOMETRY_CURRENT_SET_OR_DEVICE_PASSCODE;
 
   return {
     service: KEYCHAIN_SERVICE,
-    accessControl: accessControl,
+    accessControl: accessControl as any,
     authenticatePrompt: 'Authenticate to access your passwords',
     accessGroup:
       Platform.OS === 'ios' ? 'group.passwordepic.keychain' : undefined,
@@ -60,8 +59,7 @@ export const storeMasterPassword = async (
       const baseOptions = getKeychainOptions();
       const keychainOptions = {
         ...baseOptions,
-        accessControl:
-          Keychain.ACCESS_CONTROL?.BIOMETRY_CURRENT_SET || 'BiometryCurrentSet',
+        accessControl: Keychain.ACCESS_CONTROL?.BIOMETRY_CURRENT_SET as any,
       };
 
       await Keychain.setInternetCredentials(

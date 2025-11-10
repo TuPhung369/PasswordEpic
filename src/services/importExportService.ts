@@ -1,5 +1,5 @@
 import { PasswordEntry, CustomField } from '../types/password';
-import { Platform, PermissionsAndroid } from 'react-native';
+import { Platform } from 'react-native';
 import RNFS from 'react-native-fs';
 import CryptoJS from 'crypto-js';
 import { getEffectiveMasterPassword } from './staticMasterPasswordService';
@@ -8,78 +8,8 @@ import {
   EncryptedDatabaseService,
 } from './encryptedDatabaseService';
 import { getCurrentUser } from './firebase';
-import { getAuth } from 'firebase/auth';
 import { decryptData, deriveKeyFromPassword } from './cryptoService';
-
-// Permission helper
-const requestStoragePermission = async (): Promise<boolean> => {
-  if (Platform.OS === 'android') {
-    try {
-      // Check current permissions first
-      const readPermission = await PermissionsAndroid.check(
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-      );
-      const writePermission = await PermissionsAndroid.check(
-        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-      );
-
-      console.log('Current permissions:', { readPermission, writePermission });
-
-      if (readPermission && writePermission) {
-        return true;
-      }
-
-      // Request both permissions
-      const results = await PermissionsAndroid.requestMultiple([
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-      ]);
-
-      console.log('Permission results:', results);
-
-      const granted =
-        results[PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE] ===
-          PermissionsAndroid.RESULTS.GRANTED &&
-        results[PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE] ===
-          PermissionsAndroid.RESULTS.GRANTED;
-
-      console.log('Permissions granted:', granted);
-      return granted;
-    } catch (err) {
-      console.warn('Permission request failed:', err);
-      return false;
-    }
-  }
-  return true; // iOS doesn't need explicit permission for Documents directory
-};
-
-// Test write permission helper
-const testWritePermission = async (path: string): Promise<boolean> => {
-  try {
-    const testFile = `${path}/test_write.tmp`;
-    await RNFS.writeFile(testFile, 'test', 'utf8');
-    await RNFS.unlink(testFile);
-    return true;
-  } catch (error) {
-    console.warn('Write test failed:', error);
-    return false;
-  }
-};
-
-// Encryption helpers
-const encryptPassword = (password: string, encryptionKey: string): string => {
-  try {
-    const encrypted = CryptoJS.AES.encrypt(password, encryptionKey).toString();
-    console.log('🔐 [Encrypt] Successfully encrypted password');
-    return encrypted;
-  } catch (error) {
-    console.warn(
-      '⚠️ [Encrypt] Encryption attempt failed, using original value:',
-      error.message,
-    );
-    return password; // Fallback to original if encryption fails
-  }
-};
+import FilePicker from '../modules/FilePicker';
 
 // Test if encryption key is correct by trying to decrypt/encrypt a test string
 const validateEncryptionKey = (encryptionKey: string): boolean => {
@@ -102,36 +32,6 @@ const validateEncryptionKey = (encryptionKey: string): boolean => {
   } catch (error) {
     console.log('🔍 [Validation] Key validation check failed:', error.message);
     return false;
-  }
-};
-
-// Generate static export/import encryption key (without timestamp)
-const generateExportImportKey = async (): Promise<string | null> => {
-  try {
-    const auth = getAuth();
-    const currentUser = auth.currentUser;
-
-    if (!currentUser) {
-      console.warn('🔍 [ExportImportKey] No authenticated user found');
-      return null;
-    }
-
-    // Static pattern: UID + email (no timestamp for consistency across sessions)
-    const staticKey = `${currentUser.uid}::${currentUser.email || 'anonymous'}`;
-
-    // console.log('🔑 [ExportImportKey] Generated static key:', {
-    //   pattern: 'UID::email',
-    //   keyPreview: staticKey.substring(0, 30) + '...',
-    //   length: staticKey.length,
-    // });
-
-    return staticKey;
-  } catch (error) {
-    console.error(
-      '❌ [ExportImportKey] Failed to generate export/import key:',
-      error,
-    );
-    return null;
   }
 };
 
@@ -672,6 +572,7 @@ export interface ExportOptions {
   tags?: string[];
   encryptionPassword?: string;
   fileName?: string;
+  destinationFolder?: string;
 }
 
 export interface ImportResult {
@@ -922,15 +823,7 @@ class ImportExportService {
         );
 
         try {
-          const dbService = EncryptedDatabaseService.getInstance();
-
           console.log('📦 [Import] Using optimized storage format');
-
-          // Get the master password for decrypting exported entries
-          const masterPasswordResult = await getEffectiveMasterPassword();
-          const masterPassword = masterPasswordResult.success
-            ? masterPasswordResult.password
-            : null;
 
           for (let i = 0; i < processedEntries.length; i++) {
             const entry = processedEntries[i];
@@ -1992,48 +1885,53 @@ class ImportExportService {
   private async saveExportFile(
     content: string,
     fileName: string,
-    _options: ExportOptions,
+    options: ExportOptions,
   ): Promise<string> {
     let downloadPath: string;
 
-    if (Platform.OS === 'android') {
-      // Check permissions first
-      const hasPermission = await requestStoragePermission();
-
-      // Try different storage paths in order of preference
-      const storagePaths = [
-        { path: RNFS.DownloadDirectoryPath, name: 'Downloads' },
-        {
-          path: RNFS.ExternalStorageDirectoryPath + '/Download',
-          name: 'External/Download',
-        },
-        { path: RNFS.ExternalDirectoryPath, name: 'External Directory' },
-        { path: RNFS.DocumentDirectoryPath, name: 'Documents (Internal)' },
-      ];
-
-      downloadPath = RNFS.DocumentDirectoryPath; // default fallback
+    // Use custom destination folder if provided
+    if (options.destinationFolder) {
+      const customFolder = options.destinationFolder;
       console.log(
-        'Available storage paths:',
-        storagePaths.map(p => `${p.name}: ${p.path}`),
+        `📁 Using custom destination folder: ${customFolder}`,
       );
 
-      if (hasPermission) {
-        console.log('Storage permission granted, testing paths...');
-        for (const { path, name } of storagePaths) {
-          console.log(`Testing write permission for ${name}: ${path}`);
-          if (await testWritePermission(path)) {
-            downloadPath = path;
-            console.log(
-              `✅ Successfully selected storage path: ${name} (${path})`,
+      try {
+        if (Platform.OS === 'android' && customFolder.startsWith('content://')) {
+          console.log(`🎯 Using DocumentProvider URI for write`);
+          console.log(`📋 Folder URI: ${customFolder}`);
+          console.log(`📝 File name: ${fileName}`);
+          console.log(`📊 Content size: ${content.length} bytes`);
+          
+          try {
+            const result = await FilePicker.writeToFolder(
+              customFolder,
+              fileName,
+              content,
             );
-            break;
-          } else {
-            console.log(`❌ Cannot write to ${name}: ${path}`);
+            console.log(`✅ Successfully wrote to custom folder: ${result}`);
+            return result;
+          } catch (writeError: any) {
+            console.warn('⚠️ Custom folder write failed, falling back to internal storage');
+            console.warn(`Reason: ${writeError?.message || writeError}`);
+            console.debug(`Full error: ${JSON.stringify(writeError)}`);
+            
+            downloadPath = RNFS.DocumentDirectoryPath;
           }
+        } else {
+          downloadPath = customFolder;
         }
-      } else {
-        console.warn('Storage permission denied, using internal storage');
+      } catch (uriError) {
+        console.error('Failed to write using URI:', uriError);
+        console.warn('⚠️ Custom folder access failed. Falling back to internal storage...');
+        downloadPath = RNFS.DocumentDirectoryPath;
       }
+    } else if (Platform.OS === 'android') {
+      // Use app-specific directory (no special permissions required)
+      downloadPath = RNFS.ExternalDirectoryPath;
+      console.log(
+        `✅ Using app-specific directory for backups: ${downloadPath}`,
+      );
     } else {
       downloadPath = RNFS.DocumentDirectoryPath;
     }
@@ -2051,67 +1949,11 @@ class ImportExportService {
 
       console.log(`Attempting to write export to: ${filePath}`);
       await RNFS.writeFile(filePath, content, 'utf8');
-      console.log(`Successfully wrote export to: ${filePath}`);
-
-      // If saved to internal storage, try to copy to external accessible location
-      if (
-        downloadPath === RNFS.DocumentDirectoryPath &&
-        Platform.OS === 'android'
-      ) {
-        try {
-          const accessiblePath = `/sdcard/Download/${fileName}`;
-
-          // Check if file exists in accessible location and delete it
-          const accessibleFileExists = await RNFS.exists(accessiblePath);
-          if (accessibleFileExists) {
-            console.log(
-              `Accessible file already exists, deleting: ${accessiblePath}`,
-            );
-            await RNFS.unlink(accessiblePath);
-            console.log(
-              `Successfully deleted old accessible file: ${accessiblePath}`,
-            );
-          }
-
-          await RNFS.copyFile(filePath, accessiblePath);
-          console.log(
-            `File also copied to accessible location: ${accessiblePath}`,
-          );
-          return accessiblePath; // Return the accessible path
-        } catch (copyError) {
-          console.warn('Could not copy to accessible location:', copyError);
-          // Return original path if copy fails
-        }
-      }
+      console.log(`✅ Successfully wrote export to: ${filePath}`);
 
       return filePath;
     } catch (error) {
       console.error('Write failed:', error);
-      // If external storage fails, try internal storage as fallback
-      if (
-        Platform.OS === 'android' &&
-        downloadPath === RNFS.DownloadDirectoryPath
-      ) {
-        console.warn(
-          'Failed to write to external storage, trying internal storage',
-        );
-        const fallbackPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
-
-        // Check if fallback file exists and delete it
-        const fallbackFileExists = await RNFS.exists(fallbackPath);
-        if (fallbackFileExists) {
-          console.log(
-            `Fallback file already exists, deleting: ${fallbackPath}`,
-          );
-          await RNFS.unlink(fallbackPath);
-          console.log(
-            `Successfully deleted old fallback file: ${fallbackPath}`,
-          );
-        }
-
-        await RNFS.writeFile(fallbackPath, content, 'utf8');
-        return fallbackPath;
-      }
       throw error;
     }
   }

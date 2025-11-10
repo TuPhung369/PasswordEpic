@@ -357,7 +357,13 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
   };
 
   const isFormValid = (): boolean => {
-    return !!(formData.title && formData.title.trim().length > 0);
+    const hasTitle = !!(formData.title && formData.title.trim().length > 0);
+    const hasPassword = !!(formData.password && formData.password.trim().length > 0);
+    const hasUsernameOrEmail = !!(
+      (formData.username && formData.username.trim().length > 0) ||
+      (formData.website && formData.website.trim().length > 0)
+    );
+    return hasTitle && hasPassword && hasUsernameOrEmail;
   };
 
   const handleRestorePassword = (historyItem: PasswordHistoryItem) => {
@@ -369,7 +375,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
       setConfirmDialog({
         visible: true,
         title: 'Validation Error',
-        message: 'Please enter at least a title for the password entry.',
+        message: 'Please fill in all required fields: Title, Password, and Username/Email.',
         confirmText: 'OK',
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),

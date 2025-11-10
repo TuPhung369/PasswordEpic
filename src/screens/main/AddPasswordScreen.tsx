@@ -142,6 +142,9 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     formData?.password,
     formData?.website,
     formData?.notes,
+    formData?.category,
+    formData?.tags,
+    formData?.customFields,
   ]); // Only depend on actual data fields
 
   // Load saved data only when restoring after unlock
@@ -391,9 +394,15 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 
   // Memoize form validation to prevent excessive re-renders
   const isFormValid = useCallback((): boolean => {
-    const isValid = !!(formData?.title && formData.title.trim().length > 0);
+    const hasTitle = !!(formData?.title && formData.title.trim().length > 0);
+    const hasPassword = !!(formData?.password && formData.password.trim().length > 0);
+    const hasUsernameOrEmail = !!(
+      (formData?.username && formData.username.trim().length > 0) ||
+      (formData?.website && formData.website.trim().length > 0)
+    );
+    const isValid = hasTitle && hasPassword && hasUsernameOrEmail;
     // Only log validation errors in development/debug
-    // console.log('🔍 isFormValid check:', isValid);
+    // console.log('🔍 isFormValid check:', { hasTitle, hasPassword, hasUsernameOrEmail, isValid });
     return isValid;
   }, [formData]); // Depend on full formData to ensure callback stays updated
 
@@ -402,7 +411,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       setConfirmDialog({
         visible: true,
         title: 'Validation Error',
-        message: 'Please enter at least a title for the password entry.',
+        message: 'Please fill in all required fields: Title, Password, and Username/Email.',
         confirmText: 'OK',
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),

@@ -16,7 +16,7 @@
  * @since Week 9 - Phase 4
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -31,7 +31,6 @@ import {
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../contexts/ThemeContext';
-import { autofillService } from '../../services/autofillService';
 import { domainVerificationService } from '../../services/domainVerificationService';
 import AutofillSettingsPanel from '../../components/AutofillSettingsPanel';
 import { AutofillStatisticsPanel } from '../../components/AutofillStatisticsPanel';
@@ -39,8 +38,10 @@ import { DEFAULT_DOMAINS } from '../../constants/defaultDomains';
 
 interface TrustedDomain {
   domain: string;
-  addedAt: string;
-  verified: boolean;
+  addedAt: number;
+  lastUsed: number;
+  useCount: number;
+  autoApproved: boolean;
 }
 
 type TabType = 'settings' | 'domains' | 'statistics';
@@ -264,10 +265,10 @@ export const AutofillManagementScreen: React.FC = () => {
 
   const handleExportDomains = async () => {
     try {
-      const exported = await domainVerificationService.exportTrustedDomains();
+      await domainVerificationService.exportTrustedDomains();
       Alert.alert(
         'Export Successful',
-        `Exported ${exported.domains.length} domains`,
+        `Exported ${trustedDomains.length} domains`,
         [{ text: 'OK' }],
       );
     } catch (error) {
@@ -285,9 +286,9 @@ export const AutofillManagementScreen: React.FC = () => {
       <View style={styles.domainInfo}>
         <View style={styles.domainHeader}>
           <Ionicons
-            name={item.verified ? 'shield-checkmark' : 'shield-outline'}
+            name={item.autoApproved ? 'shield-checkmark' : 'shield-outline'}
             size={20}
-            color={item.verified ? theme.success : theme.warning}
+            color={item.autoApproved ? theme.success : theme.warning}
           />
           <Text style={[styles.domainText, { color: theme.text }]}>
             {item.domain}
@@ -374,9 +375,9 @@ export const AutofillManagementScreen: React.FC = () => {
               name="checkmark-circle-outline"
               size={18}
               color={theme.success}
-              style={{ marginRight: 8 }}
+              style={styles.iconMargin}
             />
-            <View style={{ flex: 1 }}>
+            <View style={styles.flexOne}>
               <Text
                 style={[styles.previewLabel, { color: theme.textSecondary }]}
               >
@@ -442,7 +443,7 @@ export const AutofillManagementScreen: React.FC = () => {
             }
             size={20}
             color={theme.textSecondary}
-            style={{ marginLeft: 'auto' }}
+            style={styles.expandButton}
           />
         </TouchableOpacity>
 
@@ -451,7 +452,8 @@ export const AutofillManagementScreen: React.FC = () => {
             <Text
               style={[
                 styles.helpText,
-                { color: theme.textSecondary, marginBottom: 12 },
+                styles.helpTextMargin,
+                { color: theme.textSecondary },
               ]}
             >
               Click to quickly add popular domains from major companies and
@@ -577,10 +579,10 @@ export const AutofillManagementScreen: React.FC = () => {
         <TouchableOpacity
           style={[
             styles.tab,
-            activeTab === 'settings' && {
-              borderBottomColor: theme.primary,
-              borderBottomWidth: 2,
-            },
+            activeTab === 'settings' && [
+              styles.tabIndicator,
+              { borderBottomColor: theme.primary },
+            ],
           ]}
           onPress={() => setActiveTab('settings')}
         >
@@ -609,10 +611,10 @@ export const AutofillManagementScreen: React.FC = () => {
         <TouchableOpacity
           style={[
             styles.tab,
-            activeTab === 'domains' && {
-              borderBottomColor: theme.primary,
-              borderBottomWidth: 2,
-            },
+            activeTab === 'domains' && [
+              styles.tabIndicator,
+              { borderBottomColor: theme.primary },
+            ],
           ]}
           onPress={() => setActiveTab('domains')}
         >
@@ -639,10 +641,10 @@ export const AutofillManagementScreen: React.FC = () => {
         <TouchableOpacity
           style={[
             styles.tab,
-            activeTab === 'statistics' && {
-              borderBottomColor: theme.primary,
-              borderBottomWidth: 2,
-            },
+            activeTab === 'statistics' && [
+              styles.tabIndicator,
+              { borderBottomColor: theme.primary },
+            ],
           ]}
           onPress={() => setActiveTab('statistics')}
         >
@@ -873,6 +875,21 @@ const styles = StyleSheet.create({
   previewDomain: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  iconMargin: {
+    marginRight: 8,
+  },
+  flexOne: {
+    flex: 1,
+  },
+  tabIndicator: {
+    borderBottomWidth: 2,
+  },
+  expandButton: {
+    marginLeft: 'auto' as any,
+  },
+  helpTextMargin: {
+    marginBottom: 12,
   },
 });
 

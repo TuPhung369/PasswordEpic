@@ -61,14 +61,16 @@ const getAccessToken = async (): Promise<string> => {
 
 /**
  * Upload a file to Google Drive
+ * @param isPublic - if true, upload to root (My Drive); if false, upload to appDataFolder (hidden)
  */
 export const uploadToGoogleDrive = async (
   filePath: string,
   fileName: string,
   mimeType: string = 'application/octet-stream',
+  isPublic: boolean = false,
 ): Promise<{ success: boolean; fileId?: string; error?: string }> => {
   try {
-    console.log('🔵 [GoogleDrive] Starting upload:', fileName);
+    console.log('🔵 [GoogleDrive] Starting upload:', fileName, `(${isPublic ? 'Public' : 'Hidden'})`);
 
     // Get access token
     const accessToken = await getAccessToken();
@@ -83,7 +85,7 @@ export const uploadToGoogleDrive = async (
     const metadata = {
       name: fileName,
       mimeType: mimeType,
-      parents: ['appDataFolder'], // Store in app data folder (hidden from user)
+      parents: [isPublic ? 'root' : 'appDataFolder'],
     };
 
     // Create multipart request body
@@ -139,31 +141,40 @@ export const uploadToGoogleDrive = async (
 };
 
 /**
- * List files from Google Drive app data folder
+ * List files from Google Drive (supports both public My Drive and hidden appDataFolder)
+ * @param isPublic - if true, list from root (My Drive); if false, list from appDataFolder (hidden)
  */
-export const listGoogleDriveBackups = async (): Promise<{
+export const listGoogleDriveBackups = async (isPublic: boolean = false): Promise<{
   success: boolean;
   files?: DriveFile[];
   error?: string;
 }> => {
   try {
-    console.log('🔵 [GoogleDrive] Listing backups...');
+    console.log('🔵 [GoogleDrive] Listing backups from', isPublic ? 'My Drive' : 'Hidden folder');
 
     const accessToken = await getAccessToken();
 
-    // Query files in app data folder
-    const response = await fetch(
-      `${GOOGLE_DRIVE_API_URL}/files?` +
+    // Query files - use different spaces/query based on public/private
+    let url: string;
+    if (isPublic) {
+      url = `${GOOGLE_DRIVE_API_URL}/files?` +
+        `q=name contains 'PasswordEpic_Export' and trashed=false&` +
+        `spaces=drive&` +
+        `fields=files(id,name,mimeType,size,createdTime,modifiedTime)&` +
+        `orderBy=modifiedTime desc`;
+    } else {
+      url = `${GOOGLE_DRIVE_API_URL}/files?` +
         `spaces=appDataFolder&` +
         `fields=files(id,name,mimeType,size,createdTime,modifiedTime)&` +
-        `orderBy=modifiedTime desc`,
-      {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+        `orderBy=modifiedTime desc`;
+    }
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
       },
-    );
+    });
 
     if (!response.ok) {
       const errorText = await response.text();

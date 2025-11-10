@@ -13,6 +13,8 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
+  Share,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -46,6 +48,8 @@ import FilterDropdown, {
 } from '../../components/FilterDropdown';
 import BackupRestoreModal from '../../components/BackupRestoreModal';
 import FileNameInputModal from '../../components/FileNameInputModal';
+import ImportDestinationModal from '../../components/ImportDestinationModal';
+import GoogleDriveFilePickerModal from '../../components/GoogleDriveFilePickerModal';
 import { importExportService } from '../../services/importExportService';
 import { backupService } from '../../services/backupService';
 import FilePicker from '../../modules/FilePicker';
@@ -58,13 +62,16 @@ import {
   uploadToGoogleDrive,
   isGoogleDriveAvailable,
   requestDrivePermissions,
+  downloadFromGoogleDrive,
+  listGoogleDriveBackups,
+  deleteFromGoogleDrive,
 } from '../../services/googleDriveService';
 import { encryptedDatabase } from '../../services/encryptedDatabaseService';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { autofillService } from '../../services/autofillService';
-import { Platform } from 'react-native';
 import { setIsInSetupFlow } from '../../store/slices/authSlice';
+import RNFS from 'react-native-fs';
 
 // Define local types for PasswordsScreen string-based filtering
 type SortOption =
@@ -159,6 +166,46 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
   // Import state
   const [isImportLoading, setIsImportLoading] = useState(false);
+
+  // Export destination state
+  const [showExportDestinationModal, setShowExportDestinationModal] =
+    useState(false);
+  const [exportDestination, setExportDestination] = useState<
+    'local' | 'drive' | 'drive-hidden' | null
+  >(null);
+  const [selectedExportFolder, setSelectedExportFolder] = useState<
+    string | null
+  >(null);
+
+  // Import destination state
+  const [showImportDestinationModal, setShowImportDestinationModal] =
+    useState(false);
+  const [selectedImportFolder, _setSelectedImportFolder] = useState<
+    string | null
+  >(null);
+
+  // Google Drive file picker state
+  const [showGoogleDriveFilePicker, setShowGoogleDriveFilePicker] =
+    useState(false);
+  const [googleDrivePickerIsHidden, setGoogleDrivePickerIsHidden] =
+    useState(false);
+
+  // Export success state
+  const [showExportSuccessModal, setShowExportSuccessModal] = useState(false);
+  const [exportedFilePath, setExportedFilePath] = useState('');
+  const [exportedFileName, setExportedFileName] = useState('');
+
+  // Import file confirmation state
+  const [showImportConfirmModal, setShowImportConfirmModal] = useState(false);
+  const [importedFilePath, setImportedFilePath] = useState('');
+  const [importedFileName, setImportedFileName] = useState('');
+
+  // Import file list state
+  const [showImportFileListModal, setShowImportFileListModal] = useState(false);
+  const [importFileList, setImportFileList] = useState<Array<{path: string; name: string; mtime?: number}>>([]);
+  const [googleFileList, setGoogleFileList] = useState<Array<{path: string; name: string; mtime?: number}>>([]);
+  const [googleHiddenFileList, setGoogleHiddenFileList] = useState<Array<{path: string; name: string; mtime?: number}>>([]);
+  const [isLoadingImportFiles, setIsLoadingImportFiles] = useState(false);
 
   // Track recalculated password IDs to prevent infinite loop
   const recalculatedPasswordIds = useRef<Set<string>>(new Set());
@@ -317,7 +364,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             await new Promise(resolve => setTimeout(resolve, 500));
 
             // Navigate directly to Autofill Management screen (skip the prompt)
-            navigation.navigate('Settings', {
+            (navigation as any).navigate('Settings', {
               screen: 'AutofillManagement',
             });
           } else {
@@ -791,8 +838,27 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   };
 
   // Export and Backup handlers
-  const handleFileNameConfirm = async (fileName: string) => {
+  const handleFileNameConfirm = async (
+    fileName: string,
+    destination?: 'local' | 'google' | 'google-hidden',
+  ) => {
     if (!pendingExport) return;
+
+    // Update export destination if provided from modal
+    if (destination) {
+      // Convert modal destination to internal naming
+      const destMap: Record<
+        'local' | 'google' | 'google-hidden',
+        'local' | 'drive' | 'drive-hidden'
+      > = {
+        local: 'local',
+        google: 'drive',
+        'google-hidden': 'drive-hidden',
+      };
+      setExportDestination(destMap[destination]);
+    }
+
+    if (!exportDestination && !destination) return;
 
     const { entries, format, options } = pendingExport;
 
@@ -800,7 +866,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       setIsExportLoading(true);
       setShowFileNameModal(false);
 
-      const exportOptions = {
+      const exportOptions: any = {
         format: format.id,
         includePasswords: true,
         includeNotes: options.includeNotes,
@@ -813,18 +879,92 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         fileName: `${fileName}.${format.extension}`,
       };
 
+      // Add destination folder for local exports
+      if (exportDestination === 'local' && selectedExportFolder) {
+        exportOptions.destinationFolder = selectedExportFolder;
+      }
+
       const result = await importExportService.exportPasswords(
         entries,
         exportOptions,
       );
 
       if (result.success) {
-        // Show success toast and auto-hide
-        setToastMessage(
-          `Successfully exported ${result.exportedCount} passwords`,
-        );
-        setToastType('success');
-        setShowToast(true);
+        let successMsg = `Successfully exported ${result.exportedCount} passwords`;
+
+        // Check if export went to internal storage (fallback)
+        if (
+          exportDestination === 'local' &&
+          selectedExportFolder &&
+          result.filePath.includes('/data/user/')
+        ) {
+          successMsg += ' to internal storage';
+        } else if (exportDestination === 'local') {
+          successMsg += ' to selected folder';
+        }
+
+        // Handle destination
+        if (
+          exportDestination === 'drive' ||
+          exportDestination === 'drive-hidden'
+        ) {
+          // Check if Google Drive is available
+          let isDriveAvailable = await isGoogleDriveAvailable();
+
+          if (!isDriveAvailable) {
+            const permissionResult = await requestDrivePermissions();
+            if (permissionResult.success) {
+              isDriveAvailable = true;
+            } else {
+              showAlert(
+                'Google Drive Permission Required',
+                'Please grant Google Drive access to upload exports. You may need to sign out and sign in again.',
+              );
+              // Fallback to local storage
+              setToastMessage(successMsg + ' to local storage');
+              setToastType('success');
+              setShowToast(true);
+              return;
+            }
+          }
+
+          if (isDriveAvailable) {
+            const isPublic = exportDestination === 'drive';
+            const uploadResult = await uploadToGoogleDrive(
+              result.filePath,
+              exportOptions.fileName || 'export',
+              'application/octet-stream',
+              isPublic,
+            );
+
+            if (uploadResult.success) {
+              // Delete local temporary file after successful upload
+              try {
+                await RNFS.unlink(result.filePath);
+              } catch (deleteError) {
+                console.warn('Failed to delete temp file:', deleteError);
+              }
+
+              const driveMsg = isPublic
+                ? 'Google Drive (My Drive)'
+                : 'Google Drive (Automatic Backup)';
+              setToastMessage(
+                `Successfully exported ${result.exportedCount} passwords to ${driveMsg}`,
+              );
+              setToastType('success');
+              setShowToast(true);
+            } else {
+              throw new Error(
+                uploadResult.error || 'Failed to upload to Google Drive',
+              );
+            }
+          }
+        } else {
+          // Local storage (default)
+          setExportedFilePath(result.filePath);
+          setExportedFileName(exportOptions.fileName);
+          setShowExportSuccessModal(true);
+        }
       } else {
         const errorMsg =
           result.errors && result.errors.length > 0
@@ -834,32 +974,249 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       }
     } catch (error) {
       console.error('❌ Export failed:', error);
-      const errorMessage =
+      let errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred';
+
+      if (
+        errorMessage.includes('scoped storage') ||
+        errorMessage.includes('storage restrictions')
+      ) {
+        errorMessage =
+          'Cannot write to selected folder. Try selecting a different folder or use internal storage.';
+      } else if (
+        errorMessage.includes('Permission denied') ||
+        errorMessage.includes('EACCES')
+      ) {
+        errorMessage =
+          'Permission denied. Please ensure the folder has write permissions or try a different location.';
+      }
+
       setToastMessage(`Export failed: ${errorMessage}`);
       setToastType('error');
       setShowToast(true);
     } finally {
       setIsExportLoading(false);
       setPendingExport(null);
+      setExportDestination(null);
+      setSelectedExportFolder(null);
     }
   };
 
-  const handleImport = async () => {
+  const handleImportDestinationConfirm = async (
+    destination: 'local' | 'google' | 'google-hidden',
+    filePath?: string,
+  ) => {
+    console.log('🚀 [DEBUG] handleImportDestinationConfirm called with:', {
+      destination,
+      filePath,
+    });
+
+    setShowImportDestinationModal(false);
+
+    if (filePath) {
+      const fileName = filePath.split('/').pop() || 'selected file';
+      
+      if (destination === 'local') {
+        handleSelectImportFile(filePath, fileName);
+      } else if (destination === 'google') {
+        setGoogleDrivePickerIsHidden(false);
+        handleGoogleDriveFileSelected(filePath, fileName);
+      } else if (destination === 'google-hidden') {
+        setGoogleDrivePickerIsHidden(true);
+        handleGoogleDriveFileSelected(filePath, fileName);
+      }
+      return;
+    }
+
+    if (destination === 'google') {
+      setGoogleDrivePickerIsHidden(false);
+      setShowGoogleDriveFilePicker(true);
+      return;
+    }
+
+    if (destination === 'google-hidden') {
+      setGoogleDrivePickerIsHidden(true);
+      setShowGoogleDriveFilePicker(true);
+      return;
+    }
+
+    await handleImport(destination);
+  };
+
+  const handleLoadImportFiles = async (destination: 'local' | 'google' | 'google-hidden') => {
+    console.log('🚀 [DEBUG] handleLoadImportFiles called with destination:', destination);
+    setIsLoadingImportFiles(true);
+
     try {
+      if (destination === 'local') {
+        const appFilesDir =
+          Platform.OS === 'android'
+            ? RNFS.ExternalDirectoryPath
+            : RNFS.DocumentDirectoryPath;
+        console.log('🔍 [DEBUG] Using directory:', appFilesDir);
+
+        const dirExists = await RNFS.exists(appFilesDir);
+        console.log('🔍 [DEBUG] dirExists:', dirExists);
+
+        if (!dirExists) {
+          setImportFileList([]);
+          setIsLoadingImportFiles(false);
+          return;
+        }
+
+        const fileNames = await RNFS.readdir(appFilesDir);
+        console.log('📂 Raw files from RNFS.readdir:', fileNames);
+
+        const filesWithMetadata = await Promise.all(
+          fileNames
+            .filter(name => name.endsWith('.json'))
+            .map(async (name) => {
+              const filePath = `${appFilesDir}/${name}`;
+              try {
+                const stat = await RNFS.stat(filePath);
+                return {
+                  name,
+                  path: filePath,
+                  mtime: stat.mtime.getTime(),
+                };
+              } catch {
+                return {
+                  name,
+                  path: filePath,
+                  mtime: 0,
+                };
+              }
+            })
+        );
+
+        const jsonFiles = filesWithMetadata.sort(
+          (a, b) => (b.mtime || 0) - (a.mtime || 0)
+        );
+
+        console.log(`📋 Found ${jsonFiles.length} .json files in local folder`);
+        console.log('📋 Files to set:', jsonFiles.map(f => ({ name: f.name, path: f.path })));
+        setImportFileList(jsonFiles);
+      } else if (destination === 'google' || destination === 'google-hidden') {
+        const isPublic = destination === 'google';
+        const result = await listGoogleDriveBackups(isPublic);
+
+        if (result.success && result.files) {
+          const driveFiles = result.files
+            .filter(file => file.name.endsWith('.json'))
+            .map((file) => ({
+              name: file.name,
+              path: file.id,
+              mtime: new Date(file.modifiedTime).getTime(),
+            }));
+
+          const sortedFiles = driveFiles.sort(
+            (a, b) => (b.mtime || 0) - (a.mtime || 0)
+          );
+
+          console.log(`📋 Found ${sortedFiles.length} files in ${isPublic ? 'Google Drive' : 'Google Hidden'}`);
+          console.log('📋 Google files to set:', sortedFiles.map(f => ({ name: f.name, path: f.path })));
+
+          if (isPublic) {
+            setGoogleFileList(sortedFiles);
+          } else {
+            setGoogleHiddenFileList(sortedFiles);
+          }
+        } else {
+          console.error('❌ Failed to list Google Drive files:', result.error);
+          if (destination === 'google') {
+            setGoogleFileList([]);
+          } else {
+            setGoogleHiddenFileList([]);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ Failed to load import files:', error);
+      setToastMessage('Failed to load import files. Please try again.');
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setIsLoadingImportFiles(false);
+    }
+  };
+
+  const handleDeleteFile = async (
+    destination: 'local' | 'google' | 'google-hidden',
+    filePath: string,
+  ): Promise<boolean> => {
+    try {
+      if (destination === 'local') {
+        console.log('🔵 [Delete] Deleting local file:', filePath);
+        await RNFS.unlink(filePath);
+        setImportFileList(prev => prev.filter(f => f.path !== filePath));
+        console.log('✅ [Delete] Local file deleted successfully');
+        return true;
+      } else if (destination === 'google') {
+        console.log('🔵 [Delete] Deleting Google Drive file:', filePath);
+        const result = await deleteFromGoogleDrive(filePath);
+        if (result.success) {
+          setGoogleFileList(prev => prev.filter(f => f.path !== filePath));
+          console.log('✅ [Delete] Google Drive file deleted successfully');
+          return true;
+        } else {
+          console.error('❌ [Delete] Failed to delete from Google Drive:', result.error);
+          setToastMessage(`Failed to delete file: ${result.error}`);
+          setToastType('error');
+          setShowToast(true);
+          return false;
+        }
+      } else if (destination === 'google-hidden') {
+        console.log('🔵 [Delete] Deleting Google Hidden file:', filePath);
+        const result = await deleteFromGoogleDrive(filePath);
+        if (result.success) {
+          setGoogleHiddenFileList(prev => prev.filter(f => f.path !== filePath));
+          console.log('✅ [Delete] Google Hidden file deleted successfully');
+          return true;
+        } else {
+          console.error('❌ [Delete] Failed to delete from Google Hidden:', result.error);
+          setToastMessage(`Failed to delete file: ${result.error}`);
+          setToastType('error');
+          setShowToast(true);
+          return false;
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error('❌ [Delete] Error deleting file:', error);
+      setToastMessage(error instanceof Error ? error.message : 'Failed to delete file');
+      setToastType('error');
+      setShowToast(true);
+      return false;
+    }
+  };
+
+  const handleGoogleDriveFileSelected = async (
+    fileId: string,
+    fileName: string,
+  ) => {
+    try {
+      setShowGoogleDriveFilePicker(false);
       setIsImportLoading(true);
 
-      // Open native file picker
-      const filePath = await FilePicker.pickFile();
+      // Create a temporary file path for downloading
+      const tempFilePath = `${
+        RNFS.DocumentDirectoryPath
+      }/temp_import_${Date.now()}.json`;
 
-      // Handle user cancellation (returns empty string)
-      if (!filePath || filePath.trim() === '') {
-        console.log('ℹ️ [Import] File selection cancelled by user');
-        setIsImportLoading(false);
-        return;
+      // Download the file from Google Drive
+      console.log('🔵 [Import] Downloading from Google Drive:', fileName);
+      const downloadResult = await downloadFromGoogleDrive(
+        fileId,
+        tempFilePath,
+      );
+
+      if (!downloadResult.success) {
+        throw new Error(
+          downloadResult.error || 'Failed to download file from Google Drive',
+        );
       }
 
-      console.log('🔍 [Import] Selected file:', filePath);
+      console.log('✅ [Import] File downloaded successfully');
 
       // Get current master password for decryption
       const masterPasswordResult = await getEffectiveMasterPassword();
@@ -870,17 +1227,22 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         setToastType('error');
         setShowToast(true);
         setIsImportLoading(false);
+
+        // Clean up temp file
+        try {
+          await RNFS.unlink(tempFilePath);
+        } catch (e) {
+          console.warn('Failed to delete temp file:', e);
+        }
         return;
       }
 
-      // Extract filename for display
-      const fileName = filePath.split('/').pop() || 'selected file';
       setToastMessage(`Importing from ${fileName}...`);
       setToastType('success');
       setShowToast(true);
 
       const importResult = await importExportService.importPasswords(
-        filePath,
+        tempFilePath,
         passwords,
         {
           format: 'json',
@@ -905,6 +1267,211 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           importResult.errors && importResult.errors.length > 0
             ? importResult.errors.map(e => e.error).join(', ')
             : `Failed to import from ${fileName}. File might be corrupted or encrypted with different password.`;
+        setToastMessage(errorMsg);
+        setToastType('error');
+        setShowToast(true);
+      }
+
+      // Clean up temp file
+      try {
+        await RNFS.unlink(tempFilePath);
+      } catch (e) {
+        console.warn('Failed to delete temp file:', e);
+      }
+    } catch (error: any) {
+      console.error('❌ [Import] Google Drive import error:', error);
+      setToastMessage(error?.message || 'Failed to import from Google Drive');
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setIsImportLoading(false);
+    }
+  };
+
+  const handleImportWithFolder = async (folderPath: string) => {
+    try {
+      setIsImportLoading(true);
+      console.log('🚀 [DEBUG] handleImportWithFolder called with path:', folderPath);
+
+      // List .json files from the folder
+      try {
+        console.log('📂 Attempting to read directory:', folderPath);
+        // List files in folder
+        const fileNames = await RNFS.readdir(folderPath);
+        console.log('📂 Raw files from RNFS.readdir:', fileNames);
+        
+        // Get metadata for each JSON file
+        const filesWithMetadata = await Promise.all(
+          fileNames
+            .filter(name => name.endsWith('.json'))
+            .map(async (name) => {
+              const filePath = `${folderPath}/${name}`;
+              try {
+                const stat = await RNFS.stat(filePath);
+                return {
+                  name,
+                  path: filePath,
+                  mtime: stat.mtime.getTime(),
+                };
+              } catch {
+                return {
+                  name,
+                  path: filePath,
+                  mtime: 0,
+                };
+              }
+            })
+        );
+        
+        const jsonFiles = filesWithMetadata.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+        
+        console.log(`📋 Found ${jsonFiles.length} .json files in folder`);
+        console.log('📋 Filtered JSON files:', jsonFiles.map(f => ({ name: f.name, path: f.path })));
+        
+        if (jsonFiles.length === 0) {
+          console.log('❌ [DEBUG] No JSON files found');
+          setToastMessage('No .json files found. Please export passwords first.');
+          setToastType('error');
+          setShowToast(true);
+          setIsImportLoading(false);
+          return;
+        }
+        
+        // Show the file list modal
+        setImportFileList(jsonFiles);
+        setShowImportFileListModal(true);
+        console.log('✅ [DEBUG] Showing file list modal with', jsonFiles.length, 'files');
+      } catch (readError: any) {
+        console.error('❌ Failed to read folder:', readError);
+        console.error('❌ [DEBUG] Error details:', readError.message);
+        setToastMessage('Failed to read import folder. Please try again.');
+        setToastType('error');
+        setShowToast(true);
+      }
+    } catch (error: any) {
+      console.error('❌ [Import] File selection error:', error);
+
+      setToastMessage(
+        error?.message || 'An error occurred while selecting the file',
+      );
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setIsImportLoading(false);
+    }
+  };
+
+  const handleSelectImportFile = (filePath: string, fileName: string) => {
+    console.log('✅ [DEBUG] File selected from list:', filePath);
+    setShowImportFileListModal(false);
+    setShowImportDestinationModal(false);
+    setImportedFilePath(filePath);
+    setImportedFileName(fileName);
+    setShowImportConfirmModal(true);
+  };
+
+  const handleImport = async (
+    _source?: 'local' | 'google' | 'google-hidden',
+  ) => {
+    try {
+      setIsImportLoading(true);
+      console.log('🚀 [DEBUG] handleImport called, selectedImportFolder:', selectedImportFolder);
+
+      let filePath: string;
+
+      // For local import from app files directory
+      if (selectedImportFolder) {
+        console.log('✅ [DEBUG] selectedImportFolder is set, reading from:', selectedImportFolder);
+        await handleImportWithFolder(selectedImportFolder);
+        return;
+      }
+
+      // Fallback to system file picker if no folder selected
+      console.log('⚠️ [DEBUG] selectedImportFolder is empty/null, using FilePicker fallback');
+      filePath = await FilePicker.pickFileWithOptions({ 
+        fileType: 'application/json',
+      });
+
+      // Handle user cancellation (returns empty string)
+      if (!filePath || filePath.trim() === '') {
+        console.log('ℹ️ [Import] File selection cancelled by user');
+        setIsImportLoading(false);
+        return;
+      }
+
+      console.log('🔍 [Import] Selected file:', filePath);
+
+      // Extract filename for display
+      const fileName = filePath.split('/').pop() || 'selected file';
+
+      // Set the file path and show confirmation modal instead of immediately importing
+      setImportedFilePath(filePath);
+      setImportedFileName(fileName);
+      setShowImportConfirmModal(true);
+    } catch (error: any) {
+      console.error('❌ [Import] File selection error:', error);
+
+      setToastMessage(
+        error?.message || 'An error occurred while selecting the file',
+      );
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setIsImportLoading(false);
+    }
+  };
+
+  const handleImportConfirmed = async () => {
+    try {
+      setShowImportConfirmModal(false);
+      setIsImportLoading(true);
+
+      // Get current master password for decryption
+      const masterPasswordResult = await getEffectiveMasterPassword();
+      if (!masterPasswordResult.success) {
+        setToastMessage(
+          'Master password not found. Please log out and log back in.',
+        );
+        setToastType('error');
+        setShowToast(true);
+        setIsImportLoading(false);
+        return;
+      }
+
+      setToastMessage(`Importing from ${importedFileName}...`);
+      setToastType('success');
+      setShowToast(true);
+
+      const importResult = await importExportService.importPasswords(
+        importedFilePath,
+        passwords,
+        {
+          format: 'json',
+          encryptionPassword: masterPasswordResult.password,
+          mergeStrategy: 'skip',
+        },
+      );
+
+      if (importResult.success) {
+        // Refresh the passwords list - MUST await to ensure UI updates
+        await dispatch(
+          loadPasswordsLazy(masterPasswordResult.password),
+        ).unwrap();
+
+        setToastMessage(
+          `Import successful! ${importResult.importedCount} passwords imported, ${importResult.skippedCount} skipped (duplicates)`,
+        );
+        setToastType('success');
+        setShowToast(true);
+
+        // Clear import state
+        setImportedFilePath('');
+        setImportedFileName('');
+      } else {
+        const errorMsg =
+          importResult.errors && importResult.errors.length > 0
+            ? importResult.errors.map(e => e.error).join(', ')
+            : `Failed to import from ${importedFileName}. File might be corrupted or encrypted with different password.`;
         setToastMessage(errorMsg);
         setToastType('error');
         setShowToast(true);
@@ -1034,7 +1601,6 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
               // Delete local temporary file after successful upload
               try {
-                const RNFS = require('react-native-fs');
                 await RNFS.unlink(result.filePath);
                 console.log(
                   '🗑️ [PasswordsScreen] Temporary backup file deleted',
@@ -1119,14 +1685,10 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       if (!filePath) {
         // This is a Google Drive backup, download it first
         console.log('🔵 [PasswordsScreen] Downloading from Google Drive...');
-        const { downloadFromGoogleDrive } = await import(
-          '../../services/googleDriveService'
-        );
 
         // Create temp file path
-        const RNFS = await import('react-native-fs');
         tempFilePath = `${
-          RNFS.default.CachesDirectoryPath
+          RNFS.CachesDirectoryPath
         }/temp_restore_${Date.now()}.bak`;
 
         const downloadResult = await downloadFromGoogleDrive(
@@ -1451,9 +2013,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         // Still clean up temp file if needed
         if (tempFilePath) {
           try {
-            const RNFS = await import('react-native-fs');
-            if (await RNFS.default.exists(tempFilePath)) {
-              await RNFS.default.unlink(tempFilePath);
+            if (await RNFS.exists(tempFilePath)) {
+              await RNFS.unlink(tempFilePath);
             }
           } catch (cleanupError) {
             console.warn(
@@ -1471,9 +2032,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       // Clean up temporary file if it was created (if not already cleaned)
       if (tempFilePath) {
         try {
-          const RNFS = await import('react-native-fs');
-          if (await RNFS.default.exists(tempFilePath)) {
-            await RNFS.default.unlink(tempFilePath);
+          if (await RNFS.exists(tempFilePath)) {
+            await RNFS.unlink(tempFilePath);
             console.log('🗑️ [PasswordsScreen] Cleaned up temp file');
           }
         } catch (cleanupError) {
@@ -1515,13 +2075,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       if (!filePath) {
         // This is a Google Drive backup, download it first
         console.log('🔵 [PasswordsScreen] Downloading from Google Drive...');
-        const { downloadFromGoogleDrive } = await import(
-          '../../services/googleDriveService'
-        );
 
-        const RNFS = await import('react-native-fs');
         tempFilePath = `${
-          RNFS.default.CachesDirectoryPath
+          RNFS.CachesDirectoryPath
         }/temp_restore_${Date.now()}.bak`;
 
         const downloadResult = await downloadFromGoogleDrive(
@@ -1605,9 +2161,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       // Clean up temporary file if it was created
       if (tempFilePath) {
         try {
-          const RNFS = await import('react-native-fs');
-          if (await RNFS.default.exists(tempFilePath)) {
-            await RNFS.default.unlink(tempFilePath);
+          if (await RNFS.exists(tempFilePath)) {
+            await RNFS.unlink(tempFilePath);
           }
         } catch (cleanupError) {
           console.warn(
@@ -1620,14 +2175,23 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     }
   };
 
+  const handleShareExportPath = async () => {
+    try {
+      await Share.share({
+        message: `File location:\n${exportedFilePath}\n\nFile: ${exportedFileName}`,
+        title: 'Export File Location',
+      });
+    } catch (error) {
+      console.warn('Failed to share path:', error);
+      setToastMessage('Failed to share path');
+      setToastType('error');
+      setShowToast(true);
+    }
+  };
+
   const handleDeleteBackup = async (backupId: string) => {
     try {
       console.log('🗑️ [PasswordsScreen] Deleting backup:', backupId);
-
-      // Import Google Drive service
-      const { deleteFromGoogleDrive } = await import(
-        '../../services/googleDriveService'
-      );
 
       // Delete from Google Drive
       const deleteResult = await deleteFromGoogleDrive(backupId);
@@ -1648,6 +2212,43 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     }
   };
 
+  const handleSelectExportFolder = async () => {
+    try {
+      const folderUri = await FilePicker.pickFolder();
+
+      if (folderUri && folderUri.trim() !== '') {
+        console.log('📁 Export folder selected:', folderUri);
+        setSelectedExportFolder(folderUri);
+        setExportDestination('local');
+      } else {
+        console.log('ℹ️ Folder selection cancelled');
+      }
+    } catch (error) {
+      console.error('❌ Failed to pick folder:', error);
+      setToastMessage('Failed to pick folder. Please try again.');
+      setToastType('error');
+      setShowToast(true);
+    }
+  };
+
+  const getFolderDisplayName = (folderUri: string | null): string => {
+    if (!folderUri) return 'Browse and select folder';
+
+    if (folderUri.startsWith('content://')) {
+      const parts = folderUri.split('/');
+      const treeIndex = parts.indexOf('tree');
+      if (treeIndex !== -1 && treeIndex + 1 < parts.length) {
+        const encoded = parts[treeIndex + 1];
+        const decoded = decodeURIComponent(encoded);
+        return decoded.split(':').pop() || decoded;
+      }
+    } else {
+      return folderUri.split('/').pop() || folderUri;
+    }
+
+    return folderUri;
+  };
+
   const loadAvailableBackups = async () => {
     console.log('🔵 [PasswordsScreen] loadAvailableBackups called!');
     try {
@@ -1662,12 +2263,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
       if (isDriveAvailable) {
         // Load backups from Google Drive
-        console.log('🔵 [PasswordsScreen] Importing listGoogleDriveBackups...');
-        const { listGoogleDriveBackups } = await import(
-          '../../services/googleDriveService'
-        );
         console.log('🔵 [PasswordsScreen] Calling listGoogleDriveBackups...');
-        const driveResult = await listGoogleDriveBackups();
+        const driveResult = await listGoogleDriveBackups(true);
         console.log('🔵 [PasswordsScreen] Drive result:', driveResult);
 
         if (driveResult.success && driveResult.files) {
@@ -2122,7 +2719,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         <TouchableOpacity
           key="export"
           onPress={() => {
-            // Skip ExportOptionsModal and go directly to file name input with default options
+            // Show destination selector first
             const defaultFormat = {
               id: 'json',
               extension: 'json',
@@ -2140,6 +2737,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
               format: defaultFormat,
               options: defaultOptions,
             });
+            setExportDestination(null);
+            setSelectedExportFolder(null);
             setShowFileNameModal(true);
           }}
           style={[styles.headerButton, { backgroundColor: theme.surface }]}
@@ -2156,7 +2755,10 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       !bulkMode && (
         <TouchableOpacity
           key="import"
-          onPress={handleImport}
+          onPress={() => {
+            setShowImportDestinationModal(true);
+            handleLoadImportFiles('local');
+          }}
           style={[
             styles.headerButton,
             { backgroundColor: theme.surface },
@@ -2338,12 +2940,182 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         onExport={handleExport}
       /> */}
 
+      {/* Export Destination Modal */}
+      <ConfirmDialog
+        visible={showExportDestinationModal}
+        title="Export Destination"
+        message="Where would you like to save your export?"
+        onConfirm={() => {
+          if (
+            exportDestination === 'drive' ||
+            exportDestination === 'drive-hidden'
+          ) {
+            setShowExportDestinationModal(false);
+            setShowFileNameModal(true);
+          } else if (exportDestination === 'local' && selectedExportFolder) {
+            setShowExportDestinationModal(false);
+            setShowFileNameModal(true);
+          } else if (exportDestination === 'local' && !selectedExportFolder) {
+            setToastMessage('Please select a folder first');
+            setToastType('error');
+            setShowToast(true);
+          }
+        }}
+        onCancel={() => {
+          setShowExportDestinationModal(false);
+          setPendingExport(null);
+          setExportDestination(null);
+          setSelectedExportFolder(null);
+        }}
+        confirmText="Continue"
+        cancelText="Cancel"
+        confirmStyle="default"
+      >
+        <View style={styles.exportModalContainer}>
+          <TouchableOpacity
+            onPress={handleSelectExportFolder}
+            style={[
+              styles.destinationOption,
+              {
+                backgroundColor:
+                  exportDestination === 'local'
+                    ? theme.primary + '20'
+                    : theme.surface,
+                borderColor:
+                  exportDestination === 'local' ? theme.primary : theme.border,
+              },
+            ]}
+          >
+            <Ionicons
+              name="phone-portrait-outline"
+              size={24}
+              color={theme.text}
+              style={styles.destinationOptionIcon}
+            />
+            <View style={styles.destinationOptionContent}>
+              <Text
+                style={[styles.destinationOptionTitle, { color: theme.text }]}
+              >
+                Local Storage
+              </Text>
+              <Text
+                style={[
+                  styles.destinationOptionSubtitle,
+                  { color: theme.textSecondary },
+                ]}
+              >
+                {getFolderDisplayName(selectedExportFolder)}
+              </Text>
+            </View>
+            {exportDestination === 'local' && (
+              <Ionicons
+                name="checkmark-circle"
+                size={20}
+                color={theme.primary}
+              />
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setExportDestination('drive')}
+            style={[
+              styles.destinationOption,
+              {
+                backgroundColor:
+                  exportDestination === 'drive'
+                    ? theme.primary + '20'
+                    : theme.surface,
+                borderColor:
+                  exportDestination === 'drive' ? theme.primary : theme.border,
+              },
+            ]}
+          >
+            <Ionicons
+              name="cloud-outline"
+              size={24}
+              color={theme.text}
+              style={styles.destinationOptionIcon}
+            />
+            <View style={styles.destinationOptionContent}>
+              <Text
+                style={[styles.destinationOptionTitle, { color: theme.text }]}
+              >
+                Google Drive (My Drive)
+              </Text>
+              <Text
+                style={[
+                  styles.destinationOptionSubtitle,
+                  { color: theme.textSecondary },
+                ]}
+              >
+                Visible in your Google Drive
+              </Text>
+            </View>
+            {exportDestination === 'drive' && (
+              <Ionicons
+                name="checkmark-circle"
+                size={20}
+                color={theme.primary}
+              />
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setExportDestination('drive-hidden')}
+            style={[
+              styles.destinationOption,
+              {
+                backgroundColor:
+                  exportDestination === 'drive-hidden'
+                    ? theme.primary + '20'
+                    : theme.surface,
+                borderColor:
+                  exportDestination === 'drive-hidden'
+                    ? theme.primary
+                    : theme.border,
+              },
+            ]}
+          >
+            <Ionicons
+              name="lock-closed-outline"
+              size={24}
+              color={theme.text}
+              style={styles.destinationOptionIcon}
+            />
+            <View style={styles.destinationOptionContent}>
+              <Text
+                style={[styles.destinationOptionTitle, { color: theme.text }]}
+              >
+                Google Drive (Automatic)
+              </Text>
+              <Text
+                style={[
+                  styles.destinationOptionSubtitle,
+                  { color: theme.textSecondary },
+                ]}
+              >
+                Hidden backup folder (auto-restore)
+              </Text>
+            </View>
+            {exportDestination === 'drive-hidden' && (
+              <Ionicons
+                name="checkmark-circle"
+                size={20}
+                color={theme.primary}
+              />
+            )}
+          </TouchableOpacity>
+        </View>
+      </ConfirmDialog>
+
       {/* File Name Input Modal */}
       <FileNameInputModal
         visible={showFileNameModal}
         onClose={() => {
           setShowFileNameModal(false);
           setPendingExport(null);
+          setExportDestination(null);
+          setSelectedExportFolder(null);
         }}
         onConfirm={handleFileNameConfirm}
         defaultFileName={`PasswordEpic_Export_${
@@ -2352,6 +3124,34 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         fileExtension={pendingExport?.format?.extension || 'json'}
         title="Export File Name"
         description="Enter a name for your export file"
+        showDestinationSelector={true}
+        isImport={false}
+      />
+
+      {/* Import Destination Modal */}
+      <ImportDestinationModal
+        visible={showImportDestinationModal}
+        onClose={() => {
+          setShowImportDestinationModal(false);
+          setImportFileList([]);
+          setGoogleFileList([]);
+          setGoogleHiddenFileList([]);
+        }}
+        onConfirm={handleImportDestinationConfirm}
+        onSelectDestination={handleLoadImportFiles}
+        onDeleteFile={handleDeleteFile}
+        localFileList={importFileList}
+        googleFileList={googleFileList}
+        googleHiddenFileList={googleHiddenFileList}
+        isLoadingFiles={isLoadingImportFiles}
+      />
+
+      {/* Google Drive File Picker Modal */}
+      <GoogleDriveFilePickerModal
+        visible={showGoogleDriveFilePicker}
+        onClose={() => setShowGoogleDriveFilePicker(false)}
+        onConfirm={handleGoogleDriveFileSelected}
+        isHidden={googleDrivePickerIsHidden}
       />
 
       {/* Backup & Restore Modal */}
@@ -2401,6 +3201,155 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           onChangeText={setDecryptionPassword}
           editable={!isExportLoading}
         />
+      </ConfirmDialog>
+
+      {/* Export Success Modal */}
+      <ConfirmDialog
+        visible={showExportSuccessModal}
+        title="✓ Export Successful"
+        message={`Your passwords have been exported as:\n\n${exportedFileName}`}
+        onConfirm={() => {
+          setShowExportSuccessModal(false);
+          setExportedFilePath('');
+          setExportedFileName('');
+        }}
+        onCancel={() => {
+          setShowExportSuccessModal(false);
+          setExportedFilePath('');
+          setExportedFileName('');
+        }}
+        confirmText="Done"
+        cancelText=""
+        confirmStyle="default"
+      >
+        <View style={styles.exportSuccessContainer}>
+          <View
+            style={[
+              styles.exportPathBox,
+              { borderColor: theme.border, backgroundColor: theme.surface },
+            ]}
+          >
+            <Ionicons
+              name="document-outline"
+              size={20}
+              color={theme.primary}
+              style={styles.exportPathIcon}
+            />
+            <Text
+              style={[styles.exportPathText, { color: theme.textSecondary }]}
+              numberOfLines={3}
+            >
+              {exportedFilePath}
+            </Text>
+            <TouchableOpacity
+              onPress={handleShareExportPath}
+              style={styles.shareIconButton}
+            >
+              <Ionicons
+                name="share-social-outline"
+                size={18}
+                color={theme.primary}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ConfirmDialog>
+
+      {/* Import File List Modal */}
+      <ConfirmDialog
+        visible={showImportFileListModal}
+        title="Select Export File"
+        message="Choose which export file to import:"
+        onConfirm={() => setShowImportFileListModal(false)}
+        onCancel={() => setShowImportFileListModal(false)}
+        confirmText="Cancel"
+        cancelText=""
+        confirmStyle="default"
+      >
+        <View style={[styles.fileListContainer, { backgroundColor: theme.surface }]}>
+          <FlatList
+            data={importFileList}
+            keyExtractor={(item) => item.path}
+            scrollEnabled
+            nestedScrollEnabled
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[
+                  styles.fileListItem,
+                  { borderBottomColor: theme.border },
+                ]}
+                onPress={() => handleSelectImportFile(item.path, item.name)}
+              >
+                <View style={styles.fileListItemContent}>
+                  <Ionicons
+                    name="document-outline"
+                    size={20}
+                    color={theme.primary}
+                    style={styles.fileListItemIcon}
+                  />
+                  <View style={styles.fileListItemText}>
+                    <Text
+                      style={[styles.fileListItemName, { color: theme.text }]}
+                      numberOfLines={1}
+                    >
+                      {item.name}
+                    </Text>
+                    {item.mtime && (
+                      <Text
+                        style={[styles.fileListItemDate, { color: theme.textSecondary }]}
+                      >
+                        {new Date(item.mtime).toLocaleString()}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={theme.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </ConfirmDialog>
+
+      {/* Import Confirmation Modal */}
+      <ConfirmDialog
+        visible={showImportConfirmModal}
+        title="Import from File"
+        message={`You are about to import from:\n\n${importedFileName}`}
+        onConfirm={handleImportConfirmed}
+        onCancel={() => {
+          setShowImportConfirmModal(false);
+          setImportedFilePath('');
+          setImportedFileName('');
+        }}
+        confirmText="Import"
+        cancelText="Cancel"
+        confirmStyle="default"
+      >
+        <View style={styles.importConfirmContainer}>
+          <View
+            style={[
+              styles.importPathBox,
+              { borderColor: theme.border, backgroundColor: theme.surface },
+            ]}
+          >
+            <Ionicons
+              name="document-outline"
+              size={20}
+              color={theme.primary}
+              style={styles.importPathIcon}
+            />
+            <Text
+              style={[styles.importPathText, { color: theme.textSecondary }]}
+              numberOfLines={3}
+            >
+              {importedFilePath}
+            </Text>
+          </View>
+        </View>
       </ConfirmDialog>
     </SafeAreaView>
   );
@@ -2676,5 +3625,123 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     marginBottom: 16,
+  },
+  destinationOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#38383A',
+  },
+  exportModalContainer: {
+    gap: 12,
+    marginVertical: 12,
+  },
+  destinationOptionIcon: {
+    marginRight: 12,
+  },
+  destinationOptionContent: {
+    flex: 1,
+  },
+  destinationOptionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  destinationOptionSubtitle: {
+    fontSize: 13,
+    marginTop: 4,
+  },
+  exportSuccessContainer: {
+    gap: 12,
+    marginVertical: 12,
+  },
+  exportPathBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  exportPathIcon: {
+    marginRight: 8,
+  },
+  exportPathText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  shareIconButton: {
+    padding: 6,
+    marginLeft: 8,
+  },
+  exportActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  exportActionIcon: {
+    marginRight: 6,
+  },
+  exportActionButtonText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  importConfirmContainer: {
+    gap: 12,
+    marginVertical: 12,
+  },
+  importPathBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  importPathIcon: {
+    marginRight: 8,
+  },
+  importPathText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  fileListContainer: {
+    maxHeight: 300,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  fileListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  fileListItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  fileListItemIcon: {
+    marginRight: 12,
+  },
+  fileListItemText: {
+    flex: 1,
+  },
+  fileListItemName: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  fileListItemDate: {
+    fontSize: 12,
   },
 });

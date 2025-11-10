@@ -56,7 +56,7 @@ export const useUserActivity = (
           // Only trigger auto-lock callback when explicitly requested (shouldLock = true)
           // This prevents triggering on every activity info update
           if (info.shouldLock && onAutoLockRef.current) {
-            console.log('🎯 useUserActivity: Triggering auto-lock callback');
+            // console.log('🎯 useUserActivity: Triggering auto-lock callback');
             onAutoLockRef.current();
           }
         });
@@ -147,14 +147,14 @@ export const useUserActivity = (
       onStartShouldSetPanResponderCapture: () => {
         // Record interaction on touch start
         // The service has debounce logic to prevent excessive calls
-        console.log('🎯 PanResponder: Touch detected (capture phase)');
+        // console.log('🎯 PanResponder: Touch detected (capture phase)');
         recordInteraction();
         return false; // Don't actually capture - let children handle the touch
       },
       onStartShouldSetPanResponder: () => {
         // This is called after children have a chance to handle the touch
         // Record interaction here as well for touches not handled by children
-        console.log('🎯 PanResponder: Touch detected (bubble phase)');
+        // console.log('🎯 PanResponder: Touch detected (bubble phase)');
         recordInteraction();
         return false; // Don't capture the gesture - let children handle it
       },

@@ -15,11 +15,13 @@ import { useTheme } from '../contexts/ThemeContext';
 interface FileNameInputModalProps {
   visible: boolean;
   onClose: () => void;
-  onConfirm: (fileName: string) => void;
+  onConfirm: (fileName: string, destination?: 'local' | 'google' | 'google-hidden') => void;
   defaultFileName: string;
   fileExtension: string;
   title?: string;
   description?: string;
+  showDestinationSelector?: boolean;
+  isImport?: boolean;
 }
 
 const FileNameInputModal: React.FC<FileNameInputModalProps> = ({
@@ -30,22 +32,26 @@ const FileNameInputModal: React.FC<FileNameInputModalProps> = ({
   fileExtension,
   title = 'Export File Name',
   description = 'Enter a name for your export file',
+  showDestinationSelector = false,
+  isImport = false,
 }) => {
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const [fileName, setFileName] = useState(defaultFileName);
+  const [destination, setDestination] = useState<'local' | 'google' | 'google-hidden'>('local');
 
   // Reset to default when modal opens
   useEffect(() => {
     if (visible) {
       setFileName(defaultFileName);
+      setDestination('local');
     }
   }, [visible, defaultFileName]);
 
   const handleConfirm = () => {
     const trimmedName = fileName.trim();
-    if (trimmedName) {
-      onConfirm(trimmedName);
+    if (trimmedName || showDestinationSelector) {
+      onConfirm(trimmedName, showDestinationSelector ? destination : undefined);
     }
   };
 
@@ -77,6 +83,50 @@ const FileNameInputModal: React.FC<FileNameInputModalProps> = ({
 
           <Text style={styles.description}>{description}</Text>
 
+          {showDestinationSelector && (
+            <View style={styles.destinationSection}>
+              <Text style={styles.destinationLabel}>
+                {isImport ? 'Import From' : 'Export To'}
+              </Text>
+              <View style={styles.destinationOptions}>
+                {(['local', 'google', 'google-hidden'] as const).map(dest => (
+                  <TouchableOpacity
+                    key={dest}
+                    style={[
+                      styles.destinationOption,
+                      destination === dest && styles.destinationOptionActive,
+                    ]}
+                    onPress={() => setDestination(dest)}
+                  >
+                    <Icon
+                      name={
+                        dest === 'local'
+                          ? 'phone-portrait-outline'
+                          : dest === 'google'
+                            ? 'logo-google'
+                            : 'folder-hidden-outline'
+                      }
+                      size={18}
+                      color={destination === dest ? theme.primary : theme.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.destinationOptionText,
+                        destination === dest && styles.destinationOptionTextActive,
+                      ]}
+                    >
+                      {dest === 'local'
+                        ? 'Local'
+                        : dest === 'google'
+                          ? 'Google'
+                          : 'Hidden'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
           <View style={styles.inputContainer}>
             <TextInput
               style={styles.input}
@@ -107,7 +157,9 @@ const FileNameInputModal: React.FC<FileNameInputModalProps> = ({
               onPress={handleConfirm}
               disabled={!fileName.trim()}
             >
-              <Text style={styles.confirmButtonText}>Export</Text>
+              <Text style={styles.confirmButtonText}>
+                {isImport ? 'Import' : 'Export'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -152,6 +204,45 @@ const createStyles = (theme: any) =>
       color: theme.textSecondary,
       marginBottom: 20,
       lineHeight: 20,
+    },
+    destinationSection: {
+      marginBottom: 20,
+    },
+    destinationLabel: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.text,
+      marginBottom: 12,
+    },
+    destinationOptions: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    destinationOption: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 8,
+      borderRadius: 8,
+      backgroundColor: theme.background,
+      borderWidth: 1,
+      borderColor: theme.border,
+      gap: 4,
+    },
+    destinationOptionActive: {
+      backgroundColor: theme.primary + '15',
+      borderColor: theme.primary,
+    },
+    destinationOptionText: {
+      fontSize: 12,
+      fontWeight: '500',
+      color: theme.textSecondary,
+    },
+    destinationOptionTextActive: {
+      color: theme.primary,
+      fontWeight: '600',
     },
     inputContainer: {
       flexDirection: 'row',

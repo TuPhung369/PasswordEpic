@@ -265,12 +265,6 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       message: 'Authentication successful',
       type: 'success',
     });
-
-    // Track usage
-    console.log(
-      '📝 [PasswordEntry] Copy password - calling onPasswordUsed callback',
-    );
-    onPasswordUsed?.();
   };
 
   const handleBiometricError = (error: string) => {
@@ -305,12 +299,6 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       message: 'Authentication successful',
       type: 'success',
     });
-
-    // Track usage
-    console.log(
-      '📝 [PasswordEntry] Copy password - calling onPasswordUsed callback',
-    );
-    onPasswordUsed?.();
   };
 
   const handlePinCancel = () => {

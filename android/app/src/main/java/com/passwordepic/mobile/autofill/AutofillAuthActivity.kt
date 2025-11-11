@@ -192,7 +192,7 @@ class AutofillAuthActivity : FragmentActivity() {
 
     private fun handleAuthenticationSuccess() {
         AutofillLogger.logStep("Fetch credentials for domain")
-        Log.d(TAG, "DEBUG_AUTOFILL: Domain: $domain, Package: $packageName")
+        Log.d(TAG, "DEBUG_AUTOFILL: Domain: $domain, Package: $packageName, CredentialId: $credentialId, CredentialIndex: $credentialIndex")
 
         try {
             val dataProvider = AutofillDataProvider(this)
@@ -208,12 +208,26 @@ class AutofillAuthActivity : FragmentActivity() {
                 return
             }
 
-            if (credentials.size > 1) {
-                Log.d(TAG, "DEBUG_AUTOFILL: 📋 Multiple credentials found (${credentials.size}) - showing selection")
-                showCredentialSelection(credentials)
+            val selectedCredential = if (credentialId != null) {
+                credentials.find { it.id == credentialId }?.also {
+                    Log.d(TAG, "DEBUG_AUTOFILL: ✅ Found credential by ID: ${it.username}")
+                }
+            } else if (credentialIndex >= 0 && credentialIndex < credentials.size) {
+                credentials[credentialIndex].also {
+                    Log.d(TAG, "DEBUG_AUTOFILL: ✅ Found credential by index $credentialIndex: ${it.username}")
+                }
             } else {
-                Log.d(TAG, "DEBUG_AUTOFILL: ✅ Single credential found - using directly")
-                deliverCredential(credentials.first())
+                credentials.firstOrNull()?.also {
+                    Log.w(TAG, "DEBUG_AUTOFILL: ⚠️ No credentialId/index provided, using first credential: ${it.username}")
+                }
+            }
+
+            if (selectedCredential != null) {
+                deliverCredential(selectedCredential)
+            } else {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Could not find selected credential")
+                Toast.makeText(this, "Selected credential not found", Toast.LENGTH_SHORT).show()
+                setResultAndFinish(RESULT_CANCELED)
             }
 
         } catch (e: Exception) {
@@ -221,11 +235,6 @@ class AutofillAuthActivity : FragmentActivity() {
             Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
             setResultAndFinish(RESULT_CANCELED)
         }
-    }
-
-    private fun showCredentialSelection(credentials: List<AutofillCredential>) {
-        Log.d(TAG, "DEBUG_AUTOFILL: Showing credential selection for ${credentials.size} credentials")
-        deliverCredential(credentials.first())
     }
 
     private fun deliverCredential(credential: AutofillCredential) {

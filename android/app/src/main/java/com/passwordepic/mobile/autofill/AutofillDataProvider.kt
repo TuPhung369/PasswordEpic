@@ -87,7 +87,8 @@ class AutofillDataProvider(private val context: Context? = null) {
                 return null
             }
             
-            // Use the correct SharedPreferences name for plaintext cache
+            cleanupExpiredCache()
+            
             val prefs = context.getSharedPreferences("autofill_plaintext_cache", Context.MODE_PRIVATE)
             val passwordJson = prefs.getString("plaintext_$credentialId", null)
             
@@ -101,7 +102,6 @@ class AutofillDataProvider(private val context: Context? = null) {
                 val expiryTime = obj.optLong("expiresAt", 0)
                 val currentTime = System.currentTimeMillis()
                 
-                // Check if expired
                 if (currentTime > expiryTime) {
                     Log.w(TAG, "⏰ Plaintext password for $credentialId has EXPIRED - clearing cache")
                     prefs.edit().remove("plaintext_$credentialId").apply()
@@ -197,6 +197,84 @@ class AutofillDataProvider(private val context: Context? = null) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error clearing cache", e)
             false
+        }
+    }
+
+    /**
+     * 🗑️ Clears ALL cached plaintext passwords
+     * Called when user navigates away or session ends
+     * 
+     * @return true if cleared successfully
+     */
+    fun clearAllDecryptedPasswordCache(): Boolean {
+        return try {
+            if (context == null) return false
+            
+            Log.d(TAG, "🗑️ Clearing ALL cached plaintext passwords")
+            
+            val prefs = context.getSharedPreferences("autofill_plaintext_cache", Context.MODE_PRIVATE)
+            val allKeys = prefs.all.keys.toList()
+            val clearedCount = allKeys.size
+            
+            prefs.edit().clear().apply()
+            
+            Log.d(TAG, "✅ Cleared $clearedCount cache entries")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error clearing all cache", e)
+            false
+        }
+    }
+
+    /**
+     * 🧹 Cleans up expired plaintext passwords from cache
+     * Should be called periodically or before checking cache
+     * 
+     * @return Number of expired entries removed
+     */
+    fun cleanupExpiredCache(): Int {
+        return try {
+            if (context == null) return 0
+            
+            val prefs = context.getSharedPreferences("autofill_plaintext_cache", Context.MODE_PRIVATE)
+            val currentTime = System.currentTimeMillis()
+            var removedCount = 0
+            
+            val allKeys = prefs.all.keys.filter { it.startsWith("plaintext_") }
+            
+            for (key in allKeys) {
+                val passwordJson = prefs.getString(key, null)
+                if (passwordJson != null) {
+                    try {
+                        val obj = JSONObject(passwordJson)
+                        val expiryTime = obj.optLong("expiresAt", 0)
+                        
+                        if (currentTime > expiryTime) {
+                            val credentialId = key.removePrefix("plaintext_")
+                            prefs.edit().apply {
+                                remove(key)
+                                remove("stored_at_$credentialId")
+                                apply()
+                            }
+                            removedCount++
+                            Log.d(TAG, "🧹 Removed expired cache entry: $credentialId")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "⚠️ Error parsing cache entry $key, removing it: ${e.message}")
+                        prefs.edit().remove(key).apply()
+                        removedCount++
+                    }
+                }
+            }
+            
+            if (removedCount > 0) {
+                Log.d(TAG, "✅ Cleaned up $removedCount expired cache entries")
+            }
+            
+            removedCount
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error cleaning up expired cache", e)
+            0
         }
     }
 

@@ -165,6 +165,30 @@ class AutofillTestActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         Log.d(TAG, "📱 AutofillTestActivity resumed")
+        
+        Log.d(TAG, "🧹 Cleaning up expired cache on resume")
+        try {
+            val dataProvider = com.passwordepic.mobile.autofill.AutofillDataProvider(this)
+            val removedCount = dataProvider.cleanupExpiredCache()
+            if (removedCount > 0) {
+                Log.d(TAG, "✅ Removed $removedCount expired cache entries")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error cleaning cache on resume: ${e.message}")
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Log.d(TAG, "⏸️ AutofillTestActivity paused - clearing cache")
+        
+        try {
+            val dataProvider = com.passwordepic.mobile.autofill.AutofillDataProvider(this)
+            dataProvider.clearAllDecryptedPasswordCache()
+            Log.d(TAG, "✅ Cache cleared on pause")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error clearing cache on pause: ${e.message}")
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -186,8 +210,16 @@ class AutofillTestActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Clear the global instance reference
         setInstance(null)
+        
+        Log.d(TAG, "🗑️ Clearing all cached plaintext passwords on activity destroy")
+        try {
+            val dataProvider = com.passwordepic.mobile.autofill.AutofillDataProvider(this)
+            dataProvider.clearAllDecryptedPasswordCache()
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error clearing cache on destroy: ${e.message}")
+        }
+        
         Log.d(TAG, "🚀 AutofillTestActivity destroyed")
     }
 

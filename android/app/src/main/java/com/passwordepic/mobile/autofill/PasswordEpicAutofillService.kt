@@ -84,6 +84,8 @@ class PasswordEpicAutofillService : AutofillService() {
         Log.d(TAG, "DEBUG_AUTOFILL: 📦 FillContexts count: ${request.fillContexts.size}")
         Log.d(TAG, "DEBUG_AUTOFILL: 🔐 Cached credentials count: ${authenticatedCredentials.size}")
 
+        autofillDataProvider.cleanupExpiredCache()
+
         try {
             val structure: AssistStructure = request.fillContexts.lastOrNull()?.structure
                 ?: run {
@@ -155,6 +157,13 @@ class PasswordEpicAutofillService : AutofillService() {
                 Log.d(TAG, "DEBUG_AUTOFILL: 🚫 Set suppression timer immediately - will suppress suggestions for next ${SUPPRESS_SUGGESTIONS_WINDOW_MS}ms")
                 
                 triggerAccessibilityServiceFill(parsedData.packageName)
+                
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    Log.d(TAG, "DEBUG_AUTOFILL: 🗑️ Clearing cache after successful fill")
+                    autofillDataProvider.clearDecryptedPasswordCache(cachedCredential.id)
+                    clearAuthenticatedCredentials()
+                }, 1000)
+                
                 return
             }
 

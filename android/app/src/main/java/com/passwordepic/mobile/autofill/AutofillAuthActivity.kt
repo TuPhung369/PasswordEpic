@@ -50,7 +50,11 @@ class AutofillAuthActivity : FragmentActivity() {
             credentialToDecrypt?.let {
                 Log.d(TAG, "DEBUG_AUTOFILL: Service is now bound, performing deferred decryption request.")
                 performDecryptionRequest(it)
-                credentialToDecrypt = null // Clear after use
+                
+                Log.d(TAG, "DEBUG_AUTOFILL: ⏳ Starting non-blocking poll for decrypted password cache (max 10000ms)...")
+                pollForDecryptionResult(it, System.currentTimeMillis())
+                
+                credentialToDecrypt = null
             }
         }
 
@@ -252,12 +256,8 @@ class AutofillAuthActivity : FragmentActivity() {
         // --- ASYNCHRONOUS DECRYPTION FLOW ---
         Log.d(TAG, "DEBUG_AUTOFILL: 🔒 Password is encrypted - starting non-blocking decryption flow.")
         
-        // 1. Request decryption from the service.
+        // Request decryption from the service (polling will start after service is bound)
         requestDecryptionViaService(credential)
-        
-        // 2. Start polling for the result without blocking the main thread.
-        Log.d(TAG, "DEBUG_AUTOFILL: ⏳ Starting non-blocking poll for decrypted password cache (max 10000ms)...")
-        pollForDecryptionResult(credential, System.currentTimeMillis())
     }
 
     private fun pollForDecryptionResult(credential: AutofillCredential, startTime: Long) {
@@ -318,6 +318,12 @@ class AutofillAuthActivity : FragmentActivity() {
                 finish()
             }, 500)
             
+            Handler(Looper.getMainLooper()).postDelayed({
+                Log.d(TAG, "DEBUG_AUTOFILL: 🗑️ Clearing plaintext cache after successful fill")
+                val dataProvider = AutofillDataProvider(this)
+                dataProvider.clearDecryptedPasswordCache(credential.id)
+            }, 2000)
+            
         } catch (e: Exception) {
             Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error", e)
             setResultAndFinish(RESULT_CANCELED)
@@ -336,6 +342,9 @@ class AutofillAuthActivity : FragmentActivity() {
             }
 
             performDecryptionRequest(credential)
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: ⏳ Starting non-blocking poll for decrypted password cache (max 10000ms)...")
+            pollForDecryptionResult(credential, System.currentTimeMillis())
 
         } catch (e: Exception) {
             Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error requesting decryption via service", e)
@@ -397,14 +406,22 @@ class AutofillAuthActivity : FragmentActivity() {
         }
     }
 
-    private fun setResultAndFinish(resultCode: Int) {
-        setResult(resultCode)
-        finish()
-    }
-
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "DEBUG_AUTOFILL: AutofillAuthActivity destroyed")
         unbindFromDecryptionService()
+        
+        Log.d(TAG, "DEBUG_AUTOFILL: 🗑️ Cleaning up expired cache on activity destroy")
+        try {
+            val dataProvider = AutofillDataProvider(this)
+            dataProvider.cleanupExpiredCache()
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error cleaning cache: ${e.message}")
+        }
+    }
+
+    private fun setResultAndFinish(resultCode: Int) {
+        setResult(resultCode)
+        finish()
     }
 }

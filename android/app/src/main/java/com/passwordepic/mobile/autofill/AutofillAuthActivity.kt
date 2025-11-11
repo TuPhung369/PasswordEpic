@@ -74,6 +74,16 @@ class AutofillAuthActivity : FragmentActivity() {
 
         Log.d(TAG, "DEBUG_AUTOFILL: Domain: $domain, Package: $packageName, Credentials: $credentialCount, CredentialId: $credentialId")
 
+        // Check if biometric is required for autofill
+        val requireBiometric = isAutofillBiometricRequired()
+        Log.d(TAG, "DEBUG_AUTOFILL: Require biometric for autofill: $requireBiometric")
+
+        if (!requireBiometric) {
+            Log.d(TAG, "DEBUG_AUTOFILL: Biometric disabled in settings - skipping biometric auth")
+            handleAuthenticationSuccess()
+            return
+        }
+
         val biometricManager = BiometricManager.from(this)
         when (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)) {
             BiometricManager.BIOMETRIC_SUCCESS -> {
@@ -96,6 +106,18 @@ class AutofillAuthActivity : FragmentActivity() {
                 Log.w(TAG, "DEBUG_AUTOFILL: Biometric authentication not available")
                 showMasterPasswordPrompt()
             }
+        }
+    }
+
+    private fun isAutofillBiometricRequired(): Boolean {
+        return try {
+            val prefs = getSharedPreferences("autofill_settings", Context.MODE_PRIVATE)
+            val requireBiometric = prefs.getBoolean("require_biometric", true)
+            Log.d(TAG, "DEBUG_AUTOFILL: Read require_biometric from SharedPreferences: $requireBiometric")
+            requireBiometric
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: Error reading biometric setting from SharedPreferences", e)
+            true // Default to requiring biometric if there's an error
         }
     }
 

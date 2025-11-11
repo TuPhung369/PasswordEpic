@@ -3,6 +3,7 @@ package com.passwordepic.mobile
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

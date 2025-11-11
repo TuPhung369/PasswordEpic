@@ -33,31 +33,33 @@ class ScreenProtectionModule(reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun enableProtection(promise: Promise) {
-        Log.d(TAG, "enableProtection called")
+        Log.d(TAG, "🔐 enableProtection called")
         try {
             val activity = reactApplicationContext.currentActivity
             if (activity == null) {
-                Log.e(TAG, "Activity is null")
+                Log.e(TAG, "❌ Activity is null")
                 promise.reject("ERROR", "Activity is null")
                 return
             }
 
             UiThreadUtil.runOnUiThread {
                 try {
-                    Log.d(TAG, "Setting FLAG_SECURE on window")
-                    activity.window.setFlags(
-                        WindowManager.LayoutParams.FLAG_SECURE,
-                        WindowManager.LayoutParams.FLAG_SECURE
-                    )
-                    Log.d(TAG, "FLAG_SECURE set successfully")
+                    Log.d(TAG, "🔒 Setting FLAG_SECURE on window")
+                    activity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    
+                    val flags = activity.window.attributes.flags
+                    val isSet = (flags and WindowManager.LayoutParams.FLAG_SECURE) == WindowManager.LayoutParams.FLAG_SECURE
+                    
+                    Log.d(TAG, "✅ FLAG_SECURE set successfully. Verified: $isSet")
+                    Log.d(TAG, "⚠️ NOTE: FLAG_SECURE does NOT work on emulators! Test on real device.")
                     promise.resolve(true)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to set FLAG_SECURE: ${e.message}")
+                    Log.e(TAG, "❌ Failed to set FLAG_SECURE: ${e.message}", e)
                     promise.reject("ERROR", "Failed to enable protection: ${e.message}")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Exception in enableProtection: ${e.message}")
+            Log.e(TAG, "❌ Exception in enableProtection: ${e.message}", e)
             promise.reject("ERROR", "Failed to enable protection: ${e.message}")
         }
     }
@@ -68,30 +70,32 @@ class ScreenProtectionModule(reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun disableProtection(promise: Promise) {
-        Log.d(TAG, "disableProtection called")
+        Log.d(TAG, "🔓 disableProtection called")
         try {
             val activity = reactApplicationContext.currentActivity
             if (activity == null) {
-                Log.e(TAG, "Activity is null")
+                Log.e(TAG, "❌ Activity is null")
                 promise.reject("ERROR", "Activity is null")
                 return
             }
 
             UiThreadUtil.runOnUiThread {
                 try {
-                    Log.d(TAG, "Clearing FLAG_SECURE from window")
-                    activity.window.clearFlags(
-                        WindowManager.LayoutParams.FLAG_SECURE
-                    )
-                    Log.d(TAG, "FLAG_SECURE cleared successfully")
+                    Log.d(TAG, "🔓 Clearing FLAG_SECURE from window")
+                    activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    
+                    val flags = activity.window.attributes.flags
+                    val isCleared = (flags and WindowManager.LayoutParams.FLAG_SECURE) == 0
+                    
+                    Log.d(TAG, "✅ FLAG_SECURE cleared successfully. Verified: $isCleared")
                     promise.resolve(true)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to clear FLAG_SECURE: ${e.message}")
+                    Log.e(TAG, "❌ Failed to clear FLAG_SECURE: ${e.message}", e)
                     promise.reject("ERROR", "Failed to disable protection: ${e.message}")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Exception in disableProtection: ${e.message}")
+            Log.e(TAG, "❌ Exception in disableProtection: ${e.message}", e)
             promise.reject("ERROR", "Failed to disable protection: ${e.message}")
         }
     }

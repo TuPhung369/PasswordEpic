@@ -116,6 +116,8 @@ export const getBiometricDisplayName = (
       return 'Touch ID';
     case BIOMETRIC_TYPES.FINGERPRINT:
       return 'Fingerprint';
+    case BIOMETRIC_TYPES.BIOMETRIC:
+      return Platform.OS === 'android' ? 'Fingerprint or Face ID' : 'Biometric Authentication';
     default:
       return 'Biometric Authentication';
   }
@@ -159,6 +161,10 @@ export const getBiometricPromptMessage = (
       return `Use Touch ID to ${actionText}`;
     case BIOMETRIC_TYPES.FINGERPRINT:
       return `Place your finger on the sensor to ${actionText}`;
+    case BIOMETRIC_TYPES.BIOMETRIC:
+      return Platform.OS === 'android' 
+        ? `Use fingerprint or face recognition to ${actionText}`
+        : `Use biometric authentication to ${actionText}`;
     default:
       return `Use biometric authentication to ${actionText}`;
   }
@@ -173,10 +179,13 @@ export const showBiometricSetupDialog = (
   onCancel: () => void,
 ): void => {
   const displayName = getBiometricDisplayName(biometryType);
+  const shortName = biometryType === BIOMETRIC_TYPES.BIOMETRIC && Platform.OS === 'android' 
+    ? 'Biometric Authentication' 
+    : displayName;
 
   Alert.alert(
-    `Enable ${displayName}`,
-    `Would you like to enable ${displayName} for quick and secure access to your passwords?`,
+    `Enable ${shortName}`,
+    `Would you like to enable ${displayName.toLowerCase()} for quick and secure access to your passwords?`,
     [
       {
         text: 'Not Now',
@@ -184,7 +193,7 @@ export const showBiometricSetupDialog = (
         onPress: onCancel,
       },
       {
-        text: `Enable ${displayName}`,
+        text: `Enable`,
         onPress: onConfirm,
       },
     ],

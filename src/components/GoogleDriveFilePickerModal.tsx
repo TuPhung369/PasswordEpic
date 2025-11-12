@@ -13,6 +13,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import {
   listGoogleDriveBackups,
   DriveFile,
+  ensureGoogleDriveAuthenticated,
 } from '../services/googleDriveService';
 
 interface GoogleDriveFilePickerModalProps {
@@ -36,6 +37,14 @@ const GoogleDriveFilePickerModal: React.FC<
     try {
       setIsLoading(true);
       setError(null);
+
+      const authResult = await ensureGoogleDriveAuthenticated();
+      if (!authResult.success) {
+        setError(authResult.error || 'Failed to authenticate with Google Drive');
+        setFiles([]);
+        return;
+      }
+
       const result = await listGoogleDriveBackups(!isHidden);
       if (result.success && result.files) {
         setFiles(result.files);

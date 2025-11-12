@@ -89,7 +89,14 @@ class AutofillAuthActivity : FragmentActivity() {
         }
 
         val biometricManager = BiometricManager.from(this)
-        when (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)) {
+        val biometricPreference = getBiometricPreference()
+        val authenticators = when (biometricPreference) {
+            "face" -> BiometricManager.Authenticators.BIOMETRIC_WEAK
+            "fingerprint" -> BiometricManager.Authenticators.BIOMETRIC_STRONG
+            else -> BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
+        }
+        Log.d(TAG, "DEBUG_AUTOFILL: Biometric preference: $biometricPreference, authenticators: $authenticators")
+        when (biometricManager.canAuthenticate(authenticators)) {
             BiometricManager.BIOMETRIC_SUCCESS -> {
                 Log.d(TAG, "DEBUG_AUTOFILL: Biometric authentication available")
                 setupBiometricAuthentication()
@@ -121,7 +128,20 @@ class AutofillAuthActivity : FragmentActivity() {
             requireBiometric
         } catch (e: Exception) {
             Log.e(TAG, "DEBUG_AUTOFILL: Error reading biometric setting from SharedPreferences", e)
-            true // Default to requiring biometric if there's an error
+            true
+        }
+    }
+
+    private fun getBiometricPreference(): String {
+        return try {
+            val prefs = getSharedPreferences("RN_ASYNC_STORAGE", Context.MODE_PRIVATE)
+            val prefJson = prefs.getString("@biometric_preference", null)
+            val preference = prefJson?.trim('"') ?: "any"
+            Log.d(TAG, "DEBUG_AUTOFILL: Read biometric preference: $preference")
+            preference
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: Error reading biometric preference", e)
+            "any"
         }
     }
 
@@ -172,10 +192,18 @@ class AutofillAuthActivity : FragmentActivity() {
                 }
             })
 
+        val biometricPreference = getBiometricPreference()
+        val authenticators = when (biometricPreference) {
+            "face" -> BiometricManager.Authenticators.BIOMETRIC_WEAK
+            "fingerprint" -> BiometricManager.Authenticators.BIOMETRIC_STRONG
+            else -> BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
+        }
+
         promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle("Autofill Authentication")
             .setSubtitle("Authenticate to fill password for $domain")
             .setDescription("Use your biometric credential to autofill your password")
+            .setAllowedAuthenticators(authenticators)
             .setNegativeButtonText("Use master password")
             .build()
 

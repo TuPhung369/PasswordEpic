@@ -1,6 +1,8 @@
 import ReactNativeBiometrics, { BiometryTypes } from 'react-native-biometrics';
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, NativeModules } from 'react-native';
 import { SecureStorageService } from './secureStorageService';
+
+const { BiometricModule } = NativeModules;
 
 export interface BiometricCapability {
   available: boolean;
@@ -22,17 +24,13 @@ export class BiometricService {
   private readonly BIOMETRIC_KEY_ALIAS = 'passwordepic_biometric_key';
 
   private constructor() {
-    // Initialize biometric-only instance (shows fingerprint icon)
     this.rnBiometrics = new ReactNativeBiometrics({
-      allowDeviceCredentials: false, // Biometric only - shows fingerprint icon
+      allowDeviceCredentials: false,
     });
 
-    // Initialize instance with device credentials fallback (for retry after biometric fails)
     this.rnBiometricsWithFallback = new ReactNativeBiometrics({
-      allowDeviceCredentials: true, // Allow fallback to PIN/Pattern
+      allowDeviceCredentials: true,
     });
-
-    // BiometricService initialized
   }
 
   public static getInstance(): BiometricService {
@@ -79,7 +77,7 @@ export class BiometricService {
       case BiometryTypes.FaceID:
         return 'Face ID';
       case BiometryTypes.Biometrics:
-        return Platform.OS === 'android' ? 'Fingerprint' : 'Biometrics';
+        return Platform.OS === 'android' ? 'Fingerprint or Face ID' : 'Biometrics';
       default:
         return 'Biometric Authentication';
     }
@@ -187,44 +185,91 @@ export class BiometricService {
    */
   public async authenticateWithBiometrics(
     promptMessage: string = 'Authenticate to access your passwords',
+    biometricPreference: 'fingerprint' | 'face' | 'any' = 'any',
   ): Promise<BiometricAuthResult> {
     try {
-      // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
-      // console.log(
-      //   '🔐 BiometricService: authenticateWithBiometrics called with message:',
-      //   promptMessage,
-      // );
-      // Check if biometrics are available
+      console.log('🔐 [BiometricService] authenticateWithBiometrics called');
+      console.log('🔐 [BiometricService] promptMessage:', promptMessage);
+      console.log('🔐 [BiometricService] biometricPreference:', biometricPreference);
+      
       const capability = await this.checkBiometricCapability();
+      console.log('🔐 [BiometricService] capability:', capability);
+      
       if (!capability.available) {
-        // console.log('🔐 BiometricService: Biometric not available');
+        console.log('❌ [BiometricService] Biometric not available');
         return {
           success: false,
           error: 'Biometric authentication is not available',
         };
       }
 
-      // Check if biometric auth is set up
+      console.log('🔐 [BiometricService] Checking if biometric is setup...');
       const isSetup = await this.isBiometricSetup();
+      console.log('🔐 [BiometricService] isSetup:', isSetup);
+      
       if (!isSetup) {
-        // console.log('🔐 BiometricService: Biometric not set up');
+        console.log('❌ [BiometricService] Biometric not setup');
         return {
           success: false,
           error: 'Biometric authentication is not set up',
         };
       }
 
-      // console.log('🔐 BiometricService: Starting biometric authentication...');
-
       try {
-        // Use biometric with device credentials fallback (PIN/Pattern) from the start
-        // This shows fingerprint icon AND allows PIN/Pattern as alternative
-        console.log(
-          '🔐 Starting authentication with biometric and PIN/Pattern fallback...',
-        );
+        console.log('🔐 [BiometricService] Preparing authentication prompt...');
+        let finalPromptMessage = promptMessage;
+        let title = 'Authenticate';
+        let subtitle = 'Biometric Authentication';
+        
+        if (biometricPreference === 'face') {
+          finalPromptMessage = 'Look at the camera to unlock';
+          title = 'Face Recognition';
+          subtitle = 'Position your face in front of the camera';
+        } else if (biometricPreference === 'fingerprint') {
+          finalPromptMessage = 'Touch the fingerprint sensor';
+          title = 'Fingerprint';
+          subtitle = 'Place your finger on the sensor';
+        }
+
+        console.log('🔐 [BiometricService] Platform.OS:', Platform.OS);
+        console.log('🔐 [BiometricService] BiometricModule exists:', !!BiometricModule);
+
+        if (Platform.OS === 'android' && BiometricModule) {
+          try {
+            console.log('🔐 [BiometricService] Using native BiometricModule');
+            console.log('🔐 [BiometricService] Calling authenticateWithPreference...');
+            await BiometricModule.authenticateWithPreference(
+              title,
+              subtitle,
+              finalPromptMessage,
+              'Cancel',
+              biometricPreference,
+            );
+            console.log('✅ [BiometricService] Authentication succeeded (native module)');
+            return {
+              success: true,
+              signature: 'auth_signature_' + Date.now(),
+            };
+          } catch (nativeError: any) {
+            console.log('❌ [BiometricService] Native module error:', nativeError);
+            if (
+              nativeError.message?.includes('cancelled') ||
+              nativeError.message?.includes('Cancel')
+            ) {
+              console.log('❌ [BiometricService] User cancelled authentication');
+              return {
+                success: false,
+                error: 'Authentication cancelled by user',
+              };
+            }
+            throw nativeError;
+          }
+        }
+
+        console.log('🔐 [BiometricService] Using react-native-biometrics fallback');
 
         const authResult = await this.rnBiometricsWithFallback.simplePrompt({
-          promptMessage: promptMessage,
+          promptMessage: finalPromptMessage,
           cancelButtonText: 'Cancel',
         });
 
@@ -236,7 +281,6 @@ export class BiometricService {
           };
         }
 
-        // Check if user cancelled
         if (
           authResult.error?.includes('cancelled') ||
           authResult.error?.includes('Cancel') ||
@@ -396,7 +440,7 @@ export class BiometricService {
   ): void {
     Alert.alert(
       'Enable Biometric Authentication',
-      'Use your fingerprint or face to quickly and securely access your passwords.',
+      'Use your fingerprint, face recognition, or other biometric methods to quickly and securely access your passwords.',
       [
         {
           text: 'Not Now',

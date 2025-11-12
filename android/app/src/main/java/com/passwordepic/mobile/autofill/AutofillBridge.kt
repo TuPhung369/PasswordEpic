@@ -160,27 +160,27 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
             val manufacturer = Build.MANUFACTURER.uppercase()
             Log.d(TAG, "📱 Device manufacturer: $manufacturer")
 
-            // Try 1: Official Android API (preferred method - Android 8.0+)
+            // Try 1: OEM-specific paths FIRST (more reliable on many devices)
+            if (tryOEMSpecificAutofillSettings(activity, manufacturer)) {
+                Log.d(TAG, "✅ Opened OEM-specific autofill settings")
+                promise.resolve(true)
+                return
+            }
+
+            // Try 2: Official Android API (fallback - Android 8.0+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
                     val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
-                    Log.d(TAG, "📱 Attempt 1: Opening autofill service settings via official API")
+                    Log.d(TAG, "📱 Attempt 2: Opening autofill service settings via official API")
                     activity.startActivity(intent)
                     Log.d(TAG, "✅ Opened autofill settings via official API")
                     promise.resolve(true)
                     return
                 } catch (e: ActivityNotFoundException) {
-                    Log.d(TAG, "⚠️ Official API not supported on this device, trying OEM-specific paths...")
+                    Log.d(TAG, "⚠️ Official API not supported on this device, trying generic settings...")
                 } catch (e: Exception) {
-                    Log.d(TAG, "⚠️ Error with official API: ${e.message}, trying OEM-specific paths...")
+                    Log.d(TAG, "⚠️ Error with official API: ${e.message}, trying generic settings...")
                 }
-            }
-
-            // Try 2: OEM-specific paths
-            if (tryOEMSpecificAutofillSettings(activity, manufacturer)) {
-                Log.d(TAG, "✅ Opened OEM-specific autofill settings")
-                promise.resolve(true)
-                return
             }
 
             // Fallback 1: Open Settings with default category
@@ -430,12 +430,24 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
                 Intent("android.settings.INPUT_METHOD_SETTINGS"),
                 Intent().setClassName("com.android.settings", "com.android.settings.Settings\$InputMethodAndLanguageSettings")
             )
-            // Samsung devices: Settings → Apps → Default apps → Autofill service
+            // Samsung devices: Settings → General management → Language and input → Autofill service
+            // Samsung One UI has different paths than stock Android
             manufacturer.contains("SAMSUNG") -> listOf(
+                // Try Samsung's DefaultAutofillPickerActivity (found via dumpsys)
+                Intent().setClassName("com.android.settings", "com.android.settings.Settings\$DefaultAutofillPickerActivity"),
+                // Try direct component for Language and Input (Samsung One UI)
+                Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.Settings\$LanguageAndInputSettingsActivity")
+                },
+                // Try opening Manage Default Apps
+                Intent("android.settings.MANAGE_DEFAULT_APPS_SETTINGS"),
+                // Try standard Autofill picker
+                Intent().setClassName("com.android.settings", "com.android.settings.applications.defaultapps.DefaultAutofillPicker"),
                 Intent().setClassName("com.android.settings", "com.android.settings.applications.autofill.AutofillPickerTrampolineActivity"),
-                Intent("android.settings.DEFAULT_INPUT_METHOD"),
+                // Try Autofill settings action
                 Intent("android.settings.AUTOFILL_SETTINGS"),
-                Intent().setClassName("com.android.settings", "com.android.settings.Settings\$InputMethodAndLanguageSettings")
+                // Fallback: Open general Settings
+                Intent(Settings.ACTION_SETTINGS)
             )
             // Xiaomi devices: Settings → System → Languages and input → Autofill services
             manufacturer.contains("XIAOMI") || manufacturer.contains("REDMI") -> listOf(
@@ -1066,6 +1078,256 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
                 .emit(eventName, params)
         } catch (e: Exception) {
             Log.e(TAG, "Error sending event: $eventName", e)
+        }
+    }
+
+    /**
+     * Check if accessibility service is supported on this device
+     */
+    @ReactMethod
+    fun isAccessibilitySupported(promise: Promise) {
+        try {
+            val isSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN
+            Log.d(TAG, "Accessibility supported: $isSupported (API ${Build.VERSION.SDK_INT})")
+            promise.resolve(isSupported)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking accessibility support", e)
+            promise.reject("ERROR", "Failed to check accessibility support: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Check if PasswordEpic accessibility service is enabled
+     */
+    @ReactMethod
+    fun isAccessibilityEnabled(promise: Promise) {
+        try {
+            val packageName = "com.passwordepic.mobile"
+            val serviceClassName = "$packageName.services.PasswordEpicAccessibilityService"
+            
+            val accessibilityManager = reactContext.getSystemService(android.view.accessibility.AccessibilityManager::class.java)
+            if (accessibilityManager == null) {
+                Log.w(TAG, "AccessibilityManager not available")
+                promise.resolve(false)
+                return
+            }
+
+            val enabledServices = android.provider.Settings.Secure.getString(
+                reactContext.contentResolver,
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: ""
+
+            val isEnabled = enabledServices.contains(packageName)
+            Log.d(TAG, "Accessibility enabled: $isEnabled, Services: $enabledServices")
+            promise.resolve(isEnabled)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking accessibility status", e)
+            promise.reject("ERROR", "Failed to check accessibility status: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Request to enable accessibility service
+     */
+    @ReactMethod
+    fun requestEnableAccessibility(promise: Promise) {
+        try {
+            val activity = reactContext.currentActivity
+            if (activity == null) {
+                Log.e(TAG, "❌ Activity not available")
+                promise.reject("ERROR", "Activity not available")
+                return
+            }
+
+            val manufacturer = Build.MANUFACTURER.uppercase()
+            Log.d(TAG, "📱 Device manufacturer: $manufacturer")
+
+            // Try OEM-specific paths first
+            if (tryOEMSpecificAccessibilitySettings(activity, manufacturer)) {
+                Log.d(TAG, "✅ Opened OEM-specific accessibility settings")
+                promise.resolve(true)
+                return
+            }
+
+            // Fallback: Open accessibility settings directly
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                Log.d(TAG, "📱 Opening accessibility settings via ACTION_ACCESSIBILITY_SETTINGS")
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Opened accessibility settings")
+                promise.resolve(true)
+                return
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ Failed to open accessibility settings: ${e.message}")
+            }
+
+            // Last fallback: Open general settings
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+                Log.d(TAG, "📱 Opening general Settings")
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Opened general Settings")
+                promise.resolve(true)
+                return
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ All attempts to open accessibility settings failed")
+                promise.reject("ERROR", "Failed to open accessibility settings. Please enable manually in System Settings.")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error requesting accessibility enable", e)
+            promise.reject("ERROR", "Failed to request accessibility enable: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Disable accessibility service
+     */
+    @ReactMethod
+    fun disableAccessibility(promise: Promise) {
+        try {
+            val activity = reactContext.currentActivity
+            if (activity == null) {
+                Log.e(TAG, "❌ Activity not available")
+                promise.reject("ERROR", "Activity not available")
+                return
+            }
+
+            val manufacturer = Build.MANUFACTURER.uppercase()
+            Log.d(TAG, "📱 Device manufacturer: $manufacturer")
+
+            val instructions = getOEMDisableAccessibilityInstructions(manufacturer)
+            Log.d(TAG, "✅ Returning disable accessibility data with OEM-specific instructions")
+
+            val result = Arguments.createMap().apply {
+                putBoolean("success", true)
+                putString("instructions", instructions)
+                putString("action", "openAccessibilitySettings")
+            }
+            promise.resolve(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error disabling accessibility", e)
+            promise.reject("ERROR", "Failed to disable accessibility: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Open accessibility settings now
+     */
+    @ReactMethod
+    fun openAccessibilitySettingsNow(promise: Promise) {
+        try {
+            Log.d(TAG, "📱 openAccessibilitySettingsNow called - opening settings intent")
+
+            val activity = reactContext.currentActivity
+            if (activity == null) {
+                Log.e(TAG, "❌ Activity not available")
+                promise.reject("ERROR", "Activity not available")
+                return
+            }
+
+            val manufacturer = Build.MANUFACTURER.uppercase()
+            Log.d(TAG, "📱 Device manufacturer: $manufacturer")
+
+            // Try OEM-specific paths first
+            if (tryOEMSpecificAccessibilitySettings(activity, manufacturer)) {
+                Log.d(TAG, "✅ Opened OEM-specific accessibility settings")
+                promise.resolve(true)
+                return
+            }
+
+            // Try official accessibility settings action
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                Log.d(TAG, "📱 Opening accessibility settings via ACTION_ACCESSIBILITY_SETTINGS")
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Opened accessibility settings")
+                promise.resolve(true)
+                return
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ Failed to open accessibility settings: ${e.message}")
+            }
+
+            // Last fallback: Open general settings
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+                Log.d(TAG, "📱 Opening general Settings")
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Opened general Settings")
+                promise.resolve(true)
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to open settings: ${e.message}")
+                promise.reject("ERROR", "Failed to open accessibility settings")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error opening accessibility settings", e)
+            promise.reject("ERROR", "Failed to open accessibility settings: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Try to open accessibility settings using OEM-specific deep links
+     */
+    private fun tryOEMSpecificAccessibilitySettings(activity: Activity, manufacturer: String): Boolean {
+        val intentsList = when {
+            manufacturer.contains("SAMSUNG") -> listOf(
+                Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS),
+                Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.accessibility.AccessibilitySettings")
+                },
+                Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.Settings\$AccessibilitySettingsActivity")
+                }
+            )
+            manufacturer.contains("HUAWEI") -> listOf(
+                Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS),
+                Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.accessibility.AccessibilitySettings")
+                }
+            )
+            else -> listOf(
+                Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS),
+                Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.accessibility.AccessibilitySettings")
+                }
+            )
+        }
+
+        for ((index, intent) in intentsList.withIndex()) {
+            try {
+                Log.d(TAG, "📱 OEM Accessibility Attempt ${index + 1} ($manufacturer): ${intent.action ?: intent.component}")
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Successfully opened accessibility settings via OEM-specific path")
+                return true
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ OEM Accessibility Attempt ${index + 1} failed: ${e.message}")
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * Get OEM-specific instructions for disabling accessibility
+     */
+    private fun getOEMDisableAccessibilityInstructions(manufacturer: String): String {
+        return when {
+            manufacturer.contains("SAMSUNG") ->
+                "1. Go to Settings\n" +
+                "2. Tap 'Accessibility'\n" +
+                "3. Find 'PasswordEpic' in the list\n" +
+                "4. Toggle it OFF to disable"
+
+            manufacturer.contains("HUAWEI") ->
+                "1. Go to Settings\n" +
+                "2. Tap 'Accessibility'\n" +
+                "3. Find 'PasswordEpic' in the list\n" +
+                "4. Toggle it OFF to disable"
+
+            else ->
+                "1. Go to Settings\n" +
+                "2. Tap 'Accessibility' or 'Accessibility Services'\n" +
+                "3. Find 'PasswordEpic' in the list\n" +
+                "4. Toggle it OFF or uninstall to disable"
         }
     }
 

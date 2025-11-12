@@ -56,6 +56,9 @@ class MainApplication : Application(), ReactApplication {
               
               // Add App Utils Module (for getting installed apps)
               add(AppUtilsPackage())
+              
+              // Add Biometric Module
+              add(BiometricPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

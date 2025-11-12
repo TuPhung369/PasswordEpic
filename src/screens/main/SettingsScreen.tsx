@@ -47,6 +47,8 @@ import { requestStoragePermission } from '../../utils/permissionsUtils';
 import {
   uploadToGoogleDrive,
   isGoogleDriveAvailable,
+  requestDrivePermissions,
+  ensureGoogleDriveAuthenticated,
 } from '../../services/googleDriveService';
 import AutofillTestService from '../../services/autofillTestService';
 import FilePicker from '../../modules/FilePicker';
@@ -218,7 +220,6 @@ export const SettingsScreen: React.FC = () => {
     }
   }, [showBackupModal]);
 
-  // Sync biometric status with SecureStorage when Redux state changes
   useEffect(() => {
     const syncBiometricStatus = async () => {
       try {
@@ -240,6 +241,31 @@ export const SettingsScreen: React.FC = () => {
 
     syncBiometricStatus();
   }, [security.biometricEnabled]);
+
+  useEffect(() => {
+    const syncBiometricPreference = async () => {
+      try {
+        const AsyncStorage = (
+          await import('@react-native-async-storage/async-storage')
+        ).default;
+        await AsyncStorage.setItem(
+          'biometric_preference',
+          security.biometricPreference,
+        );
+        console.log(
+          '✅ [SettingsScreen] Synced biometric preference:',
+          security.biometricPreference,
+        );
+      } catch (error) {
+        console.error(
+          '❌ [SettingsScreen] Failed to sync biometric preference:',
+          error,
+        );
+      }
+    };
+
+    syncBiometricPreference();
+  }, [security.biometricPreference]);
 
   // Handler functions
   const handleBiometricToggle = async (enabled: boolean) => {
@@ -362,6 +388,23 @@ export const SettingsScreen: React.FC = () => {
       console.error('❌ Error checking autofill status:', error);
     } finally {
       setIsCheckingAutofill(false);
+    }
+  };
+
+  const handleOpenAutofillSettings = async () => {
+    try {
+      console.log('🚀 Opening autofill settings...');
+      const success = await AutofillTestService.openAutofillSettings();
+      if (!success) {
+        setToastMessage('❌ Failed to open autofill settings');
+        setToastType('error');
+        setShowToast(true);
+      }
+    } catch (error) {
+      console.error('❌ Error opening autofill settings:', error);
+      setToastMessage('❌ Error opening settings');
+      setToastType('error');
+      setShowToast(true);
     }
   };
 
@@ -489,17 +532,12 @@ export const SettingsScreen: React.FC = () => {
         );
 
         try {
-          // Check if Google Drive is available
-          let isDriveAvailable = await isGoogleDriveAvailable();
-          console.log(
-            '🔵 [SettingsScreen] Google Drive available:',
-            isDriveAvailable,
-          );
-
-          if (!isDriveAvailable) {
+          // Ensure Google Drive authentication
+          const authResult = await ensureGoogleDriveAuthenticated();
+          if (!authResult.success) {
             showAlert(
-              'Google Drive Not Available',
-              'Please sign in to Google Drive in Settings first.',
+              'Google Drive Authentication Failed',
+              authResult.error || 'Please sign in to Google Drive in Settings first.',
             );
             return;
           }
@@ -586,6 +624,15 @@ export const SettingsScreen: React.FC = () => {
         console.log(
           '🔵 [SettingsScreen] Downloading backup from Google Drive...',
         );
+
+        let isDriveAvailable = await isGoogleDriveAvailable();
+        if (!isDriveAvailable) {
+          const permissionResult = await requestDrivePermissions();
+          if (!permissionResult.success) {
+            throw new Error('Failed to authenticate with Google Drive for backup download');
+          }
+        }
+
         const { downloadFromGoogleDrive } = await import(
           '../../services/googleDriveService'
         );
@@ -736,6 +783,17 @@ export const SettingsScreen: React.FC = () => {
       );
 
       if (isDriveAvailable) {
+        // Ensure authentication before calling Google Drive API
+        const authResult = await ensureGoogleDriveAuthenticated();
+        if (!authResult.success) {
+          console.warn(
+            '⚠️ [loadAvailableBackups] Authentication failed:',
+            authResult.error,
+          );
+          setAvailableBackups([]);
+          return;
+        }
+
         // Load backups from Google Drive
         console.log(
           '🔵 [loadAvailableBackups] Importing listGoogleDriveBackups...',
@@ -1029,6 +1087,60 @@ export const SettingsScreen: React.FC = () => {
             }
           />
 
+          {security.biometricEnabled && biometricAvailable && Platform.OS === 'ios' && (
+            <View
+              style={[
+                styles.settingItem,
+                { backgroundColor: theme.card, borderColor: theme.border },
+              ]}
+            >
+              <View
+                style={[styles.settingIcon, { backgroundColor: theme.surface }]}
+              >
+                <Ionicons name="options-outline" size={24} color={theme.primary} />
+              </View>
+              <View style={styles.settingContent}>
+                <Text style={[styles.settingTitle, { color: theme.text }]}>
+                  Biometric Preference
+                </Text>
+                <Text
+                  style={[styles.settingSubtitle, { color: theme.textSecondary }]}
+                >
+                  {security.biometricPreference === 'fingerprint'
+                    ? 'Prefer Fingerprint'
+                    : security.biometricPreference === 'face'
+                    ? 'Prefer Face ID'
+                    : 'Use Any Available'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  const currentIndex =
+                    security.biometricPreference === 'fingerprint'
+                      ? 1
+                      : security.biometricPreference === 'face'
+                      ? 2
+                      : 0;
+                  const nextIndex = (currentIndex + 1) % 3;
+                  const nextPref =
+                    nextIndex === 1
+                      ? 'fingerprint'
+                      : nextIndex === 2
+                      ? 'face'
+                      : 'any';
+                  dispatch(
+                    updateSecuritySettings({ biometricPreference: nextPref }),
+                  );
+                }}
+                style={styles.preferenceButton}
+              >
+                <Text style={[styles.preferenceButtonText, { color: theme.primary }]}>
+                  Change
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <SettingItem
             icon="key-outline"
             title="Autofill Management"
@@ -1318,9 +1430,23 @@ export const SettingsScreen: React.FC = () => {
           />
         </View>
 
-        {/* Test Autofill - Android Only */}
+        {/* Autofill Settings - Android Only */}
         {Platform.OS === 'android' && (
           <View style={styles.section}>
+            <SettingItem
+              icon="settings-outline"
+              title="Enable Autofill Service"
+              subtitle="Open Android settings to enable PasswordEpic as autofill service"
+              onPress={handleOpenAutofillSettings}
+              theme={theme}
+              rightElement={
+                <Ionicons
+                  name="open-outline"
+                  size={24}
+                  color={theme.primary}
+                />
+              }
+            />
             <SettingItem
               icon="flask-outline"
               title="Test Autofill"
@@ -1946,6 +2072,15 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     justifyContent: 'space-between',
+  },
+  preferenceButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  preferenceButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   imagePreviewContainer: {
     alignItems: 'center',

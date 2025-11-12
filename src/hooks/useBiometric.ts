@@ -141,52 +141,43 @@ export const useBiometric = (): UseBiometricReturn => {
   const authenticate = useCallback(
     async (message?: string): Promise<boolean> => {
       try {
-        // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
-        // console.log('📱 useBiometric.authenticate: Starting authentication...');
-        // console.log('📱 useBiometric.authenticate: message =', message);
-        // console.log(
-        //   '📱 useBiometric.authenticate: biometryType =',
-        //   biometryType,
-        // );
-
+        console.log('🔐 [useBiometric] authenticate called with message:', message);
+        console.log('🔐 [useBiometric] biometryType:', biometryType);
+        console.log('🔐 [useBiometric] security.biometricPreference:', security.biometricPreference);
+        
         setIsLoading(true);
         setError(null);
 
         const biometricService = BiometricService.getInstance();
         const authMessage = message || `Authenticate with ${biometryType}`;
+        
+        console.log('🔐 [useBiometric] Calling authenticateWithBiometrics with message:', authMessage);
 
-        // Calling biometric authentication service
         const result: BiometricAuthResult =
-          await biometricService.authenticateWithBiometrics(authMessage);
+          await biometricService.authenticateWithBiometrics(
+            authMessage,
+            security.biometricPreference,
+          );
 
-        // Authentication completed
+        console.log('🔐 [useBiometric] authenticateWithBiometrics result:', result);
 
         if (result.success) {
-          // console.log('📱 useBiometric.authenticate: SUCCESS!');
+          console.log('✅ [useBiometric] Authentication successful');
           return true;
         } else {
-          // console.log(
-          //   '📱 useBiometric.authenticate: FAILED - error =',
-          //   result.error,
-          // );
+          console.log('❌ [useBiometric] Authentication failed:', result.error);
           setError(result.error || 'Authentication failed');
           return false;
         }
       } catch (err) {
-        // console.error(
-        //   '📱 useBiometric.authenticate: EXCEPTION during authentication:',
-        //   err,
-        // );
+        console.error('❌ [useBiometric] Exception during authentication:', err);
         setError('Authentication failed');
         return false;
       } finally {
-        // console.log(
-        //   '📱 useBiometric.authenticate: Cleaning up - setIsLoading(false)',
-        // );
         setIsLoading(false);
       }
     },
-    [biometryType],
+    [biometryType, security.biometricPreference],
   );
 
   /**

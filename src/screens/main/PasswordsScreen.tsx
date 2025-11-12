@@ -65,6 +65,7 @@ import {
   downloadFromGoogleDrive,
   listGoogleDriveBackups,
   deleteFromGoogleDrive,
+  ensureGoogleDriveAuthenticated,
 } from '../../services/googleDriveService';
 import { encryptedDatabase } from '../../services/encryptedDatabaseService';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -929,6 +930,20 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           }
 
           if (isDriveAvailable) {
+            // Ensure authentication before uploading
+            const authResult = await ensureGoogleDriveAuthenticated();
+            if (!authResult.success) {
+              showAlert(
+                'Google Drive Permission Required',
+                authResult.error || 'Please grant Google Drive access to upload exports.',
+              );
+              // Fallback to local storage
+              setToastMessage(successMsg + ' to local storage');
+              setToastType('success');
+              setShowToast(true);
+              return;
+            }
+
             const isPublic = exportDestination === 'drive';
             const uploadResult = await uploadToGoogleDrive(
               result.filePath,
@@ -1097,6 +1112,17 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         console.log('📋 Files to set:', jsonFiles.map(f => ({ name: f.name, path: f.path })));
         setImportFileList(jsonFiles);
       } else if (destination === 'google' || destination === 'google-hidden') {
+        // Ensure authentication before calling Google Drive API
+        const authResult = await ensureGoogleDriveAuthenticated();
+        if (!authResult.success) {
+          console.warn(
+            '⚠️ [PasswordsScreen] Authentication failed:',
+            authResult.error,
+          );
+          setImportFileList([]);
+          return;
+        }
+
         const isPublic = destination === 'google';
         const result = await listGoogleDriveBackups(isPublic);
 
@@ -1197,6 +1223,20 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     try {
       setShowGoogleDriveFilePicker(false);
       setIsImportLoading(true);
+
+      let isDriveAvailable = await isGoogleDriveAvailable();
+      if (!isDriveAvailable) {
+        const permissionResult = await requestDrivePermissions();
+        if (!permissionResult.success) {
+          setToastMessage(
+            'Google Drive authentication failed. Please try again.',
+          );
+          setToastType('error');
+          setShowToast(true);
+          setIsImportLoading(false);
+          return;
+        }
+      }
 
       // Create a temporary file path for downloading
       const tempFilePath = `${
@@ -1586,6 +1626,16 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           }
 
           if (isDriveAvailable) {
+            // Ensure authentication before uploading
+            const authResult = await ensureGoogleDriveAuthenticated();
+            if (!authResult.success) {
+              showAlert(
+                'Google Drive Permission Required',
+                authResult.error || 'Please grant Google Drive access to upload backups.',
+              );
+              return;
+            }
+
             console.log('🔵 [PasswordsScreen] Starting upload...');
             const uploadResult = await uploadToGoogleDrive(
               result.filePath,
@@ -1685,6 +1735,14 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       if (!filePath) {
         // This is a Google Drive backup, download it first
         console.log('🔵 [PasswordsScreen] Downloading from Google Drive...');
+
+        let isDriveAvailable = await isGoogleDriveAvailable();
+        if (!isDriveAvailable) {
+          const permissionResult = await requestDrivePermissions();
+          if (!permissionResult.success) {
+            throw new Error('Failed to authenticate with Google Drive for backup download');
+          }
+        }
 
         // Create temp file path
         tempFilePath = `${
@@ -2076,6 +2134,14 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         // This is a Google Drive backup, download it first
         console.log('🔵 [PasswordsScreen] Downloading from Google Drive...');
 
+        let isDriveAvailable = await isGoogleDriveAvailable();
+        if (!isDriveAvailable) {
+          const permissionResult = await requestDrivePermissions();
+          if (!permissionResult.success) {
+            throw new Error('Failed to authenticate with Google Drive for backup download');
+          }
+        }
+
         tempFilePath = `${
           RNFS.CachesDirectoryPath
         }/temp_restore_${Date.now()}.bak`;
@@ -2262,6 +2328,17 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       );
 
       if (isDriveAvailable) {
+        // Ensure authentication before calling Google Drive API
+        const authResult = await ensureGoogleDriveAuthenticated();
+        if (!authResult.success) {
+          console.warn(
+            '⚠️ [PasswordsScreen] Authentication failed:',
+            authResult.error,
+          );
+          setAvailableBackups([]);
+          return;
+        }
+
         // Load backups from Google Drive
         console.log('🔵 [PasswordsScreen] Calling listGoogleDriveBackups...');
         const driveResult = await listGoogleDriveBackups(true);

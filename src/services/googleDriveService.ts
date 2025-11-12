@@ -316,6 +316,49 @@ export const isGoogleDriveAvailable = async (): Promise<boolean> => {
 };
 
 /**
+ * Ensure user is authenticated and has Drive permissions before making API calls
+ * Automatically requests permissions if needed
+ */
+export const ensureGoogleDriveAuthenticated = async (): Promise<{
+  success: boolean;
+  error?: string;
+}> => {
+  try {
+    const available = await isGoogleDriveAvailable();
+    if (available) {
+      return { success: true };
+    }
+
+    console.log('🔵 [GoogleDrive] Not authenticated, requesting permissions...');
+    const permResult = await requestDrivePermissions();
+    
+    if (!permResult.success) {
+      return {
+        success: false,
+        error: permResult.error || 'Failed to authenticate with Google Drive',
+      };
+    }
+
+    // Verify authentication after requesting permissions
+    const verified = await isGoogleDriveAvailable();
+    if (!verified) {
+      return {
+        success: false,
+        error: 'Authentication failed after permission request',
+      };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('🔴 [GoogleDrive] Error ensuring authentication:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
+/**
  * Request additional Drive permissions if needed
  */
 export const requestDrivePermissions = async (): Promise<{

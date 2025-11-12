@@ -33,8 +33,10 @@ import {
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { autofillService } from '../services/autofillService';
+import { accessibilityService } from '../services/accessibilityService';
 import { domainVerificationService } from '../services/domainVerificationService';
 import { useBiometric } from '../hooks/useBiometric';
+import { useAccessibility } from '../hooks/useAccessibility';
 
 interface AutofillSettings {
   enabled: boolean;
@@ -58,9 +60,12 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
 }) => {
   const { theme } = useTheme();
   const biometric = useBiometric();
+  const accessibility = useAccessibility();
   const [loading, setLoading] = useState(true);
   const [isSupported, setIsSupported] = useState(false);
   const [isEnabled, setIsEnabled] = useState(false);
+  const [accessibilityLoading, setAccessibilityLoading] = useState(false);
+  const isCheckingAccessibilityRef = useRef(false);
   const [settings, setSettings] = useState<AutofillSettings>({
     enabled: true,
     requireBiometric: true,
@@ -80,30 +85,52 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
 
   const handleAppStateChange = useCallback(
     async (state: string) => {
-      if (state === 'active' && isCheckingAutofillRef.current) {
-        console.log('📱 App returned to foreground - checking autofill status');
+      if (state === 'active' && (isCheckingAutofillRef.current || isCheckingAccessibilityRef.current)) {
+        console.log('📱 App returned to foreground - checking settings status');
         // Give system a moment to process the settings change
         await new Promise(resolve => setTimeout(resolve, 500));
 
         try {
-          const enabled = await autofillService.isEnabled();
-          if (enabled !== isEnabled) {
-            console.log(
-              `✅ Autofill status changed: ${enabled ? 'Enabled' : 'Disabled'}`,
-            );
-            setIsEnabled(enabled);
-
-            if (enabled) {
-              Alert.alert(
-                '✅ Success',
-                'Autofill has been enabled! You can now use PasswordEpic to fill credentials.',
+          if (isCheckingAutofillRef.current) {
+            const enabled = await autofillService.isEnabled();
+            if (enabled !== isEnabled) {
+              console.log(
+                `✅ Autofill status changed: ${enabled ? 'Enabled' : 'Disabled'}`,
               );
+              setIsEnabled(enabled);
+
+              if (enabled) {
+                Alert.alert(
+                  '✅ Success',
+                  'Autofill has been enabled! You can now use PasswordEpic to fill credentials.',
+                );
+              }
             }
+            isCheckingAutofillRef.current = false;
+          }
+
+          if (isCheckingAccessibilityRef.current) {
+            const enabled = await accessibilityService.isEnabled();
+            if (enabled !== accessibility.isEnabled) {
+              console.log(
+                `✅ Accessibility status changed: ${enabled ? 'Enabled' : 'Disabled'}`,
+              );
+              
+              if (enabled) {
+                Alert.alert(
+                  '✅ Success',
+                  'Accessibility service has been enabled! You can now use PasswordEpic accessibility features.',
+                );
+              }
+              await accessibility.checkAccessibility();
+            }
+            isCheckingAccessibilityRef.current = false;
           }
         } catch (error) {
-          console.error('Error checking autofill status on app return:', error);
+          console.error('Error checking settings status on app return:', error);
         } finally {
           isCheckingAutofillRef.current = false;
+          isCheckingAccessibilityRef.current = false;
         }
       }
     },
@@ -113,6 +140,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   // Load initial data
   useEffect(() => {
     loadAutofillData();
+    loadAccessibilityData();
   }, []);
 
   // Listen for app state changes to detect when user returns from settings
@@ -163,7 +191,16 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
     }
   };
 
+  const loadAccessibilityData = async () => {
+    try {
+      await accessibility.checkAccessibility();
+    } catch (error) {
+      console.error('Error loading accessibility data:', error);
+    }
+  };
+
   const handleEnableAutofill = async () => {
+    console.log('🔵 [DEBUG] handleEnableAutofill called, isEnabled:', isEnabled);
     try {
       if (isEnabled) {
         // Autofill is enabled - user wants to DISABLE it
@@ -190,6 +227,25 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
       console.log('🔐 Starting biometric verification...');
       setBiometricVerifying(true);
 
+      // Step 0: Check if biometric is setup, if not, setup first
+      if (!biometric.isSetup) {
+        console.log('⚠️ Biometric not setup, setting up now...');
+        const setupSuccess = await biometric.setupBiometric();
+        
+        if (!setupSuccess) {
+          console.log('❌ Biometric setup failed');
+          Alert.alert(
+            'Setup Failed',
+            'Failed to setup biometric authentication. Please enable biometric authentication in Settings first.',
+            [{ text: 'OK' }],
+          );
+          setBiometricVerifying(false);
+          return;
+        }
+        
+        console.log('✅ Biometric setup successful');
+      }
+
       // Step 1: Request biometric verification
       const authenticated = await biometric.authenticate(
         'Verify to enable Autofill service',
@@ -209,67 +265,102 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
       console.log('✅ Biometric verification successful');
       console.log('🎯 Opening autofill service selection...');
 
-      try {
-        console.log('📞 Calling autofillService.requestEnable()...');
-        const success = await autofillService.requestEnable();
-        console.log('📞 requestEnable returned:', success);
+      // Mark that we're waiting for user to return from settings
+      isCheckingAutofillRef.current = true;
 
-        if (success) {
-          console.log(
-            '✅ Successfully called requestEnable - opening settings',
-          );
-          // Mark that we're waiting for user to return from settings
-          isCheckingAutofillRef.current = true;
+      // Get device-specific instructions
+      const deviceInstructions = Platform.select({
+        android: () => {
+          const manufacturer = Platform.constants?.Manufacturer?.toUpperCase() || '';
+          
+          if (manufacturer.includes('SAMSUNG')) {
+            return {
+              title: '📱 Enable Autofill on Samsung',
+              message: 'Follow these steps:\n\n' +
+                '1. In Settings, tap "General management"\n' +
+                '2. Tap "Language and input"\n' +
+                '3. Tap "Autofill service"\n' +
+                '4. Select "PasswordEpic"\n' +
+                '5. Return to this app\n\n' +
+                'Note: You may need to disable Samsung Pass first.',
+            };
+          } else if (manufacturer.includes('HUAWEI')) {
+            return {
+              title: '📱 Enable Autofill on Huawei',
+              message: 'Follow these steps:\n\n' +
+                '1. In Settings, tap "System"\n' +
+                '2. Tap "Languages & input"\n' +
+                '3. Tap "More input settings"\n' +
+                '4. Tap "Autofill service"\n' +
+                '5. Select "PasswordEpic"\n' +
+                '6. Return to this app',
+            };
+          } else {
+            return {
+              title: '📱 Enable Autofill',
+              message: 'Follow these steps:\n\n' +
+                '1. In Settings, look for "Autofill service"\n' +
+                '2. Select "PasswordEpic" from the list\n' +
+                '3. Return to this app\n\n' +
+                'Common paths:\n' +
+                '• Settings → System → Languages & input → Autofill\n' +
+                '• Settings → Apps → Default apps → Autofill',
+            };
+          }
+        },
+        default: () => ({
+          title: '📱 Enable Autofill',
+          message: 'Please select "PasswordEpic" as your Autofill service in Settings.',
+        }),
+      })();
 
-          // Show user-friendly message with instructions
-          Alert.alert(
-            '📱 Select PasswordEpic',
-            'Please select "PasswordEpic" as your Autofill service from the list.\n\nWhen done, return to the app.',
-            [
-              {
-                text: "I've enabled it",
-                onPress: async () => {
-                  console.log('👤 User confirmed they enabled autofill');
-                  // Wait a bit then check status with retries
-                  await checkAutofillStatusWithRetry();
-                },
-              },
-              {
-                text: 'Cancel',
-                onPress: () => {
-                  console.log('❌ User cancelled autofill setup');
+      // Show device-specific instructions FIRST, then open settings when user confirms
+      Alert.alert(
+        deviceInstructions.title,
+        deviceInstructions.message,
+        [
+          {
+            text: 'Open Settings',
+            onPress: async () => {
+              console.log('👤 User confirmed - opening settings now...');
+              
+              try {
+                console.log('📞 Calling autofillService.requestEnable()...');
+                const success = await autofillService.requestEnable();
+                console.log('📞 requestEnable returned:', success);
+
+                if (!success) {
+                  console.warn('⚠️ requestEnable returned false');
+                  Alert.alert(
+                    'Error',
+                    "Failed to open autofill settings. Please manually enable it following the instructions above.",
+                  );
                   isCheckingAutofillRef.current = false;
-                },
-                style: 'cancel',
-              },
-            ],
-            { cancelable: false },
-          );
-        } else {
-          console.warn('⚠️ requestEnable returned false');
-          Alert.alert(
-            'Error',
-            "Failed to open autofill settings. This may happen if:\n\n1. You're using an unsupported device or Android version\n2. Settings app is not available\n\nPlease try manually enabling it in Settings > System > Autofill service",
-          );
-        }
-      } catch (bridgeError) {
-        console.error(
-          '❌ Error calling autofillService.requestEnable:',
-          bridgeError,
-        );
-        console.error('Error details:', {
-          message:
-            bridgeError instanceof Error
-              ? bridgeError.message
-              : String(bridgeError),
-          stack: bridgeError instanceof Error ? bridgeError.stack : undefined,
-        });
-
-        Alert.alert(
-          'Error Opening Settings',
-          'Failed to open autofill settings.\n\nPlease manually enable it:\nSettings > System > Languages & input > Autofill service',
-        );
-      }
+                }
+              } catch (bridgeError) {
+                console.error(
+                  '❌ Error calling autofillService.requestEnable:',
+                  bridgeError,
+                );
+                Alert.alert(
+                  'Error Opening Settings',
+                  'Failed to open autofill settings. Please manually enable it following the instructions above.',
+                );
+                isCheckingAutofillRef.current = false;
+              }
+            },
+          },
+          {
+            text: 'Cancel',
+            onPress: () => {
+              console.log('❌ User cancelled autofill setup');
+              isCheckingAutofillRef.current = false;
+            },
+            style: 'cancel',
+          },
+        ],
+        { cancelable: false },
+      );
     } catch (error) {
       console.error('Error in handleEnableAutofillFlow:', error);
       throw error;
@@ -446,6 +537,130 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
     }
   };
 
+  const handleDisableAccessibility = async () => {
+    try {
+      console.log('🔴 Opening accessibility disable settings...');
+
+      try {
+        console.log('📞 Calling accessibilityService.requestDisable()...');
+        const result = await accessibilityService.requestDisable();
+        console.log('📞 requestDisable returned:', result);
+        console.log('📞 Result type:', typeof result);
+        console.log('📞 Result is object:', typeof result === 'object');
+
+        const success = typeof result === 'boolean' ? result : result?.success;
+        const instructions =
+          typeof result === 'object' ? result?.instructions : null;
+        const error = typeof result === 'object' ? result?.error : null;
+
+        console.log('📞 Parsed values:', { success, instructions, error });
+
+        isCheckingAccessibilityRef.current = true;
+
+        const messageText = instructions
+          ? `${
+              error ? error + '\n\n' : ''
+            }Follow these steps for your device:\n\n${instructions}`
+          : 'Please disable PasswordEpic in your accessibility settings.\n\nSteps:\n1. Go to Settings > Accessibility\n2. Find "PasswordEpic" in the list\n3. Toggle it OFF\n4. Return to the app when done';
+
+        console.log('📞 Prepared message text');
+        console.log('📞 NOW showing Alert.alert');
+
+        Alert.alert(
+          '🔧 Disable Accessibility',
+          messageText,
+          [
+            {
+              text: "I've disabled it",
+              onPress: async () => {
+                console.log('✅ User confirmed they disabled accessibility');
+
+                console.log('🔧 Opening accessibility settings intent now...');
+                try {
+                  await accessibilityService.openAccessibilitySettingsNow();
+                  console.log('✅ Settings intent opened successfully');
+                } catch (settingsError) {
+                  console.error('❌ Failed to open settings:', settingsError);
+                }
+
+                await checkAccessibilityDisableStatusWithRetry();
+              },
+            },
+            {
+              text: 'Cancel',
+              onPress: () => {
+                console.log('❌ User cancelled accessibility disable');
+                isCheckingAccessibilityRef.current = false;
+                setAccessibilityLoading(false);
+              },
+              style: 'cancel',
+            },
+          ],
+          { cancelable: false },
+        );
+
+        console.log('📞 Alert.alert called successfully');
+      } catch (bridgeError) {
+        console.error(
+          '❌ Error calling accessibilityService.requestDisable:',
+          bridgeError,
+        );
+        console.error('Error details:', {
+          message:
+            bridgeError instanceof Error
+              ? bridgeError.message
+              : String(bridgeError),
+          stack: bridgeError instanceof Error ? bridgeError.stack : undefined,
+        });
+
+        Alert.alert(
+          'Error Opening Settings',
+          'Failed to open accessibility settings.\n\nPlease manually disable it:\n\n1. Go to Settings\n2. Look for "Accessibility"\n3. Find "PasswordEpic"\n4. Toggle it OFF',
+        );
+      }
+    } catch (error) {
+      console.error('Error in handleDisableAccessibility:', error);
+      throw error;
+    } finally {
+      setAccessibilityLoading(false);
+    }
+  };
+
+  const checkAccessibilityDisableStatusWithRetry = async () => {
+    try {
+      // Retry up to 3 times with increasing delays
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const delayMs = attempt * 1500;
+        console.log(
+          `⏳ Accessibility disable check attempt ${attempt}/3 (waiting ${delayMs}ms)...`,
+        );
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+
+        const enabled = await accessibilityService.isEnabled();
+        console.log(`   Result: ${enabled ? 'Enabled ❌' : 'Disabled ✅'}`);
+
+        if (!enabled) {
+          await accessibility.checkAccessibility();
+          Alert.alert(
+            '✅ Success!',
+            'Accessibility has been disabled successfully. PasswordEpic is no longer your accessibility service.',
+          );
+          return;
+        }
+      }
+
+      console.warn('⚠️ Accessibility still enabled after 3 attempts');
+      Alert.alert(
+        '⏳ Still Checking',
+        'Accessibility is still enabled. Please make sure to toggle OFF PasswordEpic in Settings > Accessibility and return to the app.',
+        [{ text: 'OK' }],
+      );
+    } catch (error) {
+      console.error('Error during accessibility disable check retry:', error);
+      Alert.alert('Error', 'Failed to verify accessibility disable status');
+    }
+  };
+
   const handleSettingChange = async (
     key: keyof AutofillSettings,
     value: boolean,
@@ -582,6 +797,98 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Accessibility Status Section */}
+      {accessibility.isSupported && (
+        <View style={[styles.section, { backgroundColor: theme.surface }]}>
+          <View style={styles.sectionHeader}>
+            <Ionicons
+              name={accessibility.isEnabled ? 'checkmark-circle' : 'close-circle'}
+              size={24}
+              color={accessibility.isEnabled ? theme.success : theme.error}
+            />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>
+              Accessibility Status
+            </Text>
+          </View>
+          <View style={styles.statusRow}>
+            <Text style={[styles.statusLabel, { color: theme.textSecondary }]}>
+              Service Status
+            </Text>
+            <View style={styles.statusBadge}>
+              <Text
+                style={[
+                  styles.statusText,
+                  { color: accessibility.isEnabled ? theme.success : theme.error },
+                ]}
+              >
+                {accessibility.isEnabled ? 'Enabled' : 'Disabled'}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.button,
+              {
+                backgroundColor: accessibility.isEnabled ? theme.error : theme.primary,
+                opacity: accessibilityLoading ? 0.6 : 1 as any,
+              },
+            ]}
+            onPress={async () => {
+              try {
+                if (accessibility.isEnabled) {
+                  await handleDisableAccessibility();
+                } else {
+                  Alert.alert(
+                    'Enable Accessibility Service',
+                    'In the next screen:\n\n' +
+                    '1️⃣ Tap "Accessibility"\n' +
+                    '2️⃣ Scroll down to "Downloaded apps"\n' +
+                    '3️⃣ Find "PasswordEpic Autofill Refill"\n' +
+                    '4️⃣ Tap it\n' +
+                    '5️⃣ Toggle "Use PasswordEpic" ON\n\n' +
+                    '✓ We\'ll auto-detect when you return',
+                    [
+                      { text: 'Cancel', style: 'cancel', onPress: () => {} },
+                      {
+                        text: 'Open Settings',
+                        onPress: async () => {
+                          setAccessibilityLoading(true);
+                          isCheckingAccessibilityRef.current = true;
+                          
+                          try {
+                            await accessibilityService.requestEnable();
+                          } catch (error) {
+                            console.error('Error opening accessibility settings:', error);
+                            Alert.alert(
+                              'Error',
+                              'Failed to open settings. Open manually: Settings → Accessibility → PasswordEpic Autofill Refill',
+                            );
+                            isCheckingAccessibilityRef.current = false;
+                            setAccessibilityLoading(false);
+                          }
+                        },
+                      },
+                    ]
+                  );
+                }
+              } catch (error) {
+                console.error('Error handling accessibility toggle:', error);
+                setAccessibilityLoading(false);
+              }
+            }}
+            disabled={accessibilityLoading}
+          >
+            {accessibilityLoading ? (
+              <ActivityIndicator color={theme.surface} size="small" />
+            ) : (
+              <Text style={styles.buttonText}>
+                {accessibility.isEnabled ? 'Disable Accessibility' : 'Enable Accessibility'}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Settings Section */}
       {isEnabled && (

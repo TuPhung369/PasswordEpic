@@ -3,7 +3,8 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 interface SecuritySettings {
   biometricEnabled: boolean;
   biometricType: string;
-  autoLockTimeout: number; // in minutes
+  biometricPreference: 'fingerprint' | 'face' | 'any';
+  autoLockTimeout: number;
   requireBiometricForAutoFill: boolean;
   screenProtectionEnabled: boolean;
   securityChecksEnabled: boolean;
@@ -35,7 +36,8 @@ const initialState: SettingsState = {
   security: {
     biometricEnabled: true,
     biometricType: 'Biometric Authentication',
-    autoLockTimeout: 5, // 5 minutes default
+    biometricPreference: 'any',
+    autoLockTimeout: 5,
     requireBiometricForAutoFill: true,
     screenProtectionEnabled: true,
     securityChecksEnabled: true,
@@ -85,6 +87,12 @@ const settingsSlice = createSlice({
     },
     setBiometricType: (state, action: PayloadAction<string>) => {
       state.security.biometricType = action.payload;
+    },
+    setBiometricPreference: (
+      state,
+      action: PayloadAction<'fingerprint' | 'face' | 'any'>,
+    ) => {
+      state.security.biometricPreference = action.payload;
     },
     setScreenProtectionEnabled: (state, action: PayloadAction<boolean>) => {
       state.security.screenProtectionEnabled = action.payload;
@@ -147,6 +155,7 @@ export const {
   setLanguage,
   setBiometricEnabled,
   setBiometricType,
+  setBiometricPreference,
   setScreenProtectionEnabled,
   setSecurityChecksEnabled,
   setRootDetectionEnabled,

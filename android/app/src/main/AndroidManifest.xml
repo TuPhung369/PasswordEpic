@@ -26,8 +26,9 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
     
-    <!-- Declare biometric hardware feature (not required, allows app to work without it) -->
+    <!-- Declare biometric hardware features (not required, allows app to work without them) -->
     <uses-feature android:name="android.hardware.fingerprint" android:required="false" />
+    <uses-feature android:name="android.hardware.biometrics.face" android:required="false" />
     
     <!-- Accessibility Service Permission for autofill refill mechanism -->
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />

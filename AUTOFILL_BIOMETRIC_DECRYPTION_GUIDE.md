@@ -322,6 +322,12 @@ adb logcat -s ReactNativeJS
 
 # Watch for autofill service filling
 adb logcat -s PasswordEpicAutofill
+# find all of the path of Mobile to settings ******
+adb shell dumpsys package com.android.settings | findstr "Activity"
+(ex: Intent().setClassName("com.android.settings", "com.android.settings.Settings\$DefaultAutofillPickerActivity") => Samsung 22 Ultra)
+#filter logcat into file
+adb logcat > "E:\IT\Mobile\PasswordEpic\autofill_refill_fix_v2.log"
+Select-String -Path "E:\IT\Mobile\PasswordEpic\autofill_refill_fix_v2.log" -Pattern "AutofillBridge|requestEnable" | Select-Object -Last 50
 ```
 
 ### Expected Log Sequence

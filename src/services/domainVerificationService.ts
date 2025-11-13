@@ -52,9 +52,14 @@ class DomainVerificationService {
     try {
       // Normalize domain
       const normalizedDomain = this.normalizeDomain(domain);
+      console.log(`[verifyDomain] Input: "${domain}" -> Normalized: "${normalizedDomain}"`);
 
       // Check if domain is valid
-      if (!this.isValidDomain(normalizedDomain)) {
+      const isValidResult = this.isValidDomain(normalizedDomain);
+      console.log(`[verifyDomain] isValidDomain("${normalizedDomain}") = ${isValidResult}`);
+      
+      if (!isValidResult) {
+        console.log(`[verifyDomain] Domain validation failed: "${normalizedDomain}"`);
         return {
           isValid: false,
           isTrusted: false,
@@ -65,6 +70,7 @@ class DomainVerificationService {
 
       // Check if domain is trusted
       const isTrusted = await this.isTrustedDomain(normalizedDomain);
+      console.log(`[verifyDomain] isTrustedDomain("${normalizedDomain}") = ${isTrusted}`);
 
       // Check if domain requires confirmation
       const requiresConfirmation =
@@ -314,9 +320,9 @@ class DomainVerificationService {
       return false;
     }
 
-    // Basic domain regex
+    // Basic domain regex - supports single letter or longer TLDs like .fi, .com, .co.uk
     const domainRegex =
-      /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/i;
+      /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?$/i;
 
     return domainRegex.test(domain);
   }

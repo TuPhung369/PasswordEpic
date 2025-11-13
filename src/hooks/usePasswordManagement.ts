@@ -32,6 +32,7 @@ import { getEffectiveMasterPassword } from '../services/staticMasterPasswordServ
 import { sessionCache } from '../utils/sessionCache';
 import { autofillService } from '../services/autofillService';
 import { domainVerificationService } from '../services/domainVerificationService';
+import { isDefaultDomain } from '../constants/defaultDomains';
 
 export const usePasswordManagement = (masterPassword?: string) => {
   const dispatch = useAppDispatch();
@@ -174,52 +175,38 @@ export const usePasswordManagement = (masterPassword?: string) => {
     );
   }, [masterPassword, cachedMasterPassword, cacheTimestamp, CACHE_TIMEOUT]);
 
-  // Helper function to auto-verify and add domain to trusted list
   const autoVerifyDomain = useCallback(async (website: string | undefined) => {
     if (!website || website.trim().length === 0) {
       return;
     }
 
     try {
-      // Extract clean domain from website URL
       const domain = domainVerificationService.extractCleanDomain(website);
 
-      // Check if domain is valid
       if (!domain || domain.length === 0) {
         console.log(
-          'ℹ️ autoVerifyDomain: Invalid or empty domain, skipping auto-verification',
+          'ℹ️ autoVerifyDomain: Invalid or empty domain, skipping',
         );
         return;
       }
 
-      // Check if domain is in popular/suggested domains list
-      const isPopularDomain = DEFAULT_DOMAINS.some(
-        d => d.toLowerCase() === domain.toLowerCase(),
-      );
-      if (isPopularDomain) {
-        console.log(
-          `ℹ️ autoVerifyDomain: Domain ${domain} is in popular domains list - skipping auto-add (user can add manually from suggestions if desired)`,
-        );
-        return;
-      }
-
-      // Check if domain is already trusted
+      // Check if already trusted
       const isTrusted = await domainVerificationService.isTrustedDomain(domain);
       if (isTrusted) {
         console.log(
-          `✅ autoVerifyDomain: Domain ${domain} already in trusted list`,
+          `✅ autoVerifyDomain: ${domain} already trusted`,
         );
         return;
       }
 
-      // Auto-add domain to trusted list (with autoApproved flag) - only for non-popular domains
+      // Auto-add to trusted list (both Popular and non-Popular domains)
       await domainVerificationService.addTrustedDomain(domain, true);
+      const sourceType = isDefaultDomain(domain) ? 'Popular' : 'Custom';
       console.log(
-        `✅ autoVerifyDomain: Domain ${domain} auto-verified and added to trusted list`,
+        `✅ autoVerifyDomain: Added ${sourceType} domain '${domain}' to trusted list`,
       );
     } catch (error) {
-      console.warn('⚠️ autoVerifyDomain: Failed to auto-verify domain:', error);
-      // Don't throw - this is a non-critical background operation
+      console.warn('⚠️ autoVerifyDomain failed:', error);
     }
   }, []);
 

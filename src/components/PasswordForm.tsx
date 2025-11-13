@@ -31,6 +31,7 @@ import { BiometricService } from '../services/biometricService';
 import { QuickPasswordGenerator } from './QuickPasswordGenerator';
 import ConfirmDialog from './ConfirmDialog';
 import { useInstalledApps, AppInfo } from '../hooks/useInstalledApps';
+import { getDomainType } from '../utils/domainUtils';
 
 interface PasswordFormProps {
   password?: PasswordEntry;
@@ -247,18 +248,15 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
 
       // Detect domain type based on website field
       if (password.website) {
-        // Check if it looks like a package name (has dots and lowercase)
-        const isPackageName = /^[a-z][a-z0-9]*(\.[a-z0-9]+)+$/.test(
-          password.website,
-        );
-        if (isPackageName) {
-          setDomainType('mobile');
+        const detectedType = getDomainType(password.website);
+        setDomainType(detectedType);
+
+        if (detectedType === 'mobile') {
           setSelectedApp({
             name: password.website,
             packageName: password.website,
           });
         } else {
-          setDomainType('web');
           setSelectedApp(null);
         }
       }

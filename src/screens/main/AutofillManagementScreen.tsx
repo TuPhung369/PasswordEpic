@@ -53,7 +53,7 @@ export const AutofillManagementScreen: React.FC = () => {
   const [trustedDomains, setTrustedDomains] = useState<TrustedDomain[]>([]);
   const [newDomain, setNewDomain] = useState('');
   const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [_searchQuery, _setSearchQuery] = useState('');
   const [cleanDomain, setCleanDomain] = useState('');
   const [showCleanDomainPreview, setShowCleanDomainPreview] = useState(false);
   const [popularDomainsExpanded, setPopularDomainsExpanded] = useState(false);
@@ -72,7 +72,7 @@ export const AutofillManagementScreen: React.FC = () => {
     }
   };
 
-  const initializeAndLoadDomains = async () => {
+  const initializeAndLoadDomains = React.useCallback(async () => {
     try {
       await domainVerificationService.initializePopularDomains();
       await loadTrustedDomains();
@@ -80,11 +80,11 @@ export const AutofillManagementScreen: React.FC = () => {
       console.error('Error initializing popular domains:', error);
       await loadTrustedDomains();
     }
-  };
+  }, []);
 
   useEffect(() => {
     initializeAndLoadDomains();
-  }, []);
+  }, [initializeAndLoadDomains]);
 
   const handleAddDomain = async () => {
     if (!newDomain.trim()) {
@@ -99,6 +99,17 @@ export const AutofillManagementScreen: React.FC = () => {
 
       // Validate the extracted domain
       if (!clean || clean.length === 0) {
+        Alert.alert(
+          'Error',
+          'Invalid domain format. Please enter a valid domain.',
+        );
+        clearInputField();
+        return;
+      }
+
+      // Verify domain is valid format
+      const isValid = await domainVerificationService.verifyDomain(clean);
+      if (!isValid.isValid) {
         Alert.alert(
           'Error',
           'Invalid domain format. Please enter a valid domain.',
@@ -199,6 +210,28 @@ export const AutofillManagementScreen: React.FC = () => {
     }
   };
 
+  const handleSearchDomain = () => {
+    const query = newDomain.trim().toLowerCase();
+    
+    if (!query) {
+      setPopularDomainsExpanded(false);
+      setUserAddedDomainsExpanded(true);
+      return;
+    }
+
+    const filteredPopular = getFilteredDomains(getPopularDomains());
+    const filteredUserAdded = getFilteredDomains(getUserAddedDomains());
+    const totalMatches = filteredPopular.length + filteredUserAdded.length;
+
+    if (totalMatches === 0) {
+      setPopularDomainsExpanded(false);
+      setUserAddedDomainsExpanded(false);
+    } else {
+      setPopularDomainsExpanded(filteredPopular.length > 0);
+      setUserAddedDomainsExpanded(filteredUserAdded.length > 0);
+    }
+  };
+
 
 
   const getPopularDomains = () => {
@@ -207,6 +240,14 @@ export const AutofillManagementScreen: React.FC = () => {
 
   const getUserAddedDomains = () => {
     return trustedDomains.filter(d => !d.autoApproved);
+  };
+
+  const getFilteredDomains = (domains: TrustedDomain[]) => {
+    if (!newDomain.trim()) {
+      return domains;
+    }
+    const query = newDomain.trim().toLowerCase();
+    return domains.filter(d => d.domain.toLowerCase().includes(query));
   };
 
   const handleRemoveDomain = async (domain: string) => {
@@ -246,20 +287,6 @@ export const AutofillManagementScreen: React.FC = () => {
     } catch (error) {
       console.error('Error verifying domain:', error);
       Alert.alert('Error', 'Failed to verify domain');
-    }
-  };
-
-  const handleExportDomains = async () => {
-    try {
-      await domainVerificationService.exportTrustedDomains();
-      Alert.alert(
-        'Export Successful',
-        `Exported ${trustedDomains.length} domains`,
-        [{ text: 'OK' }],
-      );
-    } catch (error) {
-      console.error('Error exporting domains:', error);
-      Alert.alert('Error', 'Failed to export domains');
     }
   };
 
@@ -311,72 +338,60 @@ export const AutofillManagementScreen: React.FC = () => {
 
   const renderDomainsTab = () => (
     <View style={styles.tabContent}>
-      {/* Compact Input Section */}
+      {/* Domain Input Section */}
       <View style={[styles.compactSection, { backgroundColor: theme.surface }]}>
-        {/* Search and Add Row */}
-        <View style={styles.inputRowContainer}>
-          {/* Search Input */}
-          <View style={[styles.searchContainer, { flex: 1 }]}>
-            <Ionicons
-              name="search-outline"
-              size={16}
-              color={theme.textSecondary}
-            />
-            <TextInput
-              style={[styles.searchInput, { color: theme.text }]}
-              placeholder="Search..."
-              placeholderTextColor={theme.textSecondary}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Ionicons
-                  name="close-circle"
-                  size={16}
-                  color={theme.textSecondary}
-                />
-              </TouchableOpacity>
-            )}
-          </View>
+        {/* Input with Action Icons */}
+        <View style={styles.domainInputRow}>
+          <TextInput
+            style={[
+              styles.domainSearchInput,
+              {
+                color: theme.text,
+                borderColor: theme.border,
+                backgroundColor: theme.background,
+              },
+            ]}
+            placeholder="Enter domain..."
+            placeholderTextColor={theme.textSecondary}
+            value={newDomain}
+            onChangeText={handleDomainInputChange}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+          />
 
-          {/* Add Domain Input */}
-          <View style={[styles.addDomainContainer, { flex: 1, marginLeft: 8 }]}>
-            <Ionicons name="add-outline" size={16} color={theme.primary} />
-            <TextInput
-              style={[
-                styles.addDomainInput,
-                {
-                  backgroundColor: theme.background,
-                  color: theme.text,
-                  borderColor: theme.border,
-                  flex: 1,
-                },
-              ]}
-              placeholder="domain.com"
-              placeholderTextColor={theme.textSecondary}
-              value={newDomain}
-              onChangeText={handleDomainInputChange}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-            />
-            <TouchableOpacity
-              style={[styles.addButton, { backgroundColor: theme.primary }]}
-              onPress={handleAddDomain}
-            >
-              <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
+          {/* Search Button */}
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              { backgroundColor: theme.primary },
+            ]}
+            onPress={handleSearchDomain}
+            disabled={!newDomain.trim()}
+          >
+            <Ionicons name="search" size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          {/* Add Button */}
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              { backgroundColor: theme.success },
+            ]}
+            onPress={handleAddDomain}
+            disabled={!newDomain.trim()}
+          >
+            <Ionicons name="add" size={18} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
+
+
 
         {/* Preview of clean domain */}
         {showCleanDomainPreview && cleanDomain && (
           <View
             style={[
-              styles.compactPreview,
+              styles.cleanDomainPreview,
               { backgroundColor: theme.background, borderColor: theme.primary },
             ]}
           >
@@ -385,8 +400,8 @@ export const AutofillManagementScreen: React.FC = () => {
               size={14}
               color={theme.success}
             />
-            <Text style={[styles.previewDomain, { color: theme.text, flex: 1, marginLeft: 6, fontSize: 12 }]}>
-              {cleanDomain}
+            <Text style={[styles.previewDomain, { color: theme.text }]}>
+              Will save as: <Text style={styles.previewDomainBold}>{cleanDomain}</Text>
             </Text>
           </View>
         )}
@@ -399,14 +414,8 @@ export const AutofillManagementScreen: React.FC = () => {
         <View style={styles.sectionHeader}>
           <Ionicons name="list-outline" size={24} color={theme.primary} />
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Trusted Domains ({trustedDomains.length})
+            Trusted Domains ({newDomain.trim() ? getFilteredDomains(trustedDomains).length : trustedDomains.length})
           </Text>
-          <TouchableOpacity
-            style={styles.exportButton}
-            onPress={handleExportDomains}
-          >
-            <Ionicons name="download-outline" size={20} color={theme.primary} />
-          </TouchableOpacity>
         </View>
 
         {loading ? (
@@ -437,7 +446,7 @@ export const AutofillManagementScreen: React.FC = () => {
                     color={theme.primary}
                   />
                   <Text style={[styles.domainSectionTitle, { color: theme.text }]}>
-                    Popular ({getPopularDomains().length})
+                    Popular ({newDomain.trim() ? getFilteredDomains(getPopularDomains()).length : getPopularDomains().length})
                   </Text>
                   <Ionicons
                     name={
@@ -457,9 +466,7 @@ export const AutofillManagementScreen: React.FC = () => {
                       Pre-approved domains (already verified as safe)
                     </Text>
                     <FlatList
-                      data={getPopularDomains().filter(d =>
-                        d.domain.toLowerCase().includes(searchQuery.toLowerCase()),
-                      )}
+                      data={getFilteredDomains(getPopularDomains())}
                       renderItem={renderDomainItem}
                       keyExtractor={item => item.domain}
                       scrollEnabled={false}
@@ -482,7 +489,7 @@ export const AutofillManagementScreen: React.FC = () => {
                     color={theme.primary}
                   />
                   <Text style={[styles.domainSectionTitle, { color: theme.text }]}>
-                    User Added ({getUserAddedDomains().length})
+                    User Added ({newDomain.trim() ? getFilteredDomains(getUserAddedDomains()).length : getUserAddedDomains().length})
                   </Text>
                   <Ionicons
                     name={
@@ -502,9 +509,7 @@ export const AutofillManagementScreen: React.FC = () => {
                       Domains you manually added
                     </Text>
                     <FlatList
-                      data={getUserAddedDomains().filter(d =>
-                        d.domain.toLowerCase().includes(searchQuery.toLowerCase()),
-                      )}
+                      data={getFilteredDomains(getUserAddedDomains())}
                       renderItem={renderDomainItem}
                       keyExtractor={item => item.domain}
                       scrollEnabled={false}
@@ -888,6 +893,41 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
   },
+  domainInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  domainSearchInput: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  actionButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resultBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  resultText: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginLeft: 8,
+  },
   cleanDomainPreview: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -904,6 +944,10 @@ const styles = StyleSheet.create({
   },
   previewDomain: {
     fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  previewDomainBold: {
     fontWeight: '600',
   },
   iconMargin: {

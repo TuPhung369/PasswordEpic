@@ -398,6 +398,7 @@ const styles = StyleSheet.create({
   gridContainer: {
     paddingHorizontal: 16,
     paddingVertical: 8,
+    marginBottom: 12,
   },
   gridRow: {
     flexDirection: 'row',

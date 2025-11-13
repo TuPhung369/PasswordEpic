@@ -226,9 +226,6 @@ export const GeneratorScreen: React.FC = () => {
     >
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <Text style={[styles.title, { color: theme.text }]}>🔐 Generate</Text>
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-          Create secure passwords
-        </Text>
       </View>
 
       <ScrollView
@@ -561,7 +558,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 0,
+    paddingBottom: 20,
   },
   title: {
     fontSize: 28,
@@ -569,20 +566,15 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 14,
-    color: '#8E8E93',
-    fontWeight: '500',
-  },
   content: {
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 20,
+    paddingBottom: 0,
   },
   passwordContainer: {
     backgroundColor: '#1C1C1E',
     borderRadius: 16,
-    marginBottom: 24,
+    marginBottom: 16,
     borderWidth: 0.5,
     borderColor: '#38383A',
     overflow: 'hidden',
@@ -603,7 +595,9 @@ const styles = StyleSheet.create({
   passwordDisplay: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    paddingTop: 0,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
     minHeight: 60,
   },
   passwordText: {
@@ -624,7 +618,7 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     gap: 12,
-    marginBottom: 32,
+    marginBottom: 24,
   },
   generateButton: {
     backgroundColor: '#007AFF',
@@ -657,13 +651,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   settings: {
-    flex: 1,
+    marginBottom: 12,
   },
   settingsTitle: {
     fontSize: 20,
     fontWeight: '600',
     color: '#ffffff',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   settingCard: {
     backgroundColor: '#1C1C1E',
@@ -738,12 +732,12 @@ const styles = StyleSheet.create({
     minWidth: 28,
   },
   templatesSection: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   templatesSectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   templatesGrid: {
     flexDirection: 'row',

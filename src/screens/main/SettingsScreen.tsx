@@ -391,23 +391,6 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
-  const handleOpenAutofillSettings = async () => {
-    try {
-      console.log('🚀 Opening autofill settings...');
-      const success = await AutofillTestService.openAutofillSettings();
-      if (!success) {
-        setToastMessage('❌ Failed to open autofill settings');
-        setToastType('error');
-        setShowToast(true);
-      }
-    } catch (error) {
-      console.error('❌ Error opening autofill settings:', error);
-      setToastMessage('❌ Error opening settings');
-      setToastType('error');
-      setShowToast(true);
-    }
-  };
-
   const handleLaunchAutofillTest = async () => {
     try {
       console.log('🚀 Launching autofill test with theme...');
@@ -1433,20 +1416,6 @@ export const SettingsScreen: React.FC = () => {
         {/* Autofill Settings - Android Only */}
         {Platform.OS === 'android' && (
           <View style={styles.section}>
-            <SettingItem
-              icon="settings-outline"
-              title="Enable Autofill Service"
-              subtitle="Open Android settings to enable PasswordEpic as autofill service"
-              onPress={handleOpenAutofillSettings}
-              theme={theme}
-              rightElement={
-                <Ionicons
-                  name="open-outline"
-                  size={24}
-                  color={theme.primary}
-                />
-              }
-            />
             <SettingItem
               icon="flask-outline"
               title="Test Autofill"

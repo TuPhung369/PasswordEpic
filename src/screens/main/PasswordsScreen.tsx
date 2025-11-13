@@ -843,23 +843,45 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     fileName: string,
     destination?: 'local' | 'google' | 'google-hidden',
   ) => {
+    console.log('🟢 [Export] handleFileNameConfirm called with:', {
+      fileName,
+      destination,
+      currentExportDestination: exportDestination,
+    });
+
     if (!pendingExport) return;
 
-    // Update export destination if provided from modal
-    if (destination) {
-      // Convert modal destination to internal naming
-      const destMap: Record<
-        'local' | 'google' | 'google-hidden',
-        'local' | 'drive' | 'drive-hidden'
-      > = {
-        local: 'local',
-        google: 'drive',
-        'google-hidden': 'drive-hidden',
-      };
-      setExportDestination(destMap[destination]);
+    // Convert modal destination to internal naming
+    const destMap: Record<
+      'local' | 'google' | 'google-hidden',
+      'local' | 'drive' | 'drive-hidden'
+    > = {
+      local: 'local',
+      google: 'drive',
+      'google-hidden': 'drive-hidden',
+    };
+
+    // Use the provided destination or the current state
+    const finalDestination = destination
+      ? destMap[destination]
+      : exportDestination;
+
+    console.log('🟢 [Export] Final export destination:', {
+      provided: destination,
+      mapped: destination ? destMap[destination] : 'none',
+      current: exportDestination,
+      final: finalDestination,
+    });
+
+    if (!finalDestination) {
+      console.log('❌ [Export] Aborting: No destination specified');
+      return;
     }
 
-    if (!exportDestination && !destination) return;
+    // Update state with the new destination
+    if (destination) {
+      setExportDestination(destMap[destination]);
+    }
 
     const { entries, format, options } = pendingExport;
 
@@ -890,25 +912,37 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         exportOptions,
       );
 
+      console.log('🟢 [Export] Export completed:', {
+        success: result.success,
+        filePath: result.filePath,
+        exportedCount: result.exportedCount,
+        exportDestination,
+      });
+
       if (result.success) {
         let successMsg = `Successfully exported ${result.exportedCount} passwords`;
 
         // Check if export went to internal storage (fallback)
         if (
-          exportDestination === 'local' &&
+          finalDestination === 'local' &&
           selectedExportFolder &&
           result.filePath.includes('/data/user/')
         ) {
           successMsg += ' to internal storage';
-        } else if (exportDestination === 'local') {
+        } else if (finalDestination === 'local') {
           successMsg += ' to selected folder';
         }
 
         // Handle destination
         if (
-          exportDestination === 'drive' ||
-          exportDestination === 'drive-hidden'
+          finalDestination === 'drive' ||
+          finalDestination === 'drive-hidden'
         ) {
+          console.log('🟢 [Export] Starting Google Drive upload with:', {
+            finalDestination,
+            isPublic: finalDestination === 'drive',
+            filePath: result.filePath,
+          });
           // Check if Google Drive is available
           let isDriveAvailable = await isGoogleDriveAvailable();
 
@@ -944,7 +978,13 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
               return;
             }
 
-            const isPublic = exportDestination === 'drive';
+            const isPublic = finalDestination === 'drive';
+            console.log('🟢 [Export] Uploading to Google Drive:', {
+              finalDestination,
+              isPublic,
+              filePath: result.filePath,
+            });
+
             const uploadResult = await uploadToGoogleDrive(
               result.filePath,
               exportOptions.fileName || 'export',
@@ -952,23 +992,33 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
               isPublic,
             );
 
+            console.log('🟢 [Export] Upload result:', {
+              success: uploadResult.success,
+              fileId: uploadResult.fileId,
+              error: uploadResult.error,
+            });
+
             if (uploadResult.success) {
+              console.log('✅ [Export] Upload successful, deleting temp file:', result.filePath);
               // Delete local temporary file after successful upload
               try {
                 await RNFS.unlink(result.filePath);
+                console.log('✅ [Export] Temporary file deleted successfully');
               } catch (deleteError) {
-                console.warn('Failed to delete temp file:', deleteError);
+                console.warn('⚠️ [Export] Failed to delete temp file:', deleteError);
               }
 
               const driveMsg = isPublic
                 ? 'Google Drive (My Drive)'
                 : 'Google Drive (Automatic Backup)';
+              console.log('✅ [Export] Setting success message for:', driveMsg);
               setToastMessage(
                 `Successfully exported ${result.exportedCount} passwords to ${driveMsg}`,
               );
               setToastType('success');
               setShowToast(true);
             } else {
+              console.error('❌ [Export] Upload failed:', uploadResult.error);
               throw new Error(
                 uploadResult.error || 'Failed to upload to Google Drive',
               );

@@ -51,6 +51,15 @@ const FileNameInputModal: React.FC<FileNameInputModalProps> = ({
   const handleConfirm = () => {
     const trimmedName = fileName.trim();
     if (trimmedName || showDestinationSelector) {
+      console.log(
+        '📝 [FileNameInputModal] Confirming with destination:',
+        showDestinationSelector ? destination : 'undefined',
+        {
+          fileName: trimmedName,
+          showDestinationSelector,
+          isImport,
+        },
+      );
       onConfirm(trimmedName, showDestinationSelector ? destination : undefined);
     }
   };

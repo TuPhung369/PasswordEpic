@@ -377,12 +377,13 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       'lastUsed:',
       password.lastUsed,
     );
-    if (!password.lastUsed) return 'Never used';
+    const dateToUse = password.lastUsed || password.updatedAt || password.createdAt;
+    if (!dateToUse) return 'No date available';
 
     const now = new Date();
-    const lastUsed = new Date(password.lastUsed);
+    const date = new Date(dateToUse);
     const diffInHours = Math.floor(
-      (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60),
+      (now.getTime() - date.getTime()) / (1000 * 60 * 60),
     );
 
     if (diffInHours < 1) return 'Just now';

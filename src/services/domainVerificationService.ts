@@ -170,6 +170,7 @@ class DomainVerificationService {
 
   /**
    * Gets all trusted domains
+   * Automatically deduplicates entries by domain name
    */
   async getTrustedDomains(): Promise<TrustedDomain[]> {
     try {
@@ -178,7 +179,24 @@ class DomainVerificationService {
         return [];
       }
 
-      return JSON.parse(domainsJson);
+      const domains = JSON.parse(domainsJson) as TrustedDomain[];
+      
+      const seen = new Map<string, TrustedDomain>();
+      for (const domain of domains) {
+        const normalized = domain.domain.toLowerCase();
+        if (!seen.has(normalized)) {
+          seen.set(normalized, domain);
+        }
+      }
+
+      const deduplicated = Array.from(seen.values());
+      
+      if (deduplicated.length < domains.length) {
+        console.log(`Removed ${domains.length - deduplicated.length} duplicate domains`);
+        await this.saveTrustedDomains(deduplicated);
+      }
+
+      return deduplicated;
     } catch (error) {
       console.error('Error getting trusted domains:', error);
       return [];
@@ -414,6 +432,51 @@ class DomainVerificationService {
       console.log(`Imported ${domains.length} trusted domains`);
     } catch (error) {
       console.error('Error importing trusted domains:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Initializes popular domains as pre-approved trusted domains
+   * Should be called once during app setup or login
+   */
+  async initializePopularDomains(): Promise<void> {
+    try {
+      const { DEFAULT_DOMAINS } = await import('../constants/defaultDomains');
+      const trustedDomains = await this.getTrustedDomains();
+
+      const existingDomains = new Set(
+        trustedDomains.map(d => d.domain.toLowerCase()),
+      );
+
+      const domainsToAdd = DEFAULT_DOMAINS.filter(domain => {
+        const normalized = this.normalizeDomain(domain);
+        return !existingDomains.has(normalized.toLowerCase());
+      });
+
+      if (domainsToAdd.length === 0) {
+        console.log('✅ Popular domains already initialized');
+        return;
+      }
+
+      const now = Date.now();
+      const newDomains = domainsToAdd.map(domain => ({
+        domain: this.normalizeDomain(domain),
+        addedAt: now,
+        lastUsed: now,
+        useCount: 0,
+        autoApproved: true,
+      }));
+
+      const allDomains = [...trustedDomains, ...newDomains];
+      await this.saveTrustedDomains(allDomains);
+      this.trustedDomainsCache = null;
+
+      console.log(
+        `✅ Initialized ${domainsToAdd.length} popular domains as pre-approved`,
+      );
+    } catch (error) {
+      console.error('Error initializing popular domains:', error);
       throw error;
     }
   }

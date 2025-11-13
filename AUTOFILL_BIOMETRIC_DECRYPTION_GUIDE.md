@@ -328,6 +328,14 @@ adb shell dumpsys package com.android.settings | findstr "Activity"
 #filter logcat into file
 adb logcat > "E:\IT\Mobile\PasswordEpic\autofill_refill_fix_v2.log"
 Select-String -Path "E:\IT\Mobile\PasswordEpic\autofill_refill_fix_v2.log" -Pattern "AutofillBridge|requestEnable" | Select-Object -Last 50
+
+#get the input field of App (zalo)
+adb shell uiautomator dump /sdcard/layout.xml; adb pull /sdcard/layout.xml .; Get-Content layout.xml
+UI hierchary dumped to: /sdcard/layout.xml
+
+# Create the full file 
+adb shell uiautomator dump /sdcard/layout.xml; adb pull /sdcard/layout.xml .
+Get-Content layout.xml | Select-String -Pattern "EditText|TextInputEditText|inputPhoneNumber|phone|tel" -Context 2
 ```
 
 ### Expected Log Sequence

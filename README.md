@@ -5,91 +5,123 @@
 
 An ultra-secure mobile password manager built with React Native, featuring end-to-end encryption, biometric authentication, and native auto-fill capabilities.
 
-# Getting Started
+## User Guide
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+### Installation
 
-## Step 1: Start Metro
+1.  Download the app from the Google Play Store or Apple App Store (coming soon).
+2.  Install the app on your device.
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+### Setup for Autofill
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+To use the autofill feature, you need to enable it in your phone's settings.
 
-```sh
-# Using npm
-npm start
+1.  **Enable Autofill Service:**
+    *   Go to your phone's **Settings**.
+    *   Search for "Autofill service".
+    *   Select **PasswordEpic** as your autofill service.
+2.  **Enable in Browser (Chrome or Firefox):**
+    *   Open your web browser's settings.
+    *   Go to "Autofill" or "Passwords".
+    *   Ensure **PasswordEpic Autofill** is selected.
+3.  **Enable Accessibility Service:**
+    *   Go to your phone's **Settings > Accessibility**.
+    *   Find **PasswordEpic** in the list of downloaded apps.
+    *   Enable the accessibility service for PasswordEpic. This is required for the autofill feature to work correctly in all apps.
 
-# OR using Yarn
-yarn start
+### Main Screens
+
+#### Passwords Screen
+
+This is the main screen where you can manage all your saved passwords. It provides the following functions:
+
+*   **Search:** Quickly find any password.
+*   **Sort:** Sort your passwords by creation date, last used, or alphabetically.
+*   **Filter:** Filter passwords by category, tags, or security status (weak, compromised).
+*   **Add Password:** Manually add a new password entry.
+*   **Export/Import:** Export your passwords to a JSON file or import from a previous backup.
+*   **Backup & Restore:** Securely back up your encrypted password vault to Google Drive and restore it when needed.
+*   **Bulk Actions:** Select multiple passwords to delete them at once.
+*   **View Details:** Tap on a password to view its details, edit, or delete it.
+
+#### Generator Screen
+
+Create strong and unique passwords with the built-in password generator. You can customize:
+
+*   Password length.
+*   Inclusion of uppercase letters, lowercase letters, numbers, and symbols.
+*   Exclusion of similar or ambiguous characters.
+
+#### Settings Screen
+
+Configure the app to your preferences:
+
+*   **Security:** Enable biometric authentication (Face ID/Fingerprint), set an auto-lock timer, and manage other security features.
+*   **Appearance:** Choose between light, dark, or system default theme.
+*   **Backup & Restore:** Manage your backups.
+*   **Account:** Manage your account and sign out.
+
+## Developer Guide
+
+### Prerequisites
+
+- Node.js 20+
+- Android Studio with SDK 34
+- Java 17
+- Ruby with Bundler for iOS development
+
+### Getting Started
+
+1.  **Clone the repository:**
+    ```sh
+    git clone https://github.com/TuPhung369/PasswordEpic.git
+    cd PasswordEpic
+    ```
+2.  **Install dependencies:**
+    ```sh
+    # Using npm
+    npm install
+
+    # OR using Yarn
+    yarn
+    ```
+3.  **For iOS, install CocoaPods dependencies:**
+    ```sh
+    cd ios
+    bundle install
+    bundle exec pod install
+    cd ..
+    ```
+4.  **Start the Metro server:**
+    ```sh
+    # Using npm
+    npm start
+
+    # OR using Yarn
+    yarn start
+    ```
+5.  **Run the app:**
+    Open a new terminal and run one of the following commands:
+    ```sh
+    # For Android
+    npm run android
+
+    # For iOS
+    npm run ios
+    ```
+
+### Available Scripts
+
+```bash
+npm run android          # Run on Android
+npm run ios             # Run on iOS
+npm start               # Start Metro bundler
+npm test                # Run tests
+npm run lint            # Run ESLint
+npm run type-check      # TypeScript type checking
+npm run security-audit  # Security vulnerability scan
+npm run format          # Format code with Prettier
 ```
-
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
-```
-
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
 
 ## 🔐 Security Features
 

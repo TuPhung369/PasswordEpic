@@ -2,6 +2,7 @@ package com.passwordepic.mobile.autofill
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -126,6 +127,7 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
             // 🔧 FIX: On some OEM devices (e.g., Huawei), hasEnabledAutofillServices() 
             // may return false even when an autofill service IS selected.
             // If our service is the one enabled, then autofill IS enabled.
+            // Also on Huawei, Settings.Secure.autofill_service might be null but the service still works
             val finalResult = isOurService || isEnabled
             Log.d(TAG, "✅ Final autofill status: $finalResult (ourService=$isOurService, systemEnabled=$isEnabled)")
             
@@ -159,6 +161,10 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
 
             val manufacturer = Build.MANUFACTURER.uppercase()
             Log.d(TAG, "📱 Device manufacturer: $manufacturer")
+            Log.d(TAG, "📱 Activity class: ${activity.javaClass.simpleName}")
+            
+            // Log diagnostic info early to help debug
+            logSettingsPackageDiagnostics(activity.packageManager, manufacturer)
 
             // Try 1: OEM-specific paths FIRST (more reliable on many devices)
             if (tryOEMSpecificAutofillSettings(activity, manufacturer)) {
@@ -166,49 +172,72 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
                 promise.resolve(true)
                 return
             }
+            Log.d(TAG, "⚠️ OEM-specific paths failed, trying fallbacks...")
 
             // Try 2: Official Android API (fallback - Android 8.0+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
-                    val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+                    val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    }
                     Log.d(TAG, "📱 Attempt 2: Opening autofill service settings via official API")
                     activity.startActivity(intent)
                     Log.d(TAG, "✅ Opened autofill settings via official API")
                     promise.resolve(true)
                     return
                 } catch (e: ActivityNotFoundException) {
-                    Log.d(TAG, "⚠️ Official API not supported on this device, trying generic settings...")
+                    Log.d(TAG, "⚠️ Official API not supported: ${e.message}")
                 } catch (e: Exception) {
-                    Log.d(TAG, "⚠️ Error with official API: ${e.message}, trying generic settings...")
+                    Log.d(TAG, "⚠️ Error with official API (${e.javaClass.simpleName}): ${e.message}")
                 }
             }
 
-            // Fallback 1: Open Settings with default category
+            // Fallback 1: Open Settings without category
             try {
                 val intent = Intent(Settings.ACTION_SETTINGS).apply {
-                    addCategory(Intent.CATEGORY_DEFAULT)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
-                Log.d(TAG, "📱 Attempt 3: Opening Settings app")
+                Log.d(TAG, "📱 Attempt 3: Opening Settings app (no category)")
                 activity.startActivity(intent)
                 Log.d(TAG, "✅ Opened Settings - Navigate to: Settings → System → Languages & input → More input settings → Autofill (or similar path)")
                 promise.resolve(true)
                 return
             } catch (e: Exception) {
-                Log.d(TAG, "⚠️ Failed to open Settings: ${e.message}")
+                Log.d(TAG, "⚠️ Failed to open Settings without category (${e.javaClass.simpleName}): ${e.message}")
             }
 
-            // Fallback 2: Try opening app settings for PasswordEpic
+            // Fallback 2: Open Settings with default category
+            try {
+                val intent = Intent(Settings.ACTION_SETTINGS).apply {
+                    addCategory(Intent.CATEGORY_DEFAULT)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+                Log.d(TAG, "📱 Attempt 4: Opening Settings app (with DEFAULT category)")
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Opened Settings with category")
+                promise.resolve(true)
+                return
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ Failed to open Settings with category (${e.javaClass.simpleName}): ${e.message}")
+            }
+
+            // Fallback 3: Try opening app settings for PasswordEpic
             try {
                 val intent = Intent(Settings.ACTION_APPLICATION_SETTINGS).apply {
                     putExtra(Settings.EXTRA_APP_PACKAGE, "com.passwordepic.mobile")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
-                Log.d(TAG, "📱 Attempt 4: Opening PasswordEpic app settings")
+                Log.d(TAG, "📱 Attempt 5: Opening PasswordEpic app settings")
                 activity.startActivity(intent)
                 Log.d(TAG, "✅ Opened app settings")
                 promise.resolve(true)
                 return
             } catch (e: Exception) {
-                Log.d(TAG, "⚠️ Failed to open app settings: ${e.message}")
+                Log.d(TAG, "⚠️ Failed to open app settings (${e.javaClass.simpleName}): ${e.message}")
             }
 
             // If all attempts fail
@@ -227,12 +256,19 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
     private fun getOEMDisableInstructions(manufacturer: String): String {
         return when {
             manufacturer.contains("HUAWEI") -> 
+                "Huawei Autofill Disabling Instructions:\n\n" +
+                "Note: Huawei restricts direct access to autofill settings from apps.\n" +
+                "Please follow these manual steps:\n\n" +
                 "1. Go to Settings\n" +
-                "2. Tap 'System' or 'Advanced'\n" +
-                "3. Tap 'Languages & input'\n" +
-                "4. Tap 'More input settings' or 'Advanced'\n" +
-                "5. Tap 'Autofill service'\n" +
-                "6. Select 'None' to disable PasswordEpic"
+                "2. Search for 'Autofill' (use search icon)\n" +
+                "3. Or navigate: Settings → System → Languages & input → Autofill\n" +
+                "4. Find 'PasswordEpic' autofill service\n" +
+                "5. Tap and select 'None' or toggle OFF\n\n" +
+                "Alternative (if above doesn't work):\n" +
+                "1. Go to Settings → Apps\n" +
+                "2. Find 'PasswordEpic'\n" +
+                "3. Tap 'Permissions' → 'Autofill'\n" +
+                "4. Disable the permission"
             
             manufacturer.contains("SAMSUNG") ->
                 "1. Go to Settings\n" +
@@ -274,6 +310,47 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
                 "2. Look for 'Languages and input' or 'Input methods'\n" +
                 "3. Find 'Autofill service' or 'Autofill'\n" +
                 "4. Select 'None' to disable PasswordEpic"
+        }
+    }
+
+    /**
+     * List all available autofill services on the device
+     */
+    @ReactMethod
+    fun listAvailableAutofillServices(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                promise.resolve(Arguments.createArray())
+                return
+            }
+            
+            val services = Arguments.createArray()
+            
+            // Method 1: Try to get from AutofillManager (API 26+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    val autofillManager = reactContext.getSystemService(AutofillManager::class.java)
+                    if (autofillManager != null) {
+                        val currentService = autofillManager.getAutofillServiceComponentName()
+                        if (currentService != null) {
+                            val serviceMap = Arguments.createMap().apply {
+                                putString("package", currentService.packageName)
+                                putString("class", currentService.className)
+                                putString("full", "${currentService.packageName}/${currentService.className}")
+                            }
+                            services.pushMap(serviceMap)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not get autofill services from AutofillManager: ${e.message}")
+                }
+            }
+            
+            Log.d(TAG, "Found ${services.size()} available autofill services")
+            promise.resolve(services)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error listing autofill services", e)
+            promise.reject("ERROR", "Failed to list autofill services: ${e.message}", e)
         }
     }
 
@@ -356,33 +433,38 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
             val manufacturer = Build.MANUFACTURER.uppercase()
             Log.d(TAG, "📱 Device manufacturer: $manufacturer")
 
-            // Try 1: Official Android API (preferred method - Android 8.0+)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                try {
-                    val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
-                    Log.d(TAG, "📱 Attempt 1: Opening autofill service settings via official API")
-                    activity.startActivity(intent)
-                    Log.d(TAG, "✅ Opened autofill settings via official API")
-                    promise.resolve(true)
-                    return
-                } catch (e: ActivityNotFoundException) {
-                    Log.d(TAG, "⚠️ Official API not supported on this device, trying OEM-specific paths...")
-                } catch (e: Exception) {
-                    Log.d(TAG, "⚠️ Error with official API: ${e.message}, trying OEM-specific paths...")
-                }
-            }
-
-            // Try 2: OEM-specific paths
+            // Try 1: OEM-specific paths FIRST (more reliable on many devices, especially Huawei)
             if (tryOEMSpecificAutofillSettings(activity, manufacturer)) {
                 Log.d(TAG, "✅ Opened OEM-specific autofill settings")
                 promise.resolve(true)
                 return
             }
 
+            // Try 2: Official Android API (fallback - Android 8.0+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    }
+                    Log.d(TAG, "📱 Attempt 2: Opening autofill service settings via official API")
+                    activity.startActivity(intent)
+                    Log.d(TAG, "✅ Opened autofill settings via official API")
+                    promise.resolve(true)
+                    return
+                } catch (e: ActivityNotFoundException) {
+                    Log.d(TAG, "⚠️ Official API not supported on this device, trying fallback...")
+                } catch (e: Exception) {
+                    Log.d(TAG, "⚠️ Error with official API: ${e.message}, trying fallback...")
+                }
+            }
+
             // Fallback 1: Open Settings with default category
             try {
                 val intent = Intent(Settings.ACTION_SETTINGS).apply {
                     addCategory(Intent.CATEGORY_DEFAULT)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
                 Log.d(TAG, "📱 Attempt 3: Opening Settings app")
                 activity.startActivity(intent)
@@ -397,6 +479,8 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
             try {
                 val intent = Intent(Settings.ACTION_APPLICATION_SETTINGS).apply {
                     putExtra(Settings.EXTRA_APP_PACKAGE, "com.passwordepic.mobile")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
                 Log.d(TAG, "📱 Attempt 4: Opening PasswordEpic app settings")
                 activity.startActivity(intent)
@@ -417,19 +501,138 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
     }
 
     /**
+     * Log diagnostic information about available settings packages
+     * Helps troubleshoot why settings cannot be opened on specific devices
+     */
+    private fun logSettingsPackageDiagnostics(packageManager: android.content.pm.PackageManager, manufacturer: String) {
+        try {
+            Log.d(TAG, "🔧 === Diagnostic Info for $manufacturer ===")
+            
+            // Check if com.android.settings exists
+            try {
+                packageManager.getPackageInfo("com.android.settings", 0)
+                Log.d(TAG, "✓ com.android.settings package found")
+            } catch (e: Exception) {
+                Log.d(TAG, "✗ com.android.settings package NOT found: ${e.message}")
+            }
+            
+            // Check if com.huawei.settings exists (for Huawei devices)
+            if (manufacturer.contains("HUAWEI")) {
+                try {
+                    packageManager.getPackageInfo("com.huawei.settings", 0)
+                    Log.d(TAG, "✓ com.huawei.settings package found")
+                } catch (e: Exception) {
+                    Log.d(TAG, "✗ com.huawei.settings package NOT found: ${e.message}")
+                }
+            }
+            
+            // Try to launch getPackageInfo for system settings to see what's available
+            val sysSettingsIntents = listOf(
+                Pair("ACTION_SETTINGS", Intent(Settings.ACTION_SETTINGS)),
+                Pair("ACTION_REQUEST_SET_AUTOFILL_SERVICE", Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)),
+                Pair("android.settings.AUTOFILL_SETTINGS", Intent("android.settings.AUTOFILL_SETTINGS"))
+            )
+            
+            for ((name, intent) in sysSettingsIntents) {
+                val resolveInfos = packageManager.queryIntentActivities(intent, 0)
+                Log.d(TAG, "📱 $name: ${resolveInfos.size} activity(ies) found")
+                for (info in resolveInfos) {
+                    Log.d(TAG, "   - ${info.activityInfo.packageName}/${info.activityInfo.name}")
+                }
+            }
+            
+            Log.d(TAG, "🔧 === End Diagnostic Info ===")
+        } catch (e: Exception) {
+            Log.d(TAG, "Could not log diagnostics: ${e.message}")
+        }
+    }
+
+    /**
+     * Query PackageManager to find available autofill-related settings activities
+     * This helps discover what settings activities are actually available on the device
+     * Works across different OEM implementations
+     */
+    private fun discoverAvailableAutofillActivities(packageManager: android.content.pm.PackageManager): List<Intent> {
+        val discoveredIntents = mutableListOf<Intent>()
+        
+        try {
+            // Query 1: Try apps that can handle autofill settings
+            val autofillSettingsIntent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+            val autofillResolveInfos = packageManager.queryIntentActivities(autofillSettingsIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            Log.d(TAG, "🔍 Found ${autofillResolveInfos.size} activities for ACTION_REQUEST_SET_AUTOFILL_SERVICE")
+            for (info in autofillResolveInfos) {
+                val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE).apply {
+                    setClassName(info.activityInfo.packageName, info.activityInfo.name)
+                }
+                discoveredIntents.add(intent)
+                Log.d(TAG, "  ✓ Discovered: ${info.activityInfo.packageName}/${info.activityInfo.name}")
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Note: Could not query ACTION_REQUEST_SET_AUTOFILL_SERVICE: ${e.message}")
+        }
+        
+        try {
+            // Query 2: Try generic autofill settings action
+            val customAutofillIntent = Intent("android.settings.AUTOFILL_SETTINGS")
+            val customResolveInfos = packageManager.queryIntentActivities(customAutofillIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            Log.d(TAG, "🔍 Found ${customResolveInfos.size} activities for android.settings.AUTOFILL_SETTINGS")
+            for (info in customResolveInfos) {
+                val intent = Intent("android.settings.AUTOFILL_SETTINGS").apply {
+                    setClassName(info.activityInfo.packageName, info.activityInfo.name)
+                }
+                if (!discoveredIntents.any { it.component == intent.component }) {
+                    discoveredIntents.add(intent)
+                    Log.d(TAG, "  ✓ Discovered: ${info.activityInfo.packageName}/${info.activityInfo.name}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Note: Could not query android.settings.AUTOFILL_SETTINGS: ${e.message}")
+        }
+        
+        Log.d(TAG, "🔍 Total discovered autofill activities: ${discoveredIntents.size}")
+        return discoveredIntents
+    }
+
+    /**
      * Try to open autofill settings using OEM-specific deep links
      * Different manufacturers have different paths to autofill settings
      */
     private fun tryOEMSpecificAutofillSettings(activity: Activity, manufacturer: String): Boolean {
+        val packageManager = activity.packageManager
         val intentsList = when {
             // Huawei devices: Settings → System → Languages & input → More input settings → Autofill
-            // Use the direct autofill activity class instead of INPUT_METHOD_SETTINGS
-            manufacturer.contains("HUAWEI") -> listOf(
-                Intent().setClassName("com.android.settings", "com.android.settings.applications.autofill.AutofillPickerTrampolineActivity"),
-                Intent("android.settings.AUTOFILL_SETTINGS"),
-                Intent("android.settings.INPUT_METHOD_SETTINGS"),
-                Intent().setClassName("com.android.settings", "com.android.settings.Settings\$InputMethodAndLanguageSettings")
-            )
+            // Huawei has different settings paths than AOSP and often blocks direct access to autofill settings
+            manufacturer.contains("HUAWEI") -> {
+                val huaweiIntents = mutableListOf<Intent>()
+                
+                // Try 1: Direct autofill intent with explicit flags
+                val autofillRequestIntent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                }
+                huaweiIntents.add(autofillRequestIntent)
+                
+                // Try 2: Generic autofill settings action
+                huaweiIntents.add(Intent("android.settings.AUTOFILL_SETTINGS"))
+                
+                // Try 3: Try with explicit action for autofill picker
+                huaweiIntents.add(Intent("android.settings.AUTOFILL_SETTINGS").apply {
+                    setPackage("com.android.settings")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+                
+                // Try 4: Use direct action without component (let system resolve)
+                huaweiIntents.add(Intent("android.settings.AUTOFILL_SETTINGS").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                })
+                
+                // Note: AutofillPickerTrampolineActivity is often unavailable or crashes on Huawei
+                // Skip it to avoid wasting attempts - will use fallback methods instead
+                
+                huaweiIntents
+            }
             // Samsung devices: Settings → General management → Language and input → Autofill service
             // Samsung One UI has different paths than stock Android
             manufacturer.contains("SAMSUNG") -> listOf(
@@ -479,17 +682,109 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
         }
 
         for ((index, intent) in intentsList.withIndex()) {
+            val actionStr = intent.action ?: "no-action"
+            val componentStr = intent.component?.className ?: "N/A"
+            val pkgStr = intent.component?.packageName ?: intent.getPackage() ?: "N/A"
+            Log.d(TAG, "📱 OEM Attempt ${index + 1} ($manufacturer): action='$actionStr' pkg='$pkgStr' component='$componentStr'")
+            
             try {
-                Log.d(TAG, "📱 OEM Attempt ${index + 1} ($manufacturer): ${intent.action ?: intent.component}")
-                activity.startActivity(intent)
-                Log.d(TAG, "✅ Successfully opened autofill settings via OEM-specific path")
-                return true
+                // Check if intent can be resolved before calling startActivity
+                val resolveInfo = packageManager.resolveActivity(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                if (resolveInfo == null) {
+                    Log.d(TAG, "⚠️ OEM Attempt ${index + 1}: Cannot resolve - checking with flag 0...")
+                    // Try with different flags
+                    val resolveInfo2 = packageManager.resolveActivity(intent, 0)
+                    if (resolveInfo2 == null) {
+                        Log.d(TAG, "⚠️ OEM Attempt ${index + 1}: Intent cannot be resolved even with flag 0")
+                        continue
+                    } else {
+                        Log.d(TAG, "✓ OEM Attempt ${index + 1}: Intent resolved with flag 0: ${resolveInfo2.activityInfo.packageName}/${resolveInfo2.activityInfo.name}")
+                    }
+                } else {
+                    Log.d(TAG, "✓ OEM Attempt ${index + 1}: Intent resolved: ${resolveInfo.activityInfo.packageName}/${resolveInfo.activityInfo.name}")
+                }
+                
+                Log.d(TAG, "✓ OEM Attempt ${index + 1}: Attempting to start activity...")
+                // Only add flags if they're not already set
+                if (intent.flags == 0) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+                try {
+                    activity.startActivity(intent)
+                    Log.d(TAG, "✅ Successfully opened autofill settings via OEM-specific path")
+                    Thread.sleep(500)
+                    return true
+                } catch (e: Exception) {
+                    Log.d(TAG, "⚠️ OEM Attempt ${index + 1} startActivity() failed (${e.javaClass.simpleName}): ${e.message}")
+                    throw e
+                }
+            } catch (e: ActivityNotFoundException) {
+                Log.d(TAG, "⚠️ OEM Attempt ${index + 1}: ActivityNotFoundException - ${e.message}")
+            } catch (e: SecurityException) {
+                Log.d(TAG, "⚠️ OEM Attempt ${index + 1}: SecurityException - ${e.message}")
             } catch (e: Exception) {
-                Log.d(TAG, "⚠️ OEM Attempt ${index + 1} failed: ${e.message}")
+                Log.d(TAG, "⚠️ OEM Attempt ${index + 1} failed (${e.javaClass.simpleName}): ${e.message}")
             }
         }
 
-        return false
+        Log.d(TAG, "⏳ OEM-specific direct attempts failed - trying alternative navigation...")
+        
+        // For Huawei, the autofill activity is blocked from direct launch
+        // Use optimized helper function with nested fallbacks
+        if (manufacturer.contains("HUAWEI")) {
+            Log.d(TAG, "📱 Huawei detected: Direct autofill settings access not working")
+            Log.d(TAG, "📱 Attempting Huawei-optimized autofill settings approach...")
+            try {
+                openAutofillSettings(activity)
+                return true
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ Huawei-optimized approach failed: ${e.message}")
+            }
+        }
+        
+        Log.d(TAG, "⏳ Trying dynamically discovered autofill activities...")
+        
+        // Fallback: Try dynamically discovered autofill activities
+        val discoveredIntents = discoverAvailableAutofillActivities(packageManager)
+        for ((index, intent) in discoveredIntents.withIndex()) {
+            val componentStr = intent.component?.className ?: "N/A"
+            Log.d(TAG, "🔍 Discovered Attempt ${index + 1}: component='$componentStr'")
+            
+            try {
+                val resolveInfo = packageManager.resolveActivity(intent, 0)
+                if (resolveInfo == null) {
+                    Log.d(TAG, "⚠️ Discovered Attempt ${index + 1}: Intent cannot be resolved")
+                    continue
+                }
+                
+                Log.d(TAG, "✓ Discovered Attempt ${index + 1}: Intent can be resolved, attempting to start...")
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                activity.startActivity(intent)
+                Log.d(TAG, "✅ Successfully opened autofill settings via discovered activity")
+                return true
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ Discovered Attempt ${index + 1} failed: ${e.javaClass.simpleName} - ${e.message}")
+            }
+        }
+
+        Log.e(TAG, "❌ All autofill settings attempts failed for $manufacturer")
+        Log.e(TAG, "💡 On Huawei devices, autofill settings are restricted. Opening general Settings instead...")
+        
+        // Last resort: Open general settings
+        try {
+            val settingsIntent = Intent(Settings.ACTION_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            activity.startActivity(settingsIntent)
+            Log.d(TAG, "✅ Opened Settings app as final fallback")
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Even Settings app cannot be opened: ${e.message}")
+            return false
+        }
     }
 
     /**
@@ -943,26 +1238,71 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
     @RequiresApi(Build.VERSION_CODES.O)
     private fun isOurAutofillServiceEnabled(): Boolean {
         return try {
-            // Check what autofill service is currently enabled in system settings
+            // Try Method 1: Check Settings.Secure (works on stock Android)
+            Log.d(TAG, "📋 Method 1: Checking Settings.Secure.autofill_service...")
             val enabledService = Settings.Secure.getString(
                 reactContext.contentResolver,
-                "autofill_service"  // Android O+ autofill service setting
+                "autofill_service"
             )
             
-            // If no service is enabled, return false
-            if (enabledService == null) {
-                Log.d(TAG, "No autofill service enabled")
-                return false
+            Log.d(TAG, "   Raw value: '$enabledService'")
+            
+            if (enabledService != null && enabledService.isNotEmpty()) {
+                val isOurService = enabledService.contains("com.passwordepic.mobile")
+                Log.d(TAG, "✅ Settings.Secure found: '$enabledService' -> IsOurs: $isOurService")
+                if (isOurService) return true
+            } else {
+                Log.d(TAG, "⚠️ Settings.Secure.autofill_service is null/empty (Huawei doesn't populate this)")
             }
             
-            // Check if our package is the enabled autofill service
-            // Expected format: "com.passwordepic.mobile/com.passwordepic.mobile.autofill.PasswordEpicAutofillService"
-            val isOurService = enabledService.contains("com.passwordepic.mobile")
+            // Try Method 2: Use AutofillManager API (Android Q+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Log.d(TAG, "📋 Method 2: Checking AutofillManager.getAutofillServiceComponentName() (API 26+)...")
+                try {
+                    val autofillManager = reactContext.getSystemService(AutofillManager::class.java)
+                    if (autofillManager != null) {
+                        val currentService = autofillManager.getAutofillServiceComponentName()
+                        
+                        if (currentService != null) {
+                            val serviceName = "${currentService.packageName}/${currentService.className}"
+                            Log.d(TAG, "   Found enabled service: $serviceName")
+                            
+                            if (currentService.packageName == "com.passwordepic.mobile") {
+                                Log.d(TAG, "✅ AutofillManager check: IsOurs: true")
+                                return true
+                            }
+                        } else {
+                            Log.d(TAG, "   No autofill service is currently enabled")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ AutofillManager.getAutofillServiceComponentName() failed: ${e.message}")
+                }
+            }
             
-            Log.d(TAG, "Autofill service check - Enabled: $enabledService, IsOurs: $isOurService")
-            isOurService
+            // Try Method 3: Check system property via reflection (fallback for Huawei)
+            Log.d(TAG, "📋 Method 3: Checking via reflection fallback...")
+            try {
+                val settingsClass = Class.forName("android.provider.Settings\$Secure")
+                val getStringMethod = settingsClass.getMethod(
+                    "getString",
+                    android.content.ContentResolver::class.java,
+                    String::class.java
+                )
+                val result = getStringMethod.invoke(null, reactContext.contentResolver, "autofill_service")
+                if (result != null && result.toString().isNotEmpty()) {
+                    val isOurService = result.toString().contains("com.passwordepic.mobile")
+                    Log.d(TAG, "✅ Reflection check: '$result' -> IsOurs: $isOurService")
+                    if (isOurService) return true
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ Reflection check failed: ${e.message}")
+            }
+            
+            Log.d(TAG, "❌ All checks failed - autofill service not detected")
+            false
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking our autofill service status: ${e.message}", e)
+            Log.e(TAG, "❌ Error checking autofill service status: ${e.message}", e)
             false
         }
     }
@@ -1341,5 +1681,295 @@ class AutofillBridge(private val reactContext: ReactApplicationContext) :
             "EVENT_AUTOFILL_ERROR" to EVENT_AUTOFILL_ERROR,
             "MIN_API_LEVEL" to Build.VERSION_CODES.O
         )
+    }
+
+    private fun openAutofillSettings(context: Context) {
+        val manufacturer = Build.MANUFACTURER.uppercase()
+        
+        Log.d(TAG, "📱 Discovering available autofill-related activities...")
+        val packageManager = context.packageManager
+        discoverAndLogAvailableActivities(packageManager)
+        
+        Log.d(TAG, "⚠️ Standard autofill paths not working on this device")
+        
+        /* COMMENTED OUT - Opens general Settings, not autofill
+        try {
+            val intent = Intent(Intent.ACTION_SEARCH).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra("query", "autofill")
+                setPackage("com.android.settings")
+            }
+            Log.d(TAG, "📱 Attempt: Search for 'autofill' in Settings")
+            context.startActivity(intent)
+            Thread.sleep(500)
+            Log.d(TAG, "✅ Opened Settings search for 'autofill'")
+            return
+        } catch (e: Exception) {
+            Log.d(TAG, "⚠️ Search attempt failed: ${e.javaClass.simpleName}")
+        }
+        */
+        
+        if (manufacturer.contains("HUAWEI")) {
+            Log.d(TAG, "📱 Huawei: Trying alternative paths...")
+            
+            /* COMMENTED OUT - Opens general Settings
+            try {
+                val intent = Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.HWSettings")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    putExtra(":settings:show_fragment_args", android.os.Bundle().apply {
+                        putString("query", "autofill")
+                    })
+                }
+                Log.d(TAG, "📱 Attempt: HWSettings with search fragment")
+                context.startActivity(intent)
+                Thread.sleep(500)
+                Log.d(TAG, "✅ Opened HWSettings")
+                return
+            } catch (e: Exception) {
+                Log.d(TAG, "⚠️ HWSettings with fragment failed: ${e.javaClass.simpleName}")
+            }
+            */
+            
+            /* COMMENTED OUT - These paths don't lead to autofill settings
+            val huaweiPaths = listOf(
+                Pair("com.android.settings.Settings\$InputMethodAndLanguageSettings", "InputMethodAndLanguageSettings"),
+                Pair("com.android.settings.Settings\$LanguageAndInputSettings", "LanguageAndInputSettings"),
+                Pair("com.android.settings.Settings\$AccessibilitySettings", "AccessibilitySettings (check if autofill is there)"),
+                Pair("com.android.settings.Settings\$SecuritySettings", "SecuritySettings"),
+                Pair("com.android.settings.applications.DefaultAppSettings", "DefaultAppSettings")
+            )
+            
+            for ((className, label) in huaweiPaths) {
+                try {
+                    val intent = Intent().apply {
+                        setClassName("com.android.settings", className)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    }
+                    Log.d(TAG, "📱 Attempt: $label")
+                    context.startActivity(intent)
+                    Thread.sleep(500)
+                    Log.d(TAG, "✅ Opened $label")
+                    return
+                } catch (e: Exception) {
+                    Log.d(TAG, "⚠️ $label failed: ${e.javaClass.simpleName}")
+                }
+            }
+            */
+        }
+        
+        Log.d(TAG, "📱 Final fallback: Open general Settings")
+        openLanguageAndInputSettings(context)
+    }
+    
+    private fun discoverAndLogAvailableActivities(packageManager: android.content.pm.PackageManager) {
+        try {
+            Log.d(TAG, "🔍 Discovering ALL settings activities...")
+            val intent = Intent(Intent.ACTION_MAIN)
+            intent.addCategory(Intent.CATEGORY_LAUNCHER)
+            intent.setPackage("com.android.settings")
+            
+            val activities = packageManager.queryIntentActivities(intent, android.content.pm.PackageManager.MATCH_ALL)
+            Log.d(TAG, "   Total activities found: ${activities.size}")
+            
+            for ((index, resolveInfo) in activities.withIndex()) {
+                val className = resolveInfo.activityInfo.name
+                Log.d(TAG, "   [$index] $className")
+                
+                if (index >= 20) {
+                    Log.d(TAG, "   ... and more (showing first 20)")
+                    break
+                }
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "⚠️ Discovery failed: ${e.message}")
+        }
+    }
+
+    private fun openLanguageAndInputSettings(context: Context) {
+        Log.d(TAG, "📱 Attempting Huawei autofill settings navigation - systematic path testing")
+        
+        val huaweiPaths = listOf(
+            // ❌ TESTED: Opens general Settings, fragment ignored, NOT autofill settings
+            Triple("Strategy 1: Fragment InputMethodAndLanguageSettings", 
+                { Intent(Settings.ACTION_SETTINGS).apply {
+                    putExtra(":settings:show_fragment", "com.android.settings.inputmethod.InputMethodAndLanguageSettings")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "❌ TESTED FAILED: Opens general Settings, fragment ignored"),
+            
+            // ❌ TESTED: HWSettings + show_fragment - opens general Settings, NOT autofill
+            Triple("Strategy 2: HWSettings with show_fragment", 
+                { Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.HWSettings")
+                    putExtra(":settings:show_fragment", "com.android.settings.inputmethod.InputMethodAndLanguageSettings")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "❌ TESTED FAILED: Opens general Settings, extra ignored"),
+            
+            // ❌ TESTED: HWSettings + show_fragment_args - opens general Settings, NOT autofill
+            Triple("Strategy 3: HWSettings with show_fragment_args", 
+                { Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.HWSettings")
+                    putExtra(":settings:show_fragment", "com.android.settings.inputmethod.InputMethodAndLanguageSettings")
+                    putExtra(":settings:show_fragment_args", android.os.Bundle())
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "❌ TESTED FAILED: Opens general Settings, extras ignored"),
+            
+            // ❌ TESTED: HWSettings + 'screen' extra - opens general Settings, NOT autofill
+            Triple("Strategy 4: HWSettings with 'screen' extra", 
+                { Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.HWSettings")
+                    putExtra("screen", "com.android.settings.inputmethod.InputMethodAndLanguageSettings")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "❌ TESTED FAILED: Opens general Settings, 'screen' extra not recognized"),
+            
+            // ❌ TESTED: HWSettings + 'page' extra - opens general Settings, NOT autofill
+            Triple("Strategy 5: HWSettings with 'page' extra", 
+                { Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.HWSettings")
+                    putExtra("page", "InputMethodAndLanguageSettings")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "❌ TESTED FAILED: Opens general Settings, 'page' extra not recognized"),
+            
+            // ❌ TESTED: HWSettings + 'target' extra - opens general Settings, NOT autofill
+            Triple("Strategy 6: HWSettings with 'target' extra", 
+                { Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.HWSettings")
+                    putExtra("target", "com.android.settings.inputmethod.InputMethodAndLanguageSettings")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "❌ TESTED FAILED: Opens general Settings, 'target' extra not recognized"),
+            
+            // ❌ TESTED: HWSettings via ACTION_MAIN - opens general Settings, NOT autofill
+            Triple("Strategy 7: HWSettings via ACTION_MAIN", 
+                { Intent(Intent.ACTION_MAIN).apply {
+                    setClassName("com.android.settings", "com.android.settings.HWSettings")
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "❌ TESTED FAILED: Opens general Settings via ACTION_MAIN"),
+            
+            // ❌ NOT AVAILABLE: ACTION_REQUEST_SET_AUTOFILL_SERVICE throws exception on Huawei
+            Triple("Strategy 8: Direct autofill action", 
+                { Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "❌ UNAVAILABLE: ActivityNotFoundException (not supported)"),
+            
+            // ❌ TESTED: HWSettings + query extra - opens general Settings, NOT autofill
+            Triple("Strategy 9: HWSettings with query extra", 
+                { Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.HWSettings")
+                    putExtra("query", "autofill")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "❌ TESTED FAILED: Opens general Settings, search extra ignored"),
+            
+            // ❌ TESTED: HWSettings + keyword extra - opens general Settings, NOT autofill
+            Triple("Strategy 10: HWSettings with keyword extra", 
+                { Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.HWSettings")
+                    putExtra("keyword", "autofill")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "❌ TESTED FAILED: Opens general Settings, keyword extra not recognized"),
+            
+            // ❌ TESTED: HWSettings + short fragment name - opens general Settings, NOT autofill
+            Triple("Strategy 11: HWSettings fragment with short name", 
+                { Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.HWSettings")
+                    putExtra(":settings:show_fragment", "InputMethodAndLanguageSettings")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "❌ TESTED FAILED: Opens general Settings, short fragment name doesn't work"),
+            
+            // ❌ NOT AVAILABLE: Intent.ACTION_SEARCH throws SecurityException on Huawei
+            Triple("Strategy 12: Settings search for 'autofill'", 
+                { Intent(Intent.ACTION_SEARCH).apply {
+                    putExtra("query", "autofill")
+                    setPackage("com.android.settings")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                } }, 
+                "❌ UNAVAILABLE: SecurityException (permission denied)"),
+            
+            // ❌ NOT AVAILABLE: AUTOFILL_SETTINGS action throws exception on Huawei
+            Triple("Strategy 13: AUTOFILL_SETTINGS action", 
+                { Intent("android.settings.AUTOFILL_SETTINGS").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "❌ UNAVAILABLE: ActivityNotFoundException (action not supported)"),
+            
+            // ✅ WORKS: General Settings always opens, but requires manual navigation
+            Triple("Strategy 14: General Settings (fallback)", 
+                { Intent(Settings.ACTION_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                } }, 
+                "✅ WORKS: Opens Settings app (user must navigate manually)")
+        )
+        
+        val results = mutableListOf<Pair<Int, String>>() // Track which strategies succeed in launching
+        
+        for ((index, pathInfo) in huaweiPaths.withIndex()) {
+            val (strategyName, intentCreator, description) = pathInfo
+            
+            try {
+                Log.d(TAG, "📱 Attempt ${index + 1}/${huaweiPaths.size}: $strategyName")
+                Log.d(TAG, "   └─ Description: $description")
+                
+                val intent = intentCreator()
+                context.startActivity(intent)
+                Thread.sleep(300)
+                
+                Log.d(TAG, "✅ Attempt ${index + 1} LAUNCHED successfully (no exception thrown)")
+                results.add(Pair(index + 1, strategyName))
+            } catch (e: ActivityNotFoundException) {
+                Log.d(TAG, "❌ Attempt ${index + 1} FAILED (ActivityNotFoundException)")
+            } catch (e: SecurityException) {
+                Log.d(TAG, "❌ Attempt ${index + 1} FAILED (SecurityException)")
+            } catch (e: Exception) {
+                Log.d(TAG, "❌ Attempt ${index + 1} FAILED (${e.javaClass.simpleName}): ${e.message}")
+            }
+        }
+        
+        Log.e(TAG, "════════════════════════════════════════════════════════════════")
+        Log.e(TAG, "🔍 HUAWEI AUTOFILL SETTINGS - TEST RESULTS SUMMARY")
+        Log.e(TAG, "════════════════════════════════════════════════════════════════")
+        
+        if (results.isEmpty()) {
+            Log.e(TAG, "❌ NO strategies succeeded - all threw exceptions")
+            Log.e(TAG, "💡 Huawei may have completely blocked programmatic access")
+        } else {
+            Log.e(TAG, "✅ ${results.size} strategy(ies) launched successfully (without exceptions):")
+            for ((attemptNum, strategyName) in results) {
+                Log.e(TAG, "   └─ Strategy $attemptNum: $strategyName")
+            }
+            Log.e(TAG, "")
+            Log.e(TAG, "📌 CHECK WHICH STRATEGY OPENED THE CORRECT SCREEN:")
+            Log.e(TAG, "   • Look at the device screen right now")
+            Log.e(TAG, "   • If it shows: Settings > System > Languages & input > Autofill")
+            Log.e(TAG, "   • Then that strategy WORKS - update code to mark it TESTED:WORKS")
+            Log.e(TAG, "   • If it shows general Settings - that strategy FAILED")
+            Log.e(TAG, "   • Continue testing other strategies")
+        }
+        Log.e(TAG, "════════════════════════════════════════════════════════════════")
     }
 }

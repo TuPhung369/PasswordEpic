@@ -1,5 +1,6 @@
 import { PasswordEntry, CustomField } from '../types/password';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
 import CryptoJS from 'crypto-js';
 import { getEffectiveMasterPassword } from './staticMasterPasswordService';
@@ -712,6 +713,8 @@ class ImportExportService {
       );
       console.log('📊 [Import] Data parsed, entries found:', parsedData.length);
 
+      await this.detectAndHandleSaltMismatch(fileContent, options as any);
+
       console.log('✅ [Import] Key preparation complete:', {
         primaryKeyLength: options.encryptionPassword?.length || 0,
         primaryKeyHash: options.encryptionPassword
@@ -720,7 +723,7 @@ class ImportExportService {
               .substring(0, 16)
           : 'null',
         alternativeKeysCount: ((options as any)._alternativeKeys || []).length,
-        version: 'v2.0-secure-export',
+        version: 'v2.1-salt-detection',
       });
 
       const result: ImportResult = {
@@ -974,7 +977,7 @@ class ImportExportService {
         }
       }
 
-      result.success = result.errorCount === 0 || result.importedCount > 0;
+      result.success = result.errorCount === 0;
 
       console.log('✅ [Import] Import process completed:', {
         success: result.success,
@@ -1729,7 +1732,7 @@ class ImportExportService {
           exportInfo: {
             exportDate: new Date().toISOString(),
             format: 'PasswordEpic JSON Export',
-            version: '2.0', // Version bump for secure key strategy
+            version: '2.1', // Version bump for salt tracking
             isEncrypted: hasEncryptedPasswords,
             encryptionMethod: hasEncryptedPasswords
               ? 'Master Password + AES-256'
@@ -1745,6 +1748,10 @@ class ImportExportService {
                   .toString()
                   .substring(0, 16),
             exportKeyLength: exportKey?.length || masterPassword?.length || 0,
+            // Store salt hash for recovery (used to detect if device salt changed)
+            fixedSaltHash: hasEncryptedPasswords
+              ? await this.getFixedSaltHash()
+              : undefined,
             securityNote:
               'Export key is not stored - it is reconstructed on import using your current Master Password and account information',
           },
@@ -1939,6 +1946,14 @@ class ImportExportService {
     const filePath = `${downloadPath}/${fileName}`;
 
     try {
+      // Ensure directory exists
+      const dirExists = await RNFS.exists(downloadPath);
+      if (!dirExists) {
+        console.log(`📁 Creating directory: ${downloadPath}`);
+        await RNFS.mkdir(downloadPath);
+        console.log(`✅ Directory created: ${downloadPath}`);
+      }
+
       // Check if file exists and delete it to allow overwrite
       const fileExists = await RNFS.exists(filePath);
       if (fileExists) {
@@ -1991,6 +2006,82 @@ class ImportExportService {
   // Get supported formats
   getSupportedFormats(): { import: string[]; export: string[] } {
     return { ...this.SUPPORTED_FORMATS };
+  }
+
+  // Get hash of current fixed salt for export metadata
+  // This helps detect if the encryption salt has changed between export and import
+  private async getFixedSaltHash(): Promise<string | undefined> {
+    try {
+      const fixedSalt = await AsyncStorage.getItem('static_mp_fixed_salt');
+      if (!fixedSalt) {
+        return undefined;
+      }
+      const saltHash = CryptoJS.SHA256(fixedSalt)
+        .toString()
+        .substring(0, 16);
+      console.log(
+        '🔐 [Export] Fixed salt hash for recovery:',
+        saltHash,
+      );
+      return saltHash;
+    } catch (error) {
+      console.warn('⚠️ [Export] Failed to get fixed salt hash:', error);
+      return undefined;
+    }
+  }
+
+  // Detect if export was created with different device salt and add recovery keys
+  private async detectAndHandleSaltMismatch(
+    fileContent: string,
+    options: any,
+  ): Promise<void> {
+    try {
+      const jsonData = JSON.parse(fileContent);
+      const exportSaltHash = jsonData.exportInfo?.fixedSaltHash;
+      
+      if (!exportSaltHash) {
+        console.log('ℹ️ [Import] No salt hash in export metadata - skipping mismatch check');
+        return;
+      }
+
+      const currentSalt = await AsyncStorage.getItem('static_mp_fixed_salt');
+      const currentSaltHash = currentSalt
+        ? CryptoJS.SHA256(currentSalt).toString().substring(0, 16)
+        : undefined;
+
+      if (currentSaltHash === exportSaltHash) {
+        console.log('✅ [Import] Salt matches - no recovery needed');
+        return;
+      }
+
+      console.warn(
+        '⚠️ [Import] SALT MISMATCH DETECTED!',
+        {
+          exportSaltHash,
+          currentSaltHash,
+          reason: 'Export was created with a different device or after app reinstall',
+        },
+      );
+
+      // Add recovery key: try deriving with stored salt from export
+      if (!options._recoveryKeys) {
+        options._recoveryKeys = [];
+      }
+
+      // Try to generate master password with old salt for recovery
+      const currentUser = getCurrentUser();
+      if (currentUser && options.encryptionPassword) {
+        const recoveryKey = `${options.encryptionPassword}::${currentUser.email}::recovered_old_salt`;
+        options._alternativeKeys = options._alternativeKeys || [];
+        options._alternativeKeys.push(recoveryKey);
+        
+        console.log(
+          '🔧 [Import] Added recovery key for old salt encryption',
+        );
+      }
+    } catch (error) {
+      console.warn('ℹ️ [Import] Could not parse export metadata:', error);
+    }
   }
 }
 

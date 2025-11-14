@@ -35,7 +35,6 @@ import { useTheme } from '../contexts/ThemeContext';
 import { autofillService } from '../services/autofillService';
 import { accessibilityService } from '../services/accessibilityService';
 import { domainVerificationService } from '../services/domainVerificationService';
-import { useBiometric } from '../hooks/useBiometric';
 import { useAccessibility } from '../hooks/useAccessibility';
 
 interface AutofillSettings {
@@ -59,7 +58,6 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   onSettingsChange,
 }) => {
   const { theme } = useTheme();
-  const biometric = useBiometric();
   const accessibility = useAccessibility();
   const [loading, setLoading] = useState(true);
   const [isSupported, setIsSupported] = useState(false);
@@ -87,7 +85,6 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
     async (state: string) => {
       if (state === 'active' && (isCheckingAutofillRef.current || isCheckingAccessibilityRef.current)) {
         console.log('📱 App returned to foreground - checking settings status');
-        // Give system a moment to process the settings change
         await new Promise(resolve => setTimeout(resolve, 500));
 
         try {
@@ -125,25 +122,64 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
               await accessibility.checkAccessibility();
             }
             isCheckingAccessibilityRef.current = false;
+            setAccessibilityLoading(false);
           }
         } catch (error) {
           console.error('Error checking settings status on app return:', error);
+          setAccessibilityLoading(false);
         } finally {
           isCheckingAutofillRef.current = false;
           isCheckingAccessibilityRef.current = false;
         }
       }
     },
-    [isEnabled],
+    [isEnabled, accessibility],
   );
 
-  // Load initial data
+  const loadAutofillData = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      const supported = await autofillService.isSupported();
+      setIsSupported(supported);
+
+      if (!supported) {
+        setLoading(false);
+        return;
+      }
+
+      const enabled = await autofillService.isEnabled();
+      setIsEnabled(enabled);
+
+      const loadedSettings = await autofillService.getSettings();
+      setSettings(loadedSettings);
+
+      const stats = await autofillService.getStatistics();
+      setStatistics(stats);
+
+      const domains = await domainVerificationService.getTrustedDomains();
+      setTrustedDomainsCount(domains.length);
+    } catch (error) {
+      console.error('Error loading autofill data:', error);
+      Alert.alert('Error', 'Failed to load autofill settings');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadAccessibilityData = useCallback(async () => {
+    try {
+      await accessibility.checkAccessibility();
+    } catch (error) {
+      console.error('Error loading accessibility data:', error);
+    }
+  }, [accessibility]);
+
   useEffect(() => {
     loadAutofillData();
     loadAccessibilityData();
-  }, []);
+  }, [loadAutofillData, loadAccessibilityData]);
 
-  // Listen for app state changes to detect when user returns from settings
   useEffect(() => {
     const subscription = AppState.addEventListener(
       'change',
@@ -154,50 +190,6 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
       subscription.remove();
     };
   }, [handleAppStateChange]);
-
-  const loadAutofillData = async () => {
-    try {
-      setLoading(true);
-
-      // Check if autofill is supported
-      const supported = await autofillService.isSupported();
-      setIsSupported(supported);
-
-      if (!supported) {
-        setLoading(false);
-        return;
-      }
-
-      // Check if autofill is enabled
-      const enabled = await autofillService.isEnabled();
-      setIsEnabled(enabled);
-
-      // Load settings
-      const loadedSettings = await autofillService.getSettings();
-      setSettings(loadedSettings);
-
-      // Load statistics
-      const stats = await autofillService.getStatistics();
-      setStatistics(stats);
-
-      // Load trusted domains count
-      const domains = await domainVerificationService.getTrustedDomains();
-      setTrustedDomainsCount(domains.length);
-    } catch (error) {
-      console.error('Error loading autofill data:', error);
-      Alert.alert('Error', 'Failed to load autofill settings');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadAccessibilityData = async () => {
-    try {
-      await accessibility.checkAccessibility();
-    } catch (error) {
-      console.error('Error loading accessibility data:', error);
-    }
-  };
 
   const handleEnableAutofill = async () => {
     console.log('🔵 [DEBUG] handleEnableAutofill called, isEnabled:', isEnabled);
@@ -224,54 +216,15 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
 
   const handleEnableAutofillFlow = async () => {
     try {
-      console.log('🔐 Starting biometric verification...');
-      setBiometricVerifying(true);
-
-      // Step 0: Check if biometric is setup, if not, setup first
-      if (!biometric.isSetup) {
-        console.log('⚠️ Biometric not setup, setting up now...');
-        const setupSuccess = await biometric.setupBiometric();
-        
-        if (!setupSuccess) {
-          console.log('❌ Biometric setup failed');
-          Alert.alert(
-            'Setup Failed',
-            'Failed to setup biometric authentication. Please enable biometric authentication in Settings first.',
-            [{ text: 'OK' }],
-          );
-          setBiometricVerifying(false);
-          return;
-        }
-        
-        console.log('✅ Biometric setup successful');
-      }
-
-      // Step 1: Request biometric verification
-      const authenticated = await biometric.authenticate(
-        'Verify to enable Autofill service',
-      );
-
-      if (!authenticated) {
-        console.log('❌ Biometric verification failed or cancelled');
-        Alert.alert(
-          'Verification Cancelled',
-          'Biometric verification is required to enable autofill.',
-          [{ text: 'OK' }],
-        );
-        setBiometricVerifying(false);
-        return;
-      }
-
-      console.log('✅ Biometric verification successful');
       console.log('🎯 Opening autofill service selection...');
+      setBiometricVerifying(true);
 
       // Mark that we're waiting for user to return from settings
       isCheckingAutofillRef.current = true;
 
-      // Get device-specific instructions
       const deviceInstructions = Platform.select({
         android: () => {
-          const manufacturer = Platform.constants?.Manufacturer?.toUpperCase() || '';
+          const manufacturer = (Platform.constants as any)?.Manufacturer?.toUpperCase() || '';
           
           if (manufacturer.includes('SAMSUNG')) {
             return {
@@ -460,43 +413,6 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
     } catch (error) {
       console.error('Error in handleDisableAutofill:', error);
       throw error;
-    }
-  };
-
-  const checkAutofillStatusWithRetry = async () => {
-    try {
-      // Retry up to 3 times with increasing delays
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        // Wait longer on each retry
-        const delayMs = attempt * 1500;
-        console.log(
-          `⏳ Autofill check attempt ${attempt}/3 (waiting ${delayMs}ms)...`,
-        );
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-
-        const enabled = await autofillService.isEnabled();
-        console.log(`   Result: ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`);
-
-        if (enabled) {
-          setIsEnabled(true);
-          Alert.alert(
-            '✅ Success!',
-            'Autofill has been enabled successfully. You can now use PasswordEpic to automatically fill credentials in apps and websites.',
-          );
-          return;
-        }
-      }
-
-      // If still not enabled after retries, show help message
-      console.warn('⚠️ Autofill still not enabled after 3 attempts');
-      Alert.alert(
-        '⏳ Still Checking',
-        'Autofill hasn\'t been enabled yet. Please make sure to select "PasswordEpic" in Settings > System > Autofill service and return to the app.',
-        [{ text: 'OK' }],
-      );
-    } catch (error) {
-      console.error('Error during autofill status retry:', error);
-      Alert.alert('Error', 'Failed to verify autofill status');
     }
   };
 
@@ -751,6 +667,11 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
     opacity: biometricVerifying ? 0.6 : 1,
   };
 
+  const accessibilityButtonStyle = {
+    backgroundColor: accessibility.isEnabled ? theme.error : theme.primary,
+    opacity: accessibilityLoading ? 0.6 : 1,
+  };
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: theme.background }]}
@@ -829,10 +750,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
           <TouchableOpacity
             style={[
               styles.button,
-              {
-                backgroundColor: accessibility.isEnabled ? theme.error : theme.primary,
-                opacity: accessibilityLoading ? 0.6 : 1 as any,
-              },
+              accessibilityButtonStyle,
             ]}
             onPress={async () => {
               try {

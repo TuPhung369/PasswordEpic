@@ -235,7 +235,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     React.useCallback(() => {
       const loadPasswordsData = async () => {
         const screenStartTime = Date.now();
-        console.log('🔐 [PasswordsScreen] Starting password load...');
+        //console.log('🔐 [PasswordsScreen] Starting password load...');
 
         try {
           setIsLoadingPasswords(true);
@@ -244,32 +244,32 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           // await new Promise(resolve => setTimeout(resolve, 300));
 
           // Get the master password (should be cached from AppNavigator pre-warming)
-          const mpStartTime = Date.now();
+          //const mpStartTime = Date.now();
           const result = await getEffectiveMasterPassword();
-          const mpDuration = Date.now() - mpStartTime;
+          //const mpDuration = Date.now() - mpStartTime;
 
           // Debug log to see what we got
-          console.log('🔍 [PasswordsScreen] Master password result:', {
-            success: result.success,
-            hasPassword: !!result.password,
-            passwordLength: result.password?.length || 0,
-            duration: `${mpDuration}ms`,
-            error: result.error,
-          });
+          // console.log('🔍 [PasswordsScreen] Master password result:', {
+          //   success: result.success,
+          //   hasPassword: !!result.password,
+          //   passwordLength: result.password?.length || 0,
+          //   duration: `${mpDuration}ms`,
+          //   error: result.error,
+          // });
 
           if (result.success && result.password) {
-            const loadStartTime = Date.now();
+            //const loadStartTime = Date.now();
             await dispatch(loadPasswordsLazy(result.password)).unwrap();
-            const loadDuration = Date.now() - loadStartTime;
-            const totalDuration = Date.now() - screenStartTime;
-            console.log(
-              `✅ [PasswordsScreen] Passwords loaded (load: ${loadDuration}ms, total: ${totalDuration}ms)`,
-            );
+            //const loadDuration = Date.now() - loadStartTime;
+            //const totalDuration = Date.now() - screenStartTime;
+            // console.log(
+            //   `✅ [PasswordsScreen] Passwords loaded (load: ${loadDuration}ms, total: ${totalDuration}ms)`,
+            // );
 
             // Decrypt all passwords and prepare autofill in background (non-blocking)
-            console.log(
-              '🔄 [PasswordsScreen] Starting background autofill preparation...',
-            );
+            // console.log(
+            //   '🔄 [PasswordsScreen] Starting background autofill preparation...',
+            // );
             dispatch(decryptAllAndPrepareAutofill(result.password))
               .unwrap()
               .then(() =>
@@ -379,6 +379,24 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       checkAndPromptAutofillSetup();
     }, [dispatch, navigation]),
   );
+
+  // Initialize export folder on mount
+  useEffect(() => {
+    const initializeExportFolder = async () => {
+      try {
+        const appDir =
+          Platform.OS === 'android'
+            ? RNFS.ExternalDirectoryPath
+            : RNFS.DocumentDirectoryPath;
+        console.log('📁 [PasswordsScreen] Initializing export folder:', appDir);
+        setSelectedExportFolder(appDir);
+      } catch (error) {
+        console.error('❌ [PasswordsScreen] Failed to initialize export folder:', error);
+      }
+    };
+    
+    initializeExportFolder();
+  }, []);
 
   // Recalculate password strengths when passwords change
   useEffect(() => {
@@ -905,6 +923,12 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       // Add destination folder for local exports
       if (exportDestination === 'local' && selectedExportFolder) {
         exportOptions.destinationFolder = selectedExportFolder;
+        console.log('📁 [Export] Setting export folder:', {
+          destinationFolder: selectedExportFolder,
+          exportDestination,
+        });
+      } else if (exportDestination === 'local') {
+        console.warn('⚠️ [Export] Local export selected but no folder set!');
       }
 
       const result = await importExportService.exportPasswords(
@@ -917,6 +941,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         filePath: result.filePath,
         exportedCount: result.exportedCount,
         exportDestination,
+        destinationFolderUsed: exportOptions.destinationFolder,
       });
 
       if (result.success) {
@@ -1112,55 +1137,74 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     console.log('🚀 [DEBUG] handleLoadImportFiles called with destination:', destination);
     setIsLoadingImportFiles(true);
 
+    // Clear other destinations' file lists to prevent stale data display
+    if (destination === 'local') {
+      setGoogleFileList([]);
+      setGoogleHiddenFileList([]);
+    } else if (destination === 'google') {
+      setImportFileList([]);
+      setGoogleHiddenFileList([]);
+    } else if (destination === 'google-hidden') {
+      setImportFileList([]);
+      setGoogleFileList([]);
+    }
+
     try {
       if (destination === 'local') {
-        const appFilesDir =
-          Platform.OS === 'android'
-            ? RNFS.ExternalDirectoryPath
+        console.log('📂 [Local Import] Listing files from app directory');
+        
+        try {
+          // Use app-specific external directory (same as where exports are saved)
+          // This is: /storage/emulated/0/Android/data/com.passwordepic.mobile/files/
+          const filesDir = Platform.OS === 'android' 
+            ? RNFS.ExternalDirectoryPath 
             : RNFS.DocumentDirectoryPath;
-        console.log('🔍 [DEBUG] Using directory:', appFilesDir);
+          console.log('📁 [Local Import] Files directory:', filesDir);
 
-        const dirExists = await RNFS.exists(appFilesDir);
-        console.log('🔍 [DEBUG] dirExists:', dirExists);
+          // Check if directory exists
+          const dirExists = await RNFS.exists(filesDir);
+          if (!dirExists) {
+            console.log('ℹ️ [Local Import] Files directory does not exist');
+            setImportFileList([]);
+            setIsLoadingImportFiles(false);
+            return;
+          }
 
-        if (!dirExists) {
+          // List all files in the directory
+          const filenames = await RNFS.readdir(filesDir);
+          console.log('📋 [Local Import] Found files:', filenames.length);
+
+          // Filter for JSON files and get metadata
+          const jsonFilesWithStats = await Promise.all(
+            filenames
+              .filter(filename => filename.endsWith('.json'))
+              .map(async filename => {
+                const filePath = `${filesDir}/${filename}`;
+                const stats = await RNFS.stat(filePath);
+                return {
+                  name: filename,
+                  path: filePath,
+                  mtime: stats.mtime.getTime(),
+                };
+              })
+          );
+
+          // Sort by modification time, newest first
+          jsonFilesWithStats.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+
+          console.log('📋 [Local Import] JSON files found:', jsonFilesWithStats.length);
+
+          const fileEntries = jsonFilesWithStats;
+
+          console.log('📋 [Local Import] File entries:', fileEntries);
+          setImportFileList(fileEntries);
+        } catch (pickerError) {
+          console.error('❌ [Local Import] File listing error:', pickerError);
+          setToastMessage('Failed to list files. Please try again.');
+          setToastType('error');
+          setShowToast(true);
           setImportFileList([]);
-          setIsLoadingImportFiles(false);
-          return;
         }
-
-        const fileNames = await RNFS.readdir(appFilesDir);
-        console.log('📂 Raw files from RNFS.readdir:', fileNames);
-
-        const filesWithMetadata = await Promise.all(
-          fileNames
-            .filter(name => name.endsWith('.json'))
-            .map(async (name) => {
-              const filePath = `${appFilesDir}/${name}`;
-              try {
-                const stat = await RNFS.stat(filePath);
-                return {
-                  name,
-                  path: filePath,
-                  mtime: stat.mtime.getTime(),
-                };
-              } catch {
-                return {
-                  name,
-                  path: filePath,
-                  mtime: 0,
-                };
-              }
-            })
-        );
-
-        const jsonFiles = filesWithMetadata.sort(
-          (a, b) => (b.mtime || 0) - (a.mtime || 0)
-        );
-
-        console.log(`📋 Found ${jsonFiles.length} .json files in local folder`);
-        console.log('📋 Files to set:', jsonFiles.map(f => ({ name: f.name, path: f.path })));
-        setImportFileList(jsonFiles);
       } else if (destination === 'google' || destination === 'google-hidden') {
         // Ensure authentication before calling Google Drive API
         const authResult = await ensureGoogleDriveAuthenticated();
@@ -1169,7 +1213,12 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             '⚠️ [PasswordsScreen] Authentication failed:',
             authResult.error,
           );
-          setImportFileList([]);
+          const isPublic = destination === 'google';
+          if (isPublic) {
+            setGoogleFileList([]);
+          } else {
+            setGoogleHiddenFileList([]);
+          }
           return;
         }
 
@@ -1327,10 +1376,6 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         return;
       }
 
-      setToastMessage(`Importing from ${fileName}...`);
-      setToastType('success');
-      setShowToast(true);
-
       const importResult = await importExportService.importPasswords(
         tempFilePath,
         passwords,
@@ -1348,14 +1393,14 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         ).unwrap();
 
         setToastMessage(
-          `Import successful! ${importResult.importedCount} passwords imported, ${importResult.skippedCount} skipped (duplicates)`,
+          `✅ Import successful! ${importResult.importedCount} passwords imported${importResult.skippedCount > 0 ? `, ${importResult.skippedCount} duplicates skipped` : ''}`,
         );
         setToastType('success');
         setShowToast(true);
       } else {
         const errorMsg =
           importResult.errors && importResult.errors.length > 0
-            ? importResult.errors.map(e => e.error).join(', ')
+            ? `Failed to import: ${importResult.errors[0].error}`
             : `Failed to import from ${fileName}. File might be corrupted or encrypted with different password.`;
         setToastMessage(errorMsg);
         setToastType('error');
@@ -1528,10 +1573,6 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         return;
       }
 
-      setToastMessage(`Importing from ${importedFileName}...`);
-      setToastType('success');
-      setShowToast(true);
-
       const importResult = await importExportService.importPasswords(
         importedFilePath,
         passwords,
@@ -1549,7 +1590,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         ).unwrap();
 
         setToastMessage(
-          `Import successful! ${importResult.importedCount} passwords imported, ${importResult.skippedCount} skipped (duplicates)`,
+          `✅ Import successful! ${importResult.importedCount} passwords imported${importResult.skippedCount > 0 ? `, ${importResult.skippedCount} duplicates skipped` : ''}`,
         );
         setToastType('success');
         setShowToast(true);
@@ -1560,7 +1601,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       } else {
         const errorMsg =
           importResult.errors && importResult.errors.length > 0
-            ? importResult.errors.map(e => e.error).join(', ')
+            ? `Failed to import: ${importResult.errors[0].error}`
             : `Failed to import from ${importedFileName}. File might be corrupted or encrypted with different password.`;
         setToastMessage(errorMsg);
         setToastType('error');
@@ -2330,25 +2371,33 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
   const handleSelectExportFolder = async () => {
     try {
-      const folderUri = await FilePicker.pickFolder();
-
-      if (folderUri && folderUri.trim() !== '') {
-        console.log('📁 Export folder selected:', folderUri);
-        setSelectedExportFolder(folderUri);
-        setExportDestination('local');
-      } else {
-        console.log('ℹ️ Folder selection cancelled');
-      }
+      const appDir =
+        Platform.OS === 'android'
+          ? RNFS.ExternalDirectoryPath
+          : RNFS.DocumentDirectoryPath;
+      
+      console.log('📁 Using app default export folder:', appDir);
+      setSelectedExportFolder(appDir);
+      setExportDestination('local');
     } catch (error) {
-      console.error('❌ Failed to pick folder:', error);
-      setToastMessage('Failed to pick folder. Please try again.');
+      console.error('❌ Failed to set folder:', error);
+      setToastMessage('Failed to set export folder. Please try again.');
       setToastType('error');
       setShowToast(true);
     }
   };
 
   const getFolderDisplayName = (folderUri: string | null): string => {
-    if (!folderUri) return 'Browse and select folder';
+    if (!folderUri) return 'App Storage';
+
+    const appDir =
+      Platform.OS === 'android'
+        ? RNFS.ExternalDirectoryPath
+        : RNFS.DocumentDirectoryPath;
+    
+    if (folderUri === appDir) {
+      return 'App Storage (Default)';
+    }
 
     if (folderUri.startsWith('content://')) {
       const parts = folderUri.split('/');

@@ -38,7 +38,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     icon: 'business-outline',
     color: '#4CAF50',
     settings: {
-      length: 30,
+      length: 50,
       includeUppercase: true,
       includeLowercase: true,
       includeNumbers: true,
@@ -54,7 +54,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     icon: 'people-outline',
     color: '#FF9800',
     settings: {
-      length: 20,
+      length: 40,
       includeUppercase: true,
       includeLowercase: true,
       includeNumbers: true,
@@ -70,7 +70,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     icon: 'mail-outline',
     color: '#2196F3',
     settings: {
-      length: 18,
+      length: 38,
       includeUppercase: true,
       includeLowercase: true,
       includeNumbers: true,
@@ -86,7 +86,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     icon: 'briefcase-outline',
     color: '#9C27B0',
     settings: {
-      length: 26,
+      length: 46,
       includeUppercase: true,
       includeLowercase: true,
       includeNumbers: true,
@@ -102,7 +102,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     icon: 'game-controller-outline',
     color: '#E91E63',
     settings: {
-      length: 14,
+      length: 24,
       includeUppercase: true,
       includeLowercase: true,
       includeNumbers: true,
@@ -117,7 +117,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     icon: 'cart-outline',
     color: '#FF5722',
     settings: {
-      length: 16,
+      length: 26,
       includeUppercase: true,
       includeLowercase: true,
       includeNumbers: true,
@@ -132,7 +132,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     icon: 'wifi-outline',
     color: '#607D8B',
     settings: {
-      length: 24,
+      length: 34,
       includeUppercase: true,
       includeLowercase: true,
       includeNumbers: true,
@@ -148,7 +148,7 @@ export const DEFAULT_TEMPLATES: PasswordTemplate[] = [
     icon: 'bulb-outline',
     color: '#795548',
     settings: {
-      length: 16,
+      length: 26,
       includeUppercase: true,
       includeLowercase: true,
       includeNumbers: true,

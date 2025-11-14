@@ -537,6 +537,21 @@ const createStyles = (theme: any) =>
       fontSize: 14,
       marginTop: 12,
     },
+    browseMoreButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 6,
+      borderWidth: 1,
+      marginTop: 8,
+      gap: 6,
+    },
+    browseMoreText: {
+      fontSize: 12,
+      fontWeight: '500',
+    },
     confirmDialog: {
       backgroundColor: theme.surface,
       borderRadius: 16,

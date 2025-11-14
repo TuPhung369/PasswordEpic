@@ -764,8 +764,8 @@ class BackupService {
       // Derive encryption key from password
       const derivedKey = await deriveKeyFromPassword(password, salt);
 
-      // Generate IV for encryption
-      const iv = generateSecureRandom(16);
+      // Generate IV for encryption (12 bytes = 96 bits for AES-GCM)
+      const iv = generateSecureRandom(12);
 
       // Encrypt the data
       const encryptedResult = encryptData(data, derivedKey, iv);

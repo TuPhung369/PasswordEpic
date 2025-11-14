@@ -5,9 +5,13 @@
     <queries>
         <package android:name="com.android.chrome" />
         <package android:name="com.google.android.gms" />
+        <package android:name="com.android.settings" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.service.autofill.AutofillService" />
         </intent>
     </queries>
 

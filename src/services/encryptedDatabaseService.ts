@@ -83,7 +83,7 @@ export class EncryptedDatabaseService {
         // Password has changed or is new, encrypt it
         console.log('🔐 [Save] Encrypting new/updated password');
         const salt = generateSecureRandom(32);
-        const iv = generateSecureRandom(16);
+        const iv = generateSecureRandom(12);
         const derivedKey = deriveKeyFromPassword(masterPassword, salt);
         const encrypted = encryptData(entry.password, derivedKey, iv);
 

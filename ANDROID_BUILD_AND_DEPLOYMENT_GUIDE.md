@@ -116,22 +116,19 @@ Step 2.4: Find output file
 ### ⚙️ If Build Fails
 
 ```powershell
-# 1. Verify Gradle version
-.\gradlew --version
-
-# 2. Check Java is installed
-Get-Command java
-
-# 3. Increase Gradle memory
-# Edit: e:\IT\Mobile\PasswordEpic\android\gradle.properties
-# Add/Update:
-# org.gradle.jvmargs=-Xmx4096m
-# org.gradle.daemon=true
-# org.gradle.parallel=true
-
-# 4. Try clean build again
+# Rebuild with latest google-services.json Increase Version into build/gradle
+Set-Location "e:\IT\Mobile\PasswordEpic\android"
+# kill all task before build
+taskkill /IM adb.exe /F
+taskkill /IM node.exe /F
+change version into app/android/build.gradle
+# run this command to update google-services.json
+node .\update-google-services-release.js
 .\gradlew clean bundleRelease
+# Access the website the create the new release
+https://play.google.com/console
 ```
+
 
 ---
 
@@ -180,15 +177,6 @@ Firebase verifies using SHA-256 from Step 1 ✅
 5. Testers install from Play Console link
 ```
 
-### 📱 Testing Checklist
-
-- [ ] App installs successfully
-- [ ] App launches without crashes
-- [ ] Biometric authentication works
-- [ ] Firebase initialization succeeds
-- [ ] Play Integrity API responds correctly
-- [ ] All features function normally
-
 ---
 
 ## Troubleshooting
@@ -219,22 +207,6 @@ npm start -- --reset-cache
 1. SHA-256 is in Firebase Console ✅
 2. google-services.json has latest version
 3. App was signed with correct keystore
-
-**Fix**:
-
-```powershell
-# Rebuild with latest google-services.json Increase Version into build/gradle
-Set-Location "e:\IT\Mobile\PasswordEpic\android"
-# kill all task before build
-taskkill /IM adb.exe /F
-taskkill /IM node.exe /F
-change version into app/android/build.gradle
-# run this command to update google-services.json
-node .\update-google-services-release.js
-.\gradlew clean bundleRelease
-# Access the website the create the new release
-https://play.google.com/console
-```
 
 ### ❌ Play Integrity API Failing
 

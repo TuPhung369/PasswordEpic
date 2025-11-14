@@ -216,6 +216,89 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     setShowToast(false);
   }, []);
 
+  const loadAvailableBackups = useCallback(async () => {
+    console.log('🔵 [PasswordsScreen] loadAvailableBackups called!');
+    try {
+      console.log('📂 [PasswordsScreen] Loading available backups...');
+
+      // Check if Google Drive is available
+      const isDriveAvailable = await isGoogleDriveAvailable();
+      console.log(
+        '🔵 [PasswordsScreen] Google Drive available:',
+        isDriveAvailable,
+      );
+
+      if (isDriveAvailable) {
+        // Ensure authentication before calling Google Drive API
+        const authResult = await ensureGoogleDriveAuthenticated();
+        if (!authResult.success) {
+          console.warn(
+            '⚠️ [PasswordsScreen] Authentication failed:',
+            authResult.error,
+          );
+          setAvailableBackups([]);
+          return;
+        }
+
+        // Load backups from Google Drive
+        console.log('🔵 [PasswordsScreen] Calling listGoogleDriveBackups...');
+        const driveResult = await listGoogleDriveBackups();
+        console.log('🔵 [PasswordsScreen] Drive result:', driveResult);
+
+        if (driveResult.success && driveResult.files) {
+          console.log(
+            '✅ [PasswordsScreen] Loaded Google Drive backups:',
+            driveResult.files.length,
+            'items',
+          );
+
+          // Convert Google Drive files to BackupInfo format
+          const backups = driveResult.files
+            .filter(
+              file =>
+                file.name.endsWith('.bak') || file.name.endsWith('.backup'),
+            )
+            .map(file => ({
+              id: file.id,
+              filename: file.name,
+              createdAt: new Date(file.createdTime),
+              size: parseInt(file.size || '0', 10),
+              entryCount: 0, // Will be populated when backup is selected
+              categoryCount: 0, // Will be populated when backup is selected
+              encrypted: true, // Assume all backups are encrypted
+              version: '1.0',
+              appVersion: '1.0.0',
+            }));
+
+          console.log(
+            '🔵 [PasswordsScreen] Converted backups:',
+            backups.length,
+            'items',
+          );
+          setAvailableBackups(backups as any);
+          console.log('✅ [PasswordsScreen] State updated successfully');
+        } else {
+          console.log('⚠️ [PasswordsScreen] No backups found on Google Drive');
+          setAvailableBackups([]);
+        }
+      } else {
+        // Fallback to local backups if Google Drive is not available
+        console.log('📂 [PasswordsScreen] Loading local backups...');
+        const backups = await backupService.listBackups();
+        console.log(
+          '✅ [PasswordsScreen] Loaded local backups:',
+          backups?.length || 0,
+          'items',
+        );
+        setAvailableBackups(backups as any);
+      }
+    } catch (error) {
+      console.error('❌ [PasswordsScreen] Failed to load backups:', error);
+      setAvailableBackups([]); // Set empty array on error
+    }
+    console.log('🔵 [PasswordsScreen] loadAvailableBackups completed');
+  }, []);
+
   // Handle success message from navigation params
   useFocusEffect(
     React.useCallback(() => {
@@ -435,11 +518,6 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     recalculateStrengths();
   }, [passwords, updatePassword]);
 
-  // Load available backups on mount
-  useEffect(() => {
-    loadAvailableBackups();
-  }, []);
-
   // Reload backups when modal opens
   useEffect(() => {
     console.log(
@@ -452,7 +530,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       );
       loadAvailableBackups();
     }
-  }, [showBackupModal]);
+  }, [showBackupModal, loadAvailableBackups]);
 
   // Get unique categories from passwords
   const categories = useMemo(() => {
@@ -2414,89 +2492,6 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     return folderUri;
   };
 
-  const loadAvailableBackups = async () => {
-    console.log('🔵 [PasswordsScreen] loadAvailableBackups called!');
-    try {
-      console.log('📂 [PasswordsScreen] Loading available backups...');
-
-      // Check if Google Drive is available
-      const isDriveAvailable = await isGoogleDriveAvailable();
-      console.log(
-        '🔵 [PasswordsScreen] Google Drive available:',
-        isDriveAvailable,
-      );
-
-      if (isDriveAvailable) {
-        // Ensure authentication before calling Google Drive API
-        const authResult = await ensureGoogleDriveAuthenticated();
-        if (!authResult.success) {
-          console.warn(
-            '⚠️ [PasswordsScreen] Authentication failed:',
-            authResult.error,
-          );
-          setAvailableBackups([]);
-          return;
-        }
-
-        // Load backups from Google Drive
-        console.log('🔵 [PasswordsScreen] Calling listGoogleDriveBackups...');
-        const driveResult = await listGoogleDriveBackups(true);
-        console.log('🔵 [PasswordsScreen] Drive result:', driveResult);
-
-        if (driveResult.success && driveResult.files) {
-          console.log(
-            '✅ [PasswordsScreen] Loaded Google Drive backups:',
-            driveResult.files.length,
-            'items',
-          );
-
-          // Convert Google Drive files to BackupInfo format
-          const backups = driveResult.files
-            .filter(
-              file =>
-                file.name.endsWith('.bak') || file.name.endsWith('.backup'),
-            )
-            .map(file => ({
-              id: file.id,
-              filename: file.name,
-              createdAt: new Date(file.createdTime),
-              size: parseInt(file.size || '0', 10),
-              entryCount: 0, // Will be populated when backup is selected
-              categoryCount: 0, // Will be populated when backup is selected
-              encrypted: true, // Assume all backups are encrypted
-              version: '1.0',
-              appVersion: '1.0.0',
-            }));
-
-          console.log(
-            '🔵 [PasswordsScreen] Converted backups:',
-            backups.length,
-            'items',
-          );
-          setAvailableBackups(backups as any);
-          console.log('✅ [PasswordsScreen] State updated successfully');
-        } else {
-          console.log('⚠️ [PasswordsScreen] No backups found on Google Drive');
-          setAvailableBackups([]);
-        }
-      } else {
-        // Fallback to local backups if Google Drive is not available
-        console.log('📂 [PasswordsScreen] Loading local backups...');
-        const backups = await backupService.listBackups();
-        console.log(
-          '✅ [PasswordsScreen] Loaded local backups:',
-          backups?.length || 0,
-          'items',
-        );
-        setAvailableBackups(backups as any);
-      }
-    } catch (error) {
-      console.error('❌ [PasswordsScreen] Failed to load backups:', error);
-      setAvailableBackups([]); // Set empty array on error
-    }
-    console.log('🔵 [PasswordsScreen] loadAvailableBackups completed');
-  };
-
   const renderPasswordItem = ({ item }: { item: Password }) => {
     console.log('🎯 [FlatList] Rendering item:', item.id, item.title);
     return (
@@ -3339,6 +3334,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         onDeleteBackup={handleDeleteBackup}
         availableBackups={availableBackups}
         isLoading={isExportLoading}
+        onRefreshBackups={loadAvailableBackups}
         onShowToast={(message: string, type: 'success' | 'error') => {
           setToastMessage(message);
           setToastType(type);

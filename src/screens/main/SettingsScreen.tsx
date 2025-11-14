@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,11 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useAppSelector, useAppDispatch } from '../../hooks/redux';
 import { RootState } from '../../store';
 import { logout } from '../../store/slices/authSlice';
+import { encryptedDatabase } from '../../services/encryptedDatabaseService';
+import {
+  deriveKeyFromPassword,
+  decryptData,
+} from '../../services/cryptoService';
 import {
   updateSecuritySettings,
   setBiometricEnabled,
@@ -191,7 +196,7 @@ export const SettingsScreen: React.FC = () => {
   // Load available backups on mount
   useEffect(() => {
     loadAvailableBackups();
-  }, []);
+  }, [loadAvailableBackups]);
 
   // Reload backups when modal opens
   useEffect(() => {
@@ -218,7 +223,7 @@ export const SettingsScreen: React.FC = () => {
         );
       }
     }
-  }, [showBackupModal]);
+  }, [showBackupModal, loadAvailableBackups]);
 
   useEffect(() => {
     const syncBiometricStatus = async () => {
@@ -695,6 +700,168 @@ export const SettingsScreen: React.FC = () => {
           }
         }
 
+        // If replace strategy, clear existing passwords first
+        if (restoreOptions.mergeStrategy === 'replace') {
+          console.log(
+            '🗑️ [SettingsScreen] Replace mode: clearing existing passwords...',
+          );
+          const existingPasswords =
+            await encryptedDatabase.getAllPasswordEntries(
+              masterPasswordResult.password,
+            );
+          for (const existingEntry of existingPasswords) {
+            try {
+              await encryptedDatabase.deletePasswordEntry(existingEntry.id);
+            } catch (deleteError) {
+              console.error(
+                `❌ [SettingsScreen] Failed to delete entry ${existingEntry.id}:`,
+                deleteError,
+              );
+            }
+          }
+          console.log('✅ [SettingsScreen] Existing passwords cleared');
+        }
+
+        // Save restored entries to database
+        if (
+          result.data &&
+          result.data.entries &&
+          result.data.entries.length > 0
+        ) {
+          console.log(
+            `💾 [SettingsScreen] Saving ${result.data.entries.length} restored entries to database...`,
+          );
+
+          // Get existing passwords for duplicate detection (only in merge mode)
+          let existingPasswords: any[] = [];
+          if (restoreOptions.mergeStrategy === 'merge') {
+            existingPasswords = await encryptedDatabase.getAllPasswordEntries(
+              masterPasswordResult.password,
+            );
+            console.log(
+              `🔍 [SettingsScreen] Found ${existingPasswords.length} existing passwords for duplicate detection`,
+            );
+          }
+
+          let savedCount = 0;
+          let skippedCount = 0;
+          let overwrittenCount = 0;
+
+          for (const entry of result.data.entries) {
+            try {
+              // Check if this entry has encrypted password data from backup
+              let entryToSave = entry;
+              if (
+                (entry as any).salt &&
+                (entry as any).iv &&
+                (entry as any).authTag &&
+                (entry as any).isPasswordEncrypted
+              ) {
+                // This is an encrypted entry from backup
+                // We need to decrypt it first, then re-encrypt with current format
+                console.log(
+                  `🔓 [SettingsScreen] Decrypting backed up entry: ${entry.title}`,
+                );
+
+                try {
+                  // Decrypt the password using the master password
+                  const derivedKey = deriveKeyFromPassword(
+                    masterPasswordResult.password,
+                    (entry as any).salt,
+                  );
+                  const decryptedPassword = decryptData(
+                    entry.password,
+                    derivedKey,
+                    (entry as any).iv,
+                    (entry as any).authTag,
+                  );
+
+                  // Create entry with decrypted password (remove encryption metadata)
+                  entryToSave = {
+                    ...entry,
+                    password: decryptedPassword,
+                  };
+                  // Remove encryption metadata fields
+                  delete (entryToSave as any).salt;
+                  delete (entryToSave as any).iv;
+                  delete (entryToSave as any).authTag;
+                  delete (entryToSave as any).isPasswordEncrypted;
+
+                  console.log(
+                    `✅ [SettingsScreen] Successfully decrypted: ${entry.title}`,
+                  );
+                } catch (decryptError) {
+                  console.error(
+                    `❌ [SettingsScreen] Failed to decrypt entry ${entry.title}:`,
+                    decryptError,
+                  );
+                  // Skip this entry if decryption fails
+                  skippedCount++;
+                  continue;
+                }
+              }
+
+              // Check for duplicates (same title and username)
+              const isDuplicate = existingPasswords.some(
+                existing =>
+                  existing.title?.toLowerCase() ===
+                    entryToSave.title?.toLowerCase() &&
+                  existing.username?.toLowerCase() ===
+                    entryToSave.username?.toLowerCase(),
+              );
+
+              if (isDuplicate) {
+                if (restoreOptions.overwriteDuplicates) {
+                  // Find and delete the existing entry, then save the new one
+                  const existingEntry = existingPasswords.find(
+                    existing =>
+                      existing.title?.toLowerCase() ===
+                        entryToSave.title?.toLowerCase() &&
+                      existing.username?.toLowerCase() ===
+                        entryToSave.username?.toLowerCase(),
+                  );
+                  if (existingEntry) {
+                    await encryptedDatabase.deletePasswordEntry(
+                      existingEntry.id,
+                    );
+                    console.log(
+                      `🔄 [SettingsScreen] Overwriting duplicate: ${entryToSave.title}`,
+                    );
+                  }
+                  await encryptedDatabase.savePasswordEntry(
+                    entryToSave,
+                    masterPasswordResult.password,
+                  );
+                  overwrittenCount++;
+                } else {
+                  // Skip duplicate
+                  console.log(
+                    `⏭️ [SettingsScreen] Skipping duplicate: ${entryToSave.title}`,
+                  );
+                  skippedCount++;
+                  continue;
+                }
+              } else {
+                // Not a duplicate, save normally
+                await encryptedDatabase.savePasswordEntry(
+                  entryToSave,
+                  masterPasswordResult.password,
+                );
+                savedCount++;
+              }
+            } catch (saveError) {
+              console.error(
+                `❌ [SettingsScreen] Failed to save entry ${entry.id}:`,
+                saveError,
+              );
+            }
+          }
+
+          console.log(
+            `✅ [SettingsScreen] Restore complete: ${savedCount} new, ${overwrittenCount} overwritten, ${skippedCount} skipped`,
+          );
+        }
+
         // Reload passwords after restore
         await dispatch(
           loadPasswordsLazy(masterPasswordResult.password),
@@ -753,7 +920,7 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
-  const loadAvailableBackups = async () => {
+  const loadAvailableBackups = useCallback(async () => {
     console.log('🔵 [loadAvailableBackups] Function called!');
     try {
       console.log('📂 [loadAvailableBackups] Loading available backups...');
@@ -857,7 +1024,7 @@ export const SettingsScreen: React.FC = () => {
       setAvailableBackups([]); // Set empty array on error
     }
     console.log('🔵 [loadAvailableBackups] Function completed');
-  };
+  }, []);
 
   const handleClearCorruptedData = async () => {
     showDestructive(
@@ -1474,6 +1641,7 @@ export const SettingsScreen: React.FC = () => {
         onDeleteBackup={handleDeleteBackup}
         availableBackups={availableBackups}
         isLoading={isBackupLoading}
+        onRefreshBackups={loadAvailableBackups}
         onShowToast={(message: string, type: 'success' | 'error') => {
           setToastMessage(message);
           setToastType(type);

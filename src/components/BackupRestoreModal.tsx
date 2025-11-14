@@ -40,6 +40,7 @@ interface BackupRestoreModalProps {
   availableBackups: BackupInfo[];
   isLoading?: boolean;
   onShowToast?: (message: string, type: 'success' | 'error') => void;
+  onRefreshBackups?: () => void;
 }
 
 export interface BackupOptions {
@@ -72,6 +73,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
   onDeleteBackup,
   availableBackups,
   isLoading = false,
+  onRefreshBackups,
 }) => {
   // Debug logging
   React.useEffect(() => {
@@ -165,10 +167,24 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  // Auto-select latest backup when switching to restore tab
+  // Handle tab changes
   React.useEffect(() => {
     console.log('🔵 [BackupModal] Active tab changed to:', activeTab);
 
+    if (activeTab === 'restore') {
+      // Refresh backups when switching to restore tab
+      if (onRefreshBackups) {
+        console.log('🔄 [BackupModal] Refreshing backups for restore tab');
+        onRefreshBackups();
+      }
+    } else if (activeTab === 'backup') {
+      // Clear selection when switching to backup tab
+      setSelectedBackup(null);
+    }
+  }, [activeTab, onRefreshBackups]);
+
+  // Auto-select latest backup when availableBackups updates
+  React.useEffect(() => {
     if (activeTab === 'restore' && availableBackups.length > 0) {
       // Sort backups by createdAt (newest first)
       const sortedBackups = [...availableBackups].sort(
@@ -182,9 +198,6 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
         latestBackup.filename,
       );
       setSelectedBackup(latestBackup);
-    } else if (activeTab === 'backup') {
-      // Clear selection when switching to backup tab
-      setSelectedBackup(null);
     }
   }, [activeTab, availableBackups]);
 

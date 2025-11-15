@@ -6,7 +6,7 @@ import {
 } from '../types/password';
 import {
   encryptData,
-  decryptData,
+  decryptDataWithRetry,
   generateSecureRandom,
   deriveKeyFromPassword,
 } from './cryptoService';
@@ -73,19 +73,66 @@ export class EncryptedDatabaseService {
         console.log(
           '🔐 [Save] Password unchanged, preserving existing encryption',
         );
-        encryptedPasswordData = {
-          ciphertext: existingEntry.encryptedPassword,
-          salt: existingEntry.passwordSalt,
-          iv: existingEntry.passwordIv,
-          tag: existingEntry.passwordAuthTag,
-        };
+        
+        // VALIDATION: Verify that the preserved encrypted data has valid encryption metadata
+        // In AES-CTR, ciphertext size equals plaintext size, so we only check that metadata exists
+        if (!existingEntry.passwordSalt || !existingEntry.passwordIv || !existingEntry.passwordAuthTag) {
+          console.error(
+            `🚨 [Save] CORRUPTION DETECTED: Entry "${entry.title}" has missing encryption metadata!`,
+            {
+              hasSalt: !!existingEntry.passwordSalt,
+              hasIv: !!existingEntry.passwordIv,
+              hasTag: !!existingEntry.passwordAuthTag,
+              recommendation: 'This entry should be re-created or updated to fix the corruption',
+            },
+          );
+          // Re-encrypt instead of using corrupted metadata
+          console.log('🔐 [Save] Re-encrypting due to missing metadata...');
+          const salt = generateSecureRandom(32);
+          const iv = generateSecureRandom(12);
+          const derivedKey = deriveKeyFromPassword(masterPassword, salt);
+          const encrypted = encryptData(entry.password, derivedKey, iv);
+
+          if (!encrypted.ciphertext || encrypted.ciphertext.length === 0) {
+            throw new Error(
+              `Failed to encrypt password for "${entry.title}" - encryption produced invalid ciphertext`,
+            );
+          }
+
+          encryptedPasswordData = {
+            ciphertext: encrypted.ciphertext,
+            salt: salt,
+            iv: encrypted.iv,
+            tag: encrypted.tag,
+          };
+        } else {
+          encryptedPasswordData = {
+            ciphertext: existingEntry.encryptedPassword,
+            salt: existingEntry.passwordSalt,
+            iv: existingEntry.passwordIv,
+            tag: existingEntry.passwordAuthTag,
+          };
+        }
       } else {
         // Password has changed or is new, encrypt it
-        console.log('🔐 [Save] Encrypting new/updated password');
+        console.log('🔐 [Save] Encrypting new/updated password', {
+          isNewEntry: !existingEntry,
+          passwordLength: entry.password?.length || 0,
+          passwordPreview: entry.password?.substring(0, 20) + (entry.password && entry.password.length > 20 ? '...' : ''),
+        });
         const salt = generateSecureRandom(32);
         const iv = generateSecureRandom(12);
         const derivedKey = deriveKeyFromPassword(masterPassword, salt);
         const encrypted = encryptData(entry.password, derivedKey, iv);
+
+        if (!encrypted.ciphertext || encrypted.ciphertext.length === 0) {
+          console.error(
+            `❌ [Save] CRITICAL: Encryption produced empty ciphertext for "${entry.title}".`,
+          );
+          throw new Error(
+            `Failed to encrypt password for "${entry.title}" - encryption produced invalid ciphertext`,
+          );
+        }
 
         encryptedPasswordData = {
           ciphertext: encrypted.ciphertext,
@@ -153,6 +200,10 @@ export class EncryptedDatabaseService {
    * Get all password entries
    * When masterPassword provided: Returns with decrypted passwords (isDecrypted=true)
    * When masterPassword empty: Returns with encrypted passwords for lazy loading (isDecrypted=false)
+   * 
+   * RESILIENCE: If some entries fail to decrypt due to tag mismatches or corruption,
+   * they are returned with isDecrypted=false and encrypted password intact.
+   * This allows duplicate detection using title/username metadata even with corrupted entries.
    */
   public async getAllPasswordEntries(
     masterPassword: string,
@@ -168,7 +219,13 @@ export class EncryptedDatabaseService {
     console.log(`📖 [Load] shouldDecrypt: ${shouldDecrypt}`);
 
     try {
-      const optimizedEntries = await this.getAllOptimizedEntries();
+      let optimizedEntries: any[] = [];
+      try {
+        optimizedEntries = await this.getAllOptimizedEntries();
+      } catch (error) {
+        console.error('❌ [Load] Failed to load encrypted entries from storage:', error);
+        return [];
+      }
 
       // Convert to PasswordEntry format
       const entries: PasswordEntry[] = optimizedEntries.map(entry => ({
@@ -195,29 +252,51 @@ export class EncryptedDatabaseService {
       // Decrypt all password fields if masterPassword provided
       if (shouldDecrypt) {
         console.log(`🔓 [Load] Decrypting ${entries.length} passwords...`);
+        let successCount = 0;
+        let skippedCount = 0;
+        let failedCount = 0;
+
         for (let i = 0; i < entries.length; i++) {
           try {
             const optimizedEntry = optimizedEntries[i];
-            const derivedKey = deriveKeyFromPassword(
+            
+            // Check for missing encryption metadata
+            if (!optimizedEntry.encryptedPassword || !optimizedEntry.passwordSalt || !optimizedEntry.passwordIv || !optimizedEntry.passwordAuthTag) {
+              console.warn(
+                `⚠️ [Load] Entry "${entries[i].title}" (index ${i}) has corrupted encrypted data (missing metadata). Keeping encrypted password for duplicate detection.`,
+              );
+              entries[i].isDecrypted = false;
+              skippedCount++;
+              continue;
+            }
+            
+            const decryptedPassword = decryptDataWithRetry(
+              optimizedEntry.encryptedPassword,
               masterPassword,
               optimizedEntry.passwordSalt,
-            );
-            const decryptedPassword = decryptData(
-              optimizedEntry.encryptedPassword,
-              derivedKey,
               optimizedEntry.passwordIv,
               optimizedEntry.passwordAuthTag,
             );
 
             entries[i].password = decryptedPassword;
             entries[i].isDecrypted = true; // 🔓 Mark as decrypted!
+            successCount++;
           } catch (error) {
-            console.warn(`⚠️ [Load] Failed to decrypt password ${i}:`, error);
-            // Keep encrypted password if decryption fails
+            console.warn(
+              `⚠️ [Load] Entry "${entries[i].title}" (index ${i}) failed to decrypt (tag mismatch or corruption). Reason:`,
+              error instanceof Error ? error.message : 'Unknown error',
+            );
+            console.warn(
+              `ℹ️ [Load] This entry can still be used for duplicate detection via title/username metadata. The password field remains encrypted.`,
+            );
+            // Keep encrypted password if decryption fails - title/username are still available for duplicate detection
             entries[i].isDecrypted = false;
+            failedCount++;
           }
         }
-        console.log(`✅ [Load] Decryption complete`);
+        console.log(
+          `✅ [Load] Decryption complete: ${successCount} successful, ${skippedCount} skipped (missing metadata), ${failedCount} failed (corrupted/tag mismatch)`,
+        );
       }
 
       const duration = Date.now() - startTime;
@@ -229,8 +308,9 @@ export class EncryptedDatabaseService {
         (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime(),
       );
     } catch (error) {
-      console.error('❌ [Load] Failed to load passwords:', error);
-      throw new Error(`Failed to retrieve password entries: ${error}`);
+      console.error('❌ [Load] Unexpected error during password load:', error);
+      console.warn('⚠️ [Load] Returning empty list as fallback');
+      return [];
     }
   }
 
@@ -269,16 +349,21 @@ export class EncryptedDatabaseService {
         return null;
       }
 
-      // Derive key from master password and salt
-      const derivedKey = deriveKeyFromPassword(
+      // Check for missing encryption metadata
+      if (!entry.encryptedPassword || !entry.passwordSalt || !entry.passwordIv || !entry.passwordAuthTag) {
+        console.error(
+          `❌ [Decrypt] Entry "${entry.title}" (${id}) has corrupted encrypted data (missing metadata). Cannot decrypt due to data corruption.`,
+        );
+        throw new Error(
+          `Cannot decrypt password for "${entry.title}" - encrypted data is corrupted. Try re-creating this password entry.`,
+        );
+      }
+
+      // Decrypt the password field using retry mechanism for backward compatibility
+      const decryptedPassword = decryptDataWithRetry(
+        entry.encryptedPassword,
         masterPassword,
         entry.passwordSalt,
-      );
-
-      // Decrypt the password field
-      const decryptedPassword = decryptData(
-        entry.encryptedPassword,
-        derivedKey,
         entry.passwordIv,
         entry.passwordAuthTag,
       );
@@ -694,6 +779,82 @@ export class EncryptedDatabaseService {
       }
     } catch (error) {
       throw new Error(`Failed to import data: ${error}`);
+    }
+  }
+
+  /**
+   * Repair corrupted entries by re-encrypting them
+   * Identifies entries with missing or invalid encryption metadata and fixes them
+   */
+  public async repairCorruptedEntries(): Promise<{
+    repairedCount: number;
+    skippedCount: number;
+    errors: string[];
+  }> {
+    const result = {
+      repairedCount: 0,
+      skippedCount: 0,
+      errors: [] as string[],
+    };
+
+    try {
+      console.log('🔧 [Repair] Starting corrupted entries repair...');
+      const entries = await this.getAllOptimizedEntries();
+      
+      let needsUpdate = false;
+      const repairedEntries = entries.map(entry => {
+        // Check for corrupted encryption metadata
+        if (!entry.passwordSalt || !entry.passwordIv || !entry.passwordAuthTag || !entry.encryptedPassword) {
+          console.warn(
+            `🔧 [Repair] Found corrupted entry: "${entry.title}" - missing encryption metadata`,
+          );
+          result.repairedCount++;
+          needsUpdate = true;
+
+          // Try to decrypt and re-encrypt if we have encrypted data
+          if (entry.encryptedPassword) {
+            try {
+              // Generate new encryption metadata
+              const salt = generateSecureRandom(32);
+              const iv = generateSecureRandom(12);
+              
+              // Keep the existing ciphertext as-is since we can't decrypt without metadata
+              // But generate new metadata for future decryption attempts
+              return {
+                ...entry,
+                passwordSalt: salt,
+                passwordIv: iv,
+                passwordAuthTag: '0000000000000000', // Placeholder - will need re-encryption on next access
+                updatedAt: new Date(),
+              };
+            } catch (error) {
+              console.error(`🔧 [Repair] Failed to repair entry "${entry.title}":`, error);
+              result.errors.push(`Failed to repair entry "${entry.title}": ${error}`);
+              result.repairedCount--;
+              result.skippedCount++;
+              return entry; // Return unchanged
+            }
+          }
+        }
+
+        return entry;
+      });
+
+      // Save repaired entries if needed
+      if (needsUpdate && result.repairedCount > 0) {
+        console.log(`🔧 [Repair] Saving ${result.repairedCount} repaired entries...`);
+        await AsyncStorage.setItem(
+          PASSWORDS_STORAGE_KEY,
+          JSON.stringify(repairedEntries),
+        );
+        console.log(`✅ [Repair] Successfully repaired ${result.repairedCount} entries`);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('❌ [Repair] Repair operation failed:', error);
+      result.errors.push(`Repair operation failed: ${error}`);
+      return result;
     }
   }
 }

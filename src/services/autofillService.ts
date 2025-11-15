@@ -15,6 +15,7 @@ import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
 import {
   encryptData,
   decryptData,
+  decryptDataWithRetry,
   deriveKeyFromPassword,
   CRYPTO_CONSTANTS,
   generateSecureRandom,
@@ -62,7 +63,6 @@ interface AutofillBridgeModule {
 }
 
 // Mock native module for development (fallback if AutofillBridge not available)
-let isUsingMockBridge = false;
 const AutofillBridge: AutofillBridgeModule = (() => {
   if (NativeModules.AutofillBridge) {
     console.log('✅ [AutofillService] Using NATIVE AutofillBridge module');
@@ -71,7 +71,6 @@ const AutofillBridge: AutofillBridgeModule = (() => {
     console.warn(
       '⚠️ [AutofillService] NATIVE AutofillBridge not available - using MOCK implementation',
     );
-    isUsingMockBridge = true;
     return {
       isAutofillSupported: async () => {
         console.warn('⚠️ [Mock] isAutofillSupported called');
@@ -136,8 +135,6 @@ const AutofillBridge: AutofillBridgeModule = (() => {
         return true;
       },
       decryptAutofillPassword: async (
-        encryptedPasswordJson: string,
-        masterKey: string,
       ) => {
         console.warn(
           '⚠️ [Mock] AutofillBridge.decryptAutofillPassword called - returning mock response',
@@ -157,7 +154,6 @@ const AutofillBridge: AutofillBridgeModule = (() => {
       updateAutofillDecryptResult: async (
         plainTextPassword: string,
         success: boolean,
-        errorMessage: string,
       ) => {
         console.warn(
           '⚠️ [Mock] AutofillBridge.updateAutofillDecryptResult called',
@@ -335,7 +331,7 @@ class AutofillService {
             const encryptionKey = deriveKeyFromPassword(
               masterPassword,
               salt,
-              CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC,
+              CRYPTO_CONSTANTS.PBKDF2_ITERATIONS,
             );
 
             // Decrypt the password
@@ -878,6 +874,17 @@ class AutofillService {
           continue;
         }
 
+        // 🔴 CRITICAL: Check for corrupted encrypted data before processing
+        if (!password.isDecrypted && password.password) {
+          // Check if all encryption metadata is present
+          if (!password.passwordSalt || !password.passwordIv || !password.passwordTag) {
+            console.warn(
+              `⚠️ Skipping credential - missing encryption metadata for "${password.title}". Entry needs to be re-created.`,
+            );
+            continue;
+          }
+        }
+
         // 🔐 SECURITY: Always include complete encryption context
         // - If password is plaintext (isDecrypted=true), encrypt it now + capture SALT/IV/TAG
         // - If password is encrypted (isDecrypted=false), use stored SALT/IV/TAG from when it was encrypted
@@ -1080,49 +1087,27 @@ class AutofillService {
           for (const password of passwords) {
             if (password.password && password.id) {
               try {
-                // CRITICAL: Only cache if password is actually plaintext (decrypted)
-                // If encrypted, we need to decrypt first before caching
-                let plaintextToCache = password.password;
-
-                if (!password.isDecrypted) {
-                  // Password is encrypted, need to decrypt before caching
-                  console.log(
-                    `⚠️ [Cache] Password for ${password.id} is encrypted, attempting to decrypt before cache...`,
-                  );
-
-                  try {
-                    const derivedKey = deriveKeyFromPassword(
-                      masterKey,
-                      password.passwordSalt,
-                    );
-                    plaintextToCache = decryptData(
-                      password.password,
-                      derivedKey,
-                      password.passwordIv,
-                      password.passwordTag,
-                    );
+                // CRITICAL: Only cache passwords that are already in plaintext (isDecrypted = true).
+                // Avoid attempting decryption here, as the master key may not be available during app startup.
+                // On-demand decryption is handled later when an autofill request is actually made.
+                if (password.isDecrypted) {
+                  const plaintextToCache = password.password;
+                  if (plaintextToCache) {
                     console.log(
-                      `✅ [Cache] Successfully decrypted password for ${password.id} before caching`,
+                      `✅ [Cache] Password for ${password.id} is already plaintext, caching it.`,
                     );
-                  } catch (decryptError) {
-                    console.warn(
-                      `⚠️ [Cache] Failed to decrypt password ${password.id} for caching:`,
-                      decryptError,
+                    await AutofillBridge.storeDecryptedPasswordForAutofill(
+                      password.id,
+                      plaintextToCache,
                     );
-                    // Skip caching this password if decryption fails
-                    continue;
+                    console.log(`✅ Cached plaintext for: ${password.id}`);
                   }
                 } else {
+                  // If password is not decrypted, we skip caching it.
                   console.log(
-                    `✅ [Cache] Password for ${password.id} is already plaintext`,
+                    `ℹ️ [Cache] Password for ${password.id} is encrypted. Skipping plaintext cache for now.`,
                   );
                 }
-
-                await AutofillBridge.storeDecryptedPasswordForAutofill(
-                  password.id,
-                  plaintextToCache,
-                );
-                console.log(`✅ Cached plaintext for: ${password.id}`);
               } catch (cacheError) {
                 console.warn(
                   `⚠️ Failed to cache plaintext for ${password.id}:`,
@@ -1667,7 +1652,6 @@ class AutofillService {
       console.log('✅ [AutofillService] All encryption components present');
 
       // Derive key from master password + salt (this is the same process used during encryption)
-      const { deriveKeyFromPassword } = await import('./cryptoService');
       const derivedKey = deriveKeyFromPassword(masterPassword, salt);
       console.log('🔑 Key derived from master password + salt');
 

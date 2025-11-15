@@ -337,8 +337,5 @@ export class NavigationPersistenceService {
   }
 }
 
-// Export the class for testing and direct instantiation
-export { NavigationPersistenceService };
-
 // Export singleton instance as default
 export default NavigationPersistenceService.getInstance();

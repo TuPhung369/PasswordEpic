@@ -8,7 +8,7 @@
  * - Memory leak prevention
  */
 
-import { Platform } from 'react-native';
+
 
 export interface SecureMemoryOptions {
   autoClean?: boolean;
@@ -56,7 +56,6 @@ class MemoryService {
     const {
       autoClean = true,
       cleanupDelay = this.DEFAULT_CLEANUP_DELAY,
-      overwriteCount = this.DEFAULT_OVERWRITE_COUNT,
     } = options;
 
     // Generate unique ID for this data

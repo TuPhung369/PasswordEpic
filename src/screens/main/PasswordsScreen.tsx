@@ -54,10 +54,7 @@ import { importExportService } from '../../services/importExportService';
 import { backupService } from '../../services/backupService';
 import FilePicker from '../../modules/FilePicker';
 import { useActivityTracking } from '../../hooks/useActivityTracking';
-import {
-  deriveKeyFromPassword,
-  decryptData,
-} from '../../services/cryptoService';
+
 import {
   uploadToGoogleDrive,
   isGoogleDriveAvailable,
@@ -203,9 +200,15 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
   // Import file list state
   const [showImportFileListModal, setShowImportFileListModal] = useState(false);
-  const [importFileList, setImportFileList] = useState<Array<{path: string; name: string; mtime?: number}>>([]);
-  const [googleFileList, setGoogleFileList] = useState<Array<{path: string; name: string; mtime?: number}>>([]);
-  const [googleHiddenFileList, setGoogleHiddenFileList] = useState<Array<{path: string; name: string; mtime?: number}>>([]);
+  const [importFileList, setImportFileList] = useState<
+    Array<{ path: string; name: string; mtime?: number }>
+  >([]);
+  const [googleFileList, setGoogleFileList] = useState<
+    Array<{ path: string; name: string; mtime?: number }>
+  >([]);
+  const [googleHiddenFileList, setGoogleHiddenFileList] = useState<
+    Array<{ path: string; name: string; mtime?: number }>
+  >([]);
   const [isLoadingImportFiles, setIsLoadingImportFiles] = useState(false);
 
   // Track recalculated password IDs to prevent infinite loop
@@ -252,23 +255,76 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             'items',
           );
 
-          // Convert Google Drive files to BackupInfo format
-          const backups = driveResult.files
-            .filter(
-              file =>
-                file.name.endsWith('.bak') || file.name.endsWith('.backup'),
-            )
-            .map(file => ({
-              id: file.id,
-              filename: file.name,
-              createdAt: new Date(file.createdTime),
-              size: parseInt(file.size || '0', 10),
-              entryCount: 0, // Will be populated when backup is selected
-              categoryCount: 0, // Will be populated when backup is selected
-              encrypted: true, // Assume all backups are encrypted
-              version: '1.0',
-              appVersion: '1.0.0',
-            }));
+          // Convert Google Drive files to BackupInfo format with metadata extraction
+          const backups = await Promise.all(
+            driveResult.files
+              .filter(
+                file =>
+                  file.name.endsWith('.bak') || file.name.endsWith('.backup'),
+              )
+              .map(async file => {
+                try {
+                  const tempPath = RNFS.CachesDirectoryPath || RNFS.TemporaryDirectoryPath;
+                  const tempFile = `${tempPath}/backup_${file.id}.tmp`;
+                  
+                  const downloadResult = await downloadFromGoogleDrive(
+                    file.id,
+                    tempFile,
+                  );
+
+                  if (!downloadResult.success) {
+                    console.warn(`Failed to download backup metadata for ${file.name}`);
+                    return {
+                      id: file.id,
+                      filename: file.name,
+                      createdAt: new Date(file.createdTime),
+                      size: parseInt(file.size || '0', 10),
+                      entryCount: 0,
+                      categoryCount: 0,
+                      encrypted: true,
+                      version: '1.0',
+                      appVersion: '1.0.0',
+                    };
+                  }
+
+                  // Extract metadata from downloaded file
+                  const fileContent = await RNFS.readFile(tempFile, 'utf8');
+                  const metadata = await backupService.extractBackupMetadata(fileContent);
+                  
+                  // Clean up temp file
+                  try {
+                    await RNFS.unlink(tempFile);
+                  } catch (e) {
+                    console.warn('Failed to cleanup temp file:', e);
+                  }
+
+                  return {
+                    id: file.id,
+                    filename: file.name,
+                    createdAt: new Date(file.createdTime),
+                    size: parseInt(file.size || '0', 10),
+                    entryCount: metadata?.entryCount || 0,
+                    categoryCount: metadata?.categoryCount || 0,
+                    encrypted: true,
+                    version: metadata?.appVersion || '1.0',
+                    appVersion: metadata?.appVersion || '1.0.0',
+                  };
+                } catch (error) {
+                  console.error(`Error processing backup ${file.name}:`, error);
+                  return {
+                    id: file.id,
+                    filename: file.name,
+                    createdAt: new Date(file.createdTime),
+                    size: parseInt(file.size || '0', 10),
+                    entryCount: 0,
+                    categoryCount: 0,
+                    encrypted: true,
+                    version: '1.0',
+                    appVersion: '1.0.0',
+                  };
+                }
+              }),
+          );
 
           console.log(
             '🔵 [PasswordsScreen] Converted backups:',
@@ -474,10 +530,13 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         console.log('📁 [PasswordsScreen] Initializing export folder:', appDir);
         setSelectedExportFolder(appDir);
       } catch (error) {
-        console.error('❌ [PasswordsScreen] Failed to initialize export folder:', error);
+        console.error(
+          '❌ [PasswordsScreen] Failed to initialize export folder:',
+          error,
+        );
       }
     };
-    
+
     initializeExportFolder();
   }, []);
 
@@ -1006,7 +1065,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           exportDestination,
         });
       } else if (exportDestination === 'local') {
-        console.warn('⚠️ [Export] Local export selected but no folder set!');
+        console.log(
+          '📁 [Export] Local export using default app storage path (no folder selected)',
+        );
       }
 
       const result = await importExportService.exportPasswords(
@@ -1072,7 +1133,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             if (!authResult.success) {
               showAlert(
                 'Google Drive Permission Required',
-                authResult.error || 'Please grant Google Drive access to upload exports.',
+                authResult.error ||
+                  'Please grant Google Drive access to upload exports.',
               );
               // Fallback to local storage
               setToastMessage(successMsg + ' to local storage');
@@ -1102,13 +1164,19 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             });
 
             if (uploadResult.success) {
-              console.log('✅ [Export] Upload successful, deleting temp file:', result.filePath);
+              console.log(
+                '✅ [Export] Upload successful, deleting temp file:',
+                result.filePath,
+              );
               // Delete local temporary file after successful upload
               try {
                 await RNFS.unlink(result.filePath);
                 console.log('✅ [Export] Temporary file deleted successfully');
               } catch (deleteError) {
-                console.warn('⚠️ [Export] Failed to delete temp file:', deleteError);
+                console.warn(
+                  '⚠️ [Export] Failed to delete temp file:',
+                  deleteError,
+                );
               }
 
               const driveMsg = isPublic
@@ -1183,7 +1251,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
     if (filePath) {
       const fileName = filePath.split('/').pop() || 'selected file';
-      
+
       if (destination === 'local') {
         handleSelectImportFile(filePath, fileName);
       } else if (destination === 'google') {
@@ -1211,8 +1279,13 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     await handleImport(destination);
   };
 
-  const handleLoadImportFiles = async (destination: 'local' | 'google' | 'google-hidden') => {
-    console.log('🚀 [DEBUG] handleLoadImportFiles called with destination:', destination);
+  const handleLoadImportFiles = async (
+    destination: 'local' | 'google' | 'google-hidden',
+  ) => {
+    console.log(
+      '🚀 [DEBUG] handleLoadImportFiles called with destination:',
+      destination,
+    );
     setIsLoadingImportFiles(true);
 
     // Clear other destinations' file lists to prevent stale data display
@@ -1230,13 +1303,14 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     try {
       if (destination === 'local') {
         console.log('📂 [Local Import] Listing files from app directory');
-        
+
         try {
           // Use app-specific external directory (same as where exports are saved)
           // This is: /storage/emulated/0/Android/data/com.passwordepic.mobile/files/
-          const filesDir = Platform.OS === 'android' 
-            ? RNFS.ExternalDirectoryPath 
-            : RNFS.DocumentDirectoryPath;
+          const filesDir =
+            Platform.OS === 'android'
+              ? RNFS.ExternalDirectoryPath
+              : RNFS.DocumentDirectoryPath;
           console.log('📁 [Local Import] Files directory:', filesDir);
 
           // Check if directory exists
@@ -1251,33 +1325,108 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           // List all files in the directory
           const filenames = await RNFS.readdir(filesDir);
           console.log('📋 [Local Import] Found files:', filenames.length);
+          console.log('📋 [Local Import] File list:', filenames);
 
-          // Filter for JSON files and get metadata
-          const jsonFilesWithStats = await Promise.all(
-            filenames
-              .filter(filename => filename.endsWith('.json'))
-              .map(async filename => {
-                const filePath = `${filesDir}/${filename}`;
-                const stats = await RNFS.stat(filePath);
-                return {
-                  name: filename,
-                  path: filePath,
-                  mtime: stats.mtime.getTime(),
-                };
-              })
+          // Collect all importable files (both .json and .backup)
+          const allFiles: Array<{ name: string; path: string; mtime: number }> =
+            [];
+
+          // Process each entry
+          for (const filename of filenames) {
+            const filePath = `${filesDir}/${filename}`;
+            try {
+              const stats = await RNFS.stat(filePath);
+
+              // Check if it's a directory
+              if (stats.isDirectory && stats.isDirectory()) {
+                console.log(
+                  `📂 [Local Import] Found directory: ${filename}, searching for backup files inside`,
+                );
+
+                // If it's the Backups directory, look for .backup files inside
+                if (
+                  filename === 'Backups' ||
+                  filename.toLowerCase() === 'backups'
+                ) {
+                  try {
+                    const backupFiles = await RNFS.readdir(filePath);
+                    console.log(
+                      `📋 [Local Import] Found ${backupFiles.length} files in Backups directory`,
+                    );
+
+                    for (const backupFilename of backupFiles) {
+                      const backupFilePath = `${filePath}/${backupFilename}`;
+                      try {
+                        const backupStats = await RNFS.stat(backupFilePath);
+                        if (backupStats.isFile && backupStats.isFile()) {
+                          if (
+                            backupFilename.endsWith('.backup') ||
+                            backupFilename.endsWith('.bak')
+                          ) {
+                            console.log(
+                              `📋 [Local Import] Found backup file: ${backupFilename}`,
+                            );
+                            allFiles.push({
+                              name: backupFilename,
+                              path: backupFilePath,
+                              mtime: backupStats.mtime.getTime(),
+                            });
+                          }
+                        }
+                      } catch (backupStatError) {
+                        console.warn(
+                          `⚠️ [Local Import] Failed to stat backup file: ${backupFilename}`,
+                          backupStatError,
+                        );
+                      }
+                    }
+                  } catch (backupReadError) {
+                    console.warn(
+                      `⚠️ [Local Import] Failed to read Backups directory`,
+                      backupReadError,
+                    );
+                  }
+                }
+              } else if (stats.isFile && stats.isFile()) {
+                // Check if it's a JSON or backup file in the root directory
+                if (
+                  filename.endsWith('.json') ||
+                  filename.endsWith('.backup') ||
+                  filename.endsWith('.bak')
+                ) {
+                  console.log(`📋 [Local Import] Found file: ${filename}`);
+                  allFiles.push({
+                    name: filename,
+                    path: filePath,
+                    mtime: stats.mtime.getTime(),
+                  });
+                }
+              }
+            } catch (statError) {
+              console.warn(
+                `⚠️ [Local Import] Failed to stat file: ${filename}`,
+                statError,
+              );
+            }
+          }
+
+          // Sort by modification time (newest first)
+          allFiles.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+          const validFiles = allFiles;
+
+          console.log(
+            '📋 [Local Import] Valid JSON files found:',
+            validFiles.length,
           );
+          console.log('📋 [Local Import] File entries:', validFiles);
 
-          // Sort by modification time, newest first
-          jsonFilesWithStats.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
-
-          console.log('📋 [Local Import] JSON files found:', jsonFilesWithStats.length);
-
-          const fileEntries = jsonFilesWithStats;
-
-          console.log('📋 [Local Import] File entries:', fileEntries);
-          setImportFileList(fileEntries);
+          setImportFileList(validFiles);
         } catch (pickerError) {
           console.error('❌ [Local Import] File listing error:', pickerError);
+          console.error(
+            '❌ [Local Import] Error details:',
+            (pickerError as any)?.message,
+          );
           setToastMessage('Failed to list files. Please try again.');
           setToastType('error');
           setShowToast(true);
@@ -1306,18 +1455,25 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         if (result.success && result.files) {
           const driveFiles = result.files
             .filter(file => file.name.endsWith('.json'))
-            .map((file) => ({
+            .map(file => ({
               name: file.name,
               path: file.id,
               mtime: new Date(file.modifiedTime).getTime(),
             }));
 
           const sortedFiles = driveFiles.sort(
-            (a, b) => (b.mtime || 0) - (a.mtime || 0)
+            (a, b) => (b.mtime || 0) - (a.mtime || 0),
           );
 
-          console.log(`📋 Found ${sortedFiles.length} files in ${isPublic ? 'Google Drive' : 'Google Hidden'}`);
-          console.log('📋 Google files to set:', sortedFiles.map(f => ({ name: f.name, path: f.path })));
+          console.log(
+            `📋 Found ${sortedFiles.length} files in ${
+              isPublic ? 'Google Drive' : 'Google Hidden'
+            }`,
+          );
+          console.log(
+            '📋 Google files to set:',
+            sortedFiles.map(f => ({ name: f.name, path: f.path })),
+          );
 
           if (isPublic) {
             setGoogleFileList(sortedFiles);
@@ -1362,7 +1518,10 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           console.log('✅ [Delete] Google Drive file deleted successfully');
           return true;
         } else {
-          console.error('❌ [Delete] Failed to delete from Google Drive:', result.error);
+          console.error(
+            '❌ [Delete] Failed to delete from Google Drive:',
+            result.error,
+          );
           setToastMessage(`Failed to delete file: ${result.error}`);
           setToastType('error');
           setShowToast(true);
@@ -1372,11 +1531,16 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         console.log('🔵 [Delete] Deleting Google Hidden file:', filePath);
         const result = await deleteFromGoogleDrive(filePath);
         if (result.success) {
-          setGoogleHiddenFileList(prev => prev.filter(f => f.path !== filePath));
+          setGoogleHiddenFileList(prev =>
+            prev.filter(f => f.path !== filePath),
+          );
           console.log('✅ [Delete] Google Hidden file deleted successfully');
           return true;
         } else {
-          console.error('❌ [Delete] Failed to delete from Google Hidden:', result.error);
+          console.error(
+            '❌ [Delete] Failed to delete from Google Hidden:',
+            result.error,
+          );
           setToastMessage(`Failed to delete file: ${result.error}`);
           setToastType('error');
           setShowToast(true);
@@ -1386,7 +1550,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       return false;
     } catch (error) {
       console.error('❌ [Delete] Error deleting file:', error);
-      setToastMessage(error instanceof Error ? error.message : 'Failed to delete file');
+      setToastMessage(
+        error instanceof Error ? error.message : 'Failed to delete file',
+      );
       setToastType('error');
       setShowToast(true);
       return false;
@@ -1471,7 +1637,13 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         ).unwrap();
 
         setToastMessage(
-          `✅ Import successful! ${importResult.importedCount} passwords imported${importResult.skippedCount > 0 ? `, ${importResult.skippedCount} duplicates skipped` : ''}`,
+          `✅ Import successful! ${
+            importResult.importedCount
+          } passwords imported${
+            importResult.skippedCount > 0
+              ? `, ${importResult.skippedCount} duplicates skipped`
+              : ''
+          }`,
         );
         setToastType('success');
         setShowToast(true);
@@ -1504,7 +1676,10 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   const handleImportWithFolder = async (folderPath: string) => {
     try {
       setIsImportLoading(true);
-      console.log('🚀 [DEBUG] handleImportWithFolder called with path:', folderPath);
+      console.log(
+        '🚀 [DEBUG] handleImportWithFolder called with path:',
+        folderPath,
+      );
 
       // List .json files from the folder
       try {
@@ -1512,12 +1687,12 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         // List files in folder
         const fileNames = await RNFS.readdir(folderPath);
         console.log('📂 Raw files from RNFS.readdir:', fileNames);
-        
+
         // Get metadata for each JSON file
         const filesWithMetadata = await Promise.all(
           fileNames
             .filter(name => name.endsWith('.json'))
-            .map(async (name) => {
+            .map(async name => {
               const filePath = `${folderPath}/${name}`;
               try {
                 const stat = await RNFS.stat(filePath);
@@ -1533,27 +1708,38 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
                   mtime: 0,
                 };
               }
-            })
+            }),
         );
-        
-        const jsonFiles = filesWithMetadata.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
-        
+
+        const jsonFiles = filesWithMetadata.sort(
+          (a, b) => (b.mtime || 0) - (a.mtime || 0),
+        );
+
         console.log(`📋 Found ${jsonFiles.length} .json files in folder`);
-        console.log('📋 Filtered JSON files:', jsonFiles.map(f => ({ name: f.name, path: f.path })));
-        
+        console.log(
+          '📋 Filtered JSON files:',
+          jsonFiles.map(f => ({ name: f.name, path: f.path })),
+        );
+
         if (jsonFiles.length === 0) {
           console.log('❌ [DEBUG] No JSON files found');
-          setToastMessage('No .json files found. Please export passwords first.');
+          setToastMessage(
+            'No .json files found. Please export passwords first.',
+          );
           setToastType('error');
           setShowToast(true);
           setIsImportLoading(false);
           return;
         }
-        
+
         // Show the file list modal
         setImportFileList(jsonFiles);
         setShowImportFileListModal(true);
-        console.log('✅ [DEBUG] Showing file list modal with', jsonFiles.length, 'files');
+        console.log(
+          '✅ [DEBUG] Showing file list modal with',
+          jsonFiles.length,
+          'files',
+        );
       } catch (readError: any) {
         console.error('❌ Failed to read folder:', readError);
         console.error('❌ [DEBUG] Error details:', readError.message);
@@ -1588,20 +1774,28 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   ) => {
     try {
       setIsImportLoading(true);
-      console.log('🚀 [DEBUG] handleImport called, selectedImportFolder:', selectedImportFolder);
+      console.log(
+        '🚀 [DEBUG] handleImport called, selectedImportFolder:',
+        selectedImportFolder,
+      );
 
       let filePath: string;
 
       // For local import from app files directory
       if (selectedImportFolder) {
-        console.log('✅ [DEBUG] selectedImportFolder is set, reading from:', selectedImportFolder);
+        console.log(
+          '✅ [DEBUG] selectedImportFolder is set, reading from:',
+          selectedImportFolder,
+        );
         await handleImportWithFolder(selectedImportFolder);
         return;
       }
 
       // Fallback to system file picker if no folder selected
-      console.log('⚠️ [DEBUG] selectedImportFolder is empty/null, using FilePicker fallback');
-      filePath = await FilePicker.pickFileWithOptions({ 
+      console.log(
+        '⚠️ [DEBUG] selectedImportFolder is empty/null, using FilePicker fallback',
+      );
+      filePath = await FilePicker.pickFileWithOptions({
         fileType: 'application/json',
       });
 
@@ -1651,37 +1845,24 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         return;
       }
 
-      const importResult = await importExportService.importPasswords(
-        importedFilePath,
-        passwords,
-        {
-          format: 'json',
-          encryptionPassword: masterPasswordResult.password,
-          mergeStrategy: 'skip',
-        },
-      );
+      const isBackupFile = importedFilePath.endsWith('.backup') ||
+        importedFilePath.endsWith('.bak');
+      const isExportFile = importedFilePath.endsWith('.json');
 
-      if (importResult.success) {
-        // Refresh the passwords list - MUST await to ensure UI updates
-        await dispatch(
-          loadPasswordsLazy(masterPasswordResult.password),
-        ).unwrap();
-
-        setToastMessage(
-          `✅ Import successful! ${importResult.importedCount} passwords imported${importResult.skippedCount > 0 ? `, ${importResult.skippedCount} duplicates skipped` : ''}`,
+      if (isBackupFile) {
+        handleRestoreBackupFile(
+          importedFilePath,
+          masterPasswordResult.password,
         );
-        setToastType('success');
-        setShowToast(true);
-
-        // Clear import state
-        setImportedFilePath('');
-        setImportedFileName('');
+      } else if (isExportFile) {
+        handleImportExportFile(
+          importedFilePath,
+          masterPasswordResult.password,
+        );
       } else {
-        const errorMsg =
-          importResult.errors && importResult.errors.length > 0
-            ? `Failed to import: ${importResult.errors[0].error}`
-            : `Failed to import from ${importedFileName}. File might be corrupted or encrypted with different password.`;
-        setToastMessage(errorMsg);
+        setToastMessage(
+          'Invalid file format. Please select a .backup, .bak, or .json file.',
+        );
         setToastType('error');
         setShowToast(true);
       }
@@ -1698,15 +1879,176 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     }
   };
 
-  const handleBackup = async (options: any) => {
-    console.log('🟢 [PasswordsScreen] handleBackup called');
-    console.log('🟢 [PasswordsScreen] Options received:', options);
-
+  // =====================================================
+  // FLOW 1: IMPORT/EXPORT - For importing exported passwords
+  // Uses: importExportService
+  // Files: .json exports
+  // Key: masterPassword::EXPORT_KEY_CONSTANT
+  // =====================================================
+  const handleImportExportFile = async (
+    filePath: string,
+    masterPassword: string,
+  ) => {
     try {
-      setIsExportLoading(true);
+      console.log('📥 [IMPORT/EXPORT FLOW] Processing export file:', filePath);
+      console.log(
+        '📥 [IMPORT/EXPORT FLOW] Using importExportService for file decryption',
+      );
+
+      const importResult = await importExportService.importPasswords(
+        filePath,
+        passwords,
+        {
+          format: 'json',
+          encryptionPassword: masterPassword,
+          mergeStrategy: 'skip',
+        },
+      );
+
+      if (importResult.success) {
+        await dispatch(
+          loadPasswordsLazy(masterPassword),
+        ).unwrap();
+
+        setToastMessage(
+          `✅ Import successful! ${
+            importResult.importedCount
+          } passwords imported${
+            importResult.skippedCount > 0
+              ? `, ${importResult.skippedCount} duplicates skipped`
+              : ''
+          }`,
+        );
+        setToastType('success');
+        setShowToast(true);
+
+        setImportedFilePath('');
+        setImportedFileName('');
+      } else {
+        const errorMsg =
+          importResult.errors && importResult.errors.length > 0
+            ? `Failed to import: ${importResult.errors[0].error}`
+            : `Failed to import from ${importedFileName}. File might be corrupted or encrypted with different password.`;
+        setToastMessage(errorMsg);
+        setToastType('error');
+        setShowToast(true);
+      }
+    } catch (error: any) {
+      console.error('❌ [IMPORT/EXPORT FLOW] Error:', error);
+      setToastMessage(error?.message || 'Failed to import export file');
+      setToastType('error');
+      setShowToast(true);
+    }
+  };
+
+  // =====================================================
+  // FLOW 2: BACKUP/RESTORE - For restoring backups
+  // Uses: backupService ONLY
+  // Files: .backup, .bak files
+  // Key: masterPassword::BACKUP_ENCRYPTION_CONSTANT
+  // NOTE: MUST NOT use importExportService
+  // =====================================================
+  const handleRestoreBackupFile = async (
+    filePath: string,
+    masterPassword: string,
+  ) => {
+    try {
+      console.log('♻️ [BACKUP/RESTORE FLOW] Processing backup file:', filePath);
+      console.log(
+        '♻️ [BACKUP/RESTORE FLOW] Using backupService ONLY for file decryption',
+      );
+
+      const restoreOptions = {
+        mergeStrategy: 'merge' as const,
+        decryptionPassword: masterPassword,
+        restoreSettings: true,
+        restoreCategories: true,
+        restoreDomains: true,
+        overwriteDuplicates: false,
+      };
+
+      const result = await backupService.restoreFromBackup(
+        filePath,
+        restoreOptions,
+      );
+
+      if (result.result.success) {
+        if (result.data && result.data.entries) {
+          let savedCount = 0;
+          let skippedCount = 0;
+
+          for (const entry of result.data.entries) {
+            try {
+              await encryptedDatabase.savePasswordEntry(entry, masterPassword);
+              savedCount++;
+            } catch (error) {
+              console.warn(
+                `⚠️ [BACKUP/RESTORE FLOW] Failed to save entry: ${entry.title}`,
+                error,
+              );
+              skippedCount++;
+            }
+          }
+
+          await dispatch(
+            loadPasswordsLazy(masterPassword),
+          ).unwrap();
+
+          setToastMessage(
+            `✅ Restore successful! ${savedCount} passwords restored${
+              skippedCount > 0 ? `, ${skippedCount} skipped` : ''
+            }`,
+          );
+          setToastType('success');
+          setShowToast(true);
+
+          setImportedFilePath('');
+          setImportedFileName('');
+        }
+      } else {
+        const errorMsg =
+          result.result.errors && result.result.errors.length > 0
+            ? `Failed to restore: ${result.result.errors[0]}`
+            : `Failed to restore from backup. File might be corrupted.`;
+        setToastMessage(errorMsg);
+        setToastType('error');
+        setShowToast(true);
+      }
+    } catch (error: any) {
+      console.error('❌ [BACKUP/RESTORE FLOW] Error:', error);
+      setToastMessage(error?.message || 'Failed to restore backup');
+      setToastType('error');
+      setShowToast(true);
+    }
+  };
+
+  // =====================================================
+  // FLOW 2: BACKUP/RESTORE - For creating backups
+  // Uses: backupService ONLY
+  // Files: .backup files
+  // Key: masterPassword::BACKUP_ENCRYPTION_CONSTANT
+  // NOTE: MUST NOT use importExportService
+  // =====================================================
+  const handleBackup = async (options: any) => {
+    console.log('🟢 [BACKUP/RESTORE FLOW] handleBackup called');
+    console.log('🟢 [BACKUP/RESTORE FLOW] Options received:', options);
+    console.log(
+      '🟢 [BACKUP/RESTORE FLOW] Using backupService ONLY for encryption',
+    );
+
+    setIsExportLoading(true);
+
+    // Defer the backup operation to allow UI to render loading state first
+    requestAnimationFrame(() => {
+      performBackup(options);
+    });
+  };
+
+  const performBackup = async (options: any) => {
+    try {
 
       // Get master password for encryption
-      console.log('🟢 [PasswordsScreen] Getting master password...');
+      console.log('🟢 [BACKUP/RESTORE FLOW] Getting master password...');
       const masterPasswordResult = await getEffectiveMasterPassword();
       if (!masterPasswordResult.success || !masterPasswordResult.password) {
         console.log('❌ [PasswordsScreen] Failed to get master password');
@@ -1800,7 +2142,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             if (!authResult.success) {
               showAlert(
                 'Google Drive Permission Required',
-                authResult.error || 'Please grant Google Drive access to upload backups.',
+                authResult.error ||
+                  'Please grant Google Drive access to upload backups.',
               );
               return;
             }
@@ -1870,6 +2213,13 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     }
   };
 
+  // =====================================================
+  // FLOW 2: BACKUP/RESTORE - For restoring backups from Google Drive
+  // Uses: backupService ONLY
+  // Files: .backup files
+  // Key: masterPassword::BACKUP_ENCRYPTION_CONSTANT
+  // NOTE: MUST NOT use importExportService
+  // =====================================================
   const handleRestore = async (backupId: string, options: any) => {
     let tempFilePath: string | null = null; // Declare outside try block for cleanup
 
@@ -1878,7 +2228,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
       // Get master password for decryption
       console.log(
-        '🟢 [PasswordsScreen] Getting master password for restore...',
+        '🟢 [BACKUP/RESTORE FLOW] Getting master password for restore...',
       );
       const masterPasswordResult = await getEffectiveMasterPassword();
       if (!masterPasswordResult.success || !masterPasswordResult.password) {
@@ -1909,7 +2259,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         if (!isDriveAvailable) {
           const permissionResult = await requestDrivePermissions();
           if (!permissionResult.success) {
-            throw new Error('Failed to authenticate with Google Drive for backup download');
+            throw new Error(
+              'Failed to authenticate with Google Drive for backup download',
+            );
           }
         }
 
@@ -1956,7 +2308,15 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         restoreOptions,
       );
 
-      console.log('🔵 [PasswordsScreen] Restore result:', result);
+      console.log('🔵 [DEBUG_RESTORE STEP 1] Restore service finished. Result:', {
+        success: result.result.success,
+        entriesCount: result.data?.entries?.length,
+        firstEntry: result.data?.entries?.[0] ? {
+          ...result.data.entries[0],
+          password: `(plaintext, length: ${result.data.entries[0].password?.length || 0})`,
+        } : 'N/A',
+      });
+
 
       if (result.result.success) {
         console.log('✅ [PasswordsScreen] Restore successful');
@@ -2019,12 +2379,28 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           // Get existing passwords for duplicate detection (only in merge mode)
           let existingPasswords: any[] = [];
           if (restoreOptions.mergeStrategy === 'merge') {
-            existingPasswords = await encryptedDatabase.getAllPasswordEntries(
-              masterPasswordResult.password,
-            );
-            console.log(
-              `🔍 [PasswordsScreen] Found ${existingPasswords.length} existing passwords for duplicate detection`,
-            );
+            console.log('🔵 [DEBUG_RESTORE STEP 2] Checking for duplicates. Loading existing entries from DB...');
+            try {
+              existingPasswords = await encryptedDatabase.getAllPasswordEntries(
+                masterPasswordResult.password,
+              );
+              
+              const decryptedCount = existingPasswords.filter(e => e.isDecrypted).length;
+              const encryptedCount = existingPasswords.length - decryptedCount;
+              
+              console.log(
+                `🔍 [PasswordsScreen] Found ${existingPasswords.length} existing passwords for duplicate detection`,
+                {
+                  fullyDecrypted: decryptedCount,
+                  withEncryptedPassword: encryptedCount,
+                  note: encryptedCount > 0 ? 'Some entries have corrupted encryption tags but can still be used for title/username matching' : 'All passwords decrypted successfully',
+                },
+              );
+            } catch (error) {
+              console.error('❌ [DEBUG_RESTORE] CRITICAL: Failed to load existing passwords from the database for duplicate check. The error is with local data, not the backup file.', error);
+              existingPasswords = [];
+              console.warn('⚠️ [PasswordsScreen] Proceeding with empty duplicate detection list - all restored entries will be saved');
+            }
           }
 
           let savedCount = 0;
@@ -2033,59 +2409,17 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
           for (const entry of result.data.entries) {
             try {
-              // Check if this entry has encrypted password data from backup
-              let entryToSave = entry;
-              if (
-                (entry as any).salt &&
-                (entry as any).iv &&
-                (entry as any).authTag &&
-                (entry as any).isPasswordEncrypted
-              ) {
-                // This is an encrypted entry from backup
-                // We need to decrypt it first, then re-encrypt with current format
-                console.log(
-                  `🔓 [PasswordsScreen] Decrypting backed up entry: ${entry.title}`,
-                );
+              // The entry is now decrypted by the backupService, so we can use it directly.
+              const entryToSave = entry;
+              console.log('🔵 [DEBUG_RESTORE STEP 3] Processing entry to save:', {
+                title: entryToSave.title,
+                password: `(plaintext, length: ${entryToSave.password?.length || 0})`,
+              });
 
-                try {
-                  // Decrypt the password using the master password
-                  const derivedKey = deriveKeyFromPassword(
-                    masterPasswordResult.password,
-                    (entry as any).salt,
-                  );
-                  const decryptedPassword = decryptData(
-                    entry.password,
-                    derivedKey,
-                    (entry as any).iv,
-                    (entry as any).authTag,
-                  );
-
-                  // Create entry with decrypted password (remove encryption metadata)
-                  entryToSave = {
-                    ...entry,
-                    password: decryptedPassword,
-                  };
-                  // Remove encryption metadata fields
-                  delete (entryToSave as any).salt;
-                  delete (entryToSave as any).iv;
-                  delete (entryToSave as any).authTag;
-                  delete (entryToSave as any).isPasswordEncrypted;
-
-                  console.log(
-                    `✅ [PasswordsScreen] Successfully decrypted: ${entry.title}`,
-                  );
-                } catch (decryptError) {
-                  console.error(
-                    `❌ [PasswordsScreen] Failed to decrypt entry ${entry.title}:`,
-                    decryptError,
-                  );
-                  // Skip this entry if decryption fails
-                  skippedCount++;
-                  continue;
-                }
-              }
 
               // Check for duplicates (same title and username)
+              // NOTE: This works even if some existing entries have encrypted passwords (isDecrypted=false)
+              // because title and username are always stored as unencrypted metadata
               const isDuplicate = existingPasswords.some(
                 existing =>
                   existing.title?.toLowerCase() ===
@@ -2093,6 +2427,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
                   existing.username?.toLowerCase() ===
                     entryToSave.username?.toLowerCase(),
               );
+              console.log(`🔵 [DEBUG_RESTORE STEP 4] Is '${entryToSave.title}' a duplicate? ${isDuplicate}`);
+
 
               if (isDuplicate) {
                 if (restoreOptions.overwriteDuplicates) {
@@ -2112,6 +2448,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
                       `🔄 [PasswordsScreen] Overwriting duplicate: ${entryToSave.title}`,
                     );
                   }
+                  console.log(`🔵 [DEBUG_RESTORE STEP 5] Saving (overwrite) entry: ${entryToSave.title}`);
                   await encryptedDatabase.savePasswordEntry(
                     entryToSave,
                     masterPasswordResult.password,
@@ -2127,6 +2464,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
                 }
               } else {
                 // Not a duplicate, save normally
+                console.log(`🔵 [DEBUG_RESTORE STEP 5] Saving (new) entry: ${entryToSave.title}`);
                 await encryptedDatabase.savePasswordEntry(
                   entryToSave,
                   masterPasswordResult.password,
@@ -2307,7 +2645,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         if (!isDriveAvailable) {
           const permissionResult = await requestDrivePermissions();
           if (!permissionResult.success) {
-            throw new Error('Failed to authenticate with Google Drive for backup download');
+            throw new Error(
+              'Failed to authenticate with Google Drive for backup download',
+            );
           }
         }
 
@@ -2453,7 +2793,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         Platform.OS === 'android'
           ? RNFS.ExternalDirectoryPath
           : RNFS.DocumentDirectoryPath;
-      
+
       console.log('📁 Using app default export folder:', appDir);
       setSelectedExportFolder(appDir);
       setExportDestination('local');
@@ -2466,13 +2806,13 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   };
 
   const getFolderDisplayName = (folderUri: string | null): string => {
-    if (!folderUri) return 'App Storage';
+    if (!folderUri) return 'App Storage (Default)';
 
     const appDir =
       Platform.OS === 'android'
         ? RNFS.ExternalDirectoryPath
         : RNFS.DocumentDirectoryPath;
-    
+
     if (folderUri === appDir) {
       return 'App Storage (Default)';
     }
@@ -3123,13 +3463,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           ) {
             setShowExportDestinationModal(false);
             setShowFileNameModal(true);
-          } else if (exportDestination === 'local' && selectedExportFolder) {
+          } else if (exportDestination === 'local') {
             setShowExportDestinationModal(false);
             setShowFileNameModal(true);
-          } else if (exportDestination === 'local' && !selectedExportFolder) {
-            setToastMessage('Please select a folder first');
-            setToastType('error');
-            setShowToast(true);
           }
         }}
         onCancel={() => {
@@ -3289,9 +3625,11 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           setSelectedExportFolder(null);
         }}
         onConfirm={handleFileNameConfirm}
-        defaultFileName={`PasswordEpic_Export_${
-          new Date().toISOString().split('T')[0]
-        }`}
+        defaultFileName={`PasswordEpic_${new Date()
+          .toISOString()
+          .split('.')[0]
+          .replace('T', '_')
+          .replace(/:/g, '')}`}
         fileExtension={pendingExport?.format?.extension || 'json'}
         title="Export File Name"
         description="Enter a name for your export file"
@@ -3438,10 +3776,12 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         cancelText=""
         confirmStyle="default"
       >
-        <View style={[styles.fileListContainer, { backgroundColor: theme.surface }]}>
+        <View
+          style={[styles.fileListContainer, { backgroundColor: theme.surface }]}
+        >
           <FlatList
             data={importFileList}
-            keyExtractor={(item) => item.path}
+            keyExtractor={item => item.path}
             scrollEnabled
             nestedScrollEnabled
             renderItem={({ item }) => (
@@ -3468,7 +3808,10 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
                     </Text>
                     {item.mtime && (
                       <Text
-                        style={[styles.fileListItemDate, { color: theme.textSecondary }]}
+                        style={[
+                          styles.fileListItemDate,
+                          { color: theme.textSecondary },
+                        ]}
                       >
                         {new Date(item.mtime).toLocaleString()}
                       </Text>

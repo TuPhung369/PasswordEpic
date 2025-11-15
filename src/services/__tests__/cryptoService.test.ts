@@ -113,7 +113,7 @@ describe('CryptoService', () => {
       const key2 = deriveKeyFromPassword(
         password,
         salt,
-        CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC,
+        CRYPTO_CONSTANTS.PBKDF2_ITERATIONS,
       );
 
       expect(key1).toBe(key2);
@@ -589,7 +589,6 @@ describe('CryptoService', () => {
   describe('CRYPTO_CONSTANTS', () => {
     it('should have correct values', () => {
       expect(CRYPTO_CONSTANTS.PBKDF2_ITERATIONS).toBe(10000);
-      expect(CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC).toBe(2000);
       expect(CRYPTO_CONSTANTS.SALT_LENGTH).toBe(32);
       expect(CRYPTO_CONSTANTS.KEY_LENGTH).toBe(32);
       expect(CRYPTO_CONSTANTS.IV_LENGTH).toBe(12);

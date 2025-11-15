@@ -98,6 +98,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
   const [selectedBackupsForDeletion, setSelectedBackupsForDeletion] = useState<
     Set<string>
   >(new Set());
+  const [localBackupLoading, setLocalBackupLoading] = useState(false);
 
   // Toast state
   const [showToast, setShowToast] = useState(false);
@@ -163,9 +164,15 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
       setActiveTab('backup');
     } else {
       console.log('❌ BackupRestoreModal is hidden');
+      setLocalBackupLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+
+  // Sync local backup loading state with parent isLoading prop
+  useEffect(() => {
+    setLocalBackupLoading(isLoading);
+  }, [isLoading]);
 
   // Handle tab changes
   React.useEffect(() => {
@@ -243,6 +250,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
     }
 
     console.log('✅ [BackupModal] Validation passed, calling onBackup');
+    setLocalBackupLoading(true);
     onBackup(backupOptions);
   };
 
@@ -417,7 +425,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
       >
         <Icon
           name="cloud-upload-outline"
-          size={20}
+          size={18}
           color={activeTab === 'backup' ? theme.primary : theme.textSecondary}
         />
         <Text
@@ -436,7 +444,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
       >
         <Icon
           name="cloud-download-outline"
-          size={20}
+          size={18}
           color={activeTab === 'restore' ? theme.primary : theme.textSecondary}
         />
         <Text
@@ -471,6 +479,23 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
     </View>
   );
 
+  const renderBackupFeatureItem = (
+    icon: string,
+    title: string,
+    subtitle: string,
+  ) => (
+    <View style={styles.featureItem}>
+      <View style={styles.featureIcon}>
+        <Icon name={icon} size={20} color={theme.primary} />
+      </View>
+      <View style={styles.featureContent}>
+        <Text style={styles.featureTitle}>{title}</Text>
+        <Text style={styles.featureSubtitle}>{subtitle}</Text>
+      </View>
+      <Icon name="checkmark-circle" size={20} color={theme.success} />
+    </View>
+  );
+
   const renderBackupTab = () => {
     console.log('🔵 [BackupModal] renderBackupTab called');
     console.log('🔵 [BackupModal] Backup options:', backupOptions);
@@ -480,13 +505,17 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
         contentContainerStyle={styles.tabContentContainer}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Backup to Google Drive</Text>
-          <Text style={styles.optionSubtitleWithMargin}>
-            Your backup will be encrypted with your master password and uploaded
-            securely to Google Drive.
+        <View style={styles.backupHeaderSection}>
+          <View style={styles.backupHeaderIcon}>
+            <Icon name="cloud-upload-outline" size={32} color={theme.primary} />
+          </View>
+          <Text style={styles.backupHeaderTitle}>Backup to Google Drive</Text>
+          <Text style={styles.backupHeaderSubtitle}>
+            Secure your data with end-to-end encryption
           </Text>
+        </View>
 
+        <View style={styles.section}>
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Backup Filename</Text>
             <TextInput
@@ -499,7 +528,58 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
               placeholderTextColor={theme.textSecondary}
             />
           </View>
+        </View>
 
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>What's Included</Text>
+          <View style={styles.featuresList}>
+            {renderBackupFeatureItem(
+              'key-outline',
+              'All Passwords',
+              'Your complete password vault',
+            )}
+            {renderBackupFeatureItem(
+              'folder-outline',
+              'Categories & Tags',
+              'Custom organization structure',
+            )}
+            {renderBackupFeatureItem(
+              'document-text-outline',
+              'Metadata & Notes',
+              'Details and additional information',
+            )}
+            {renderBackupFeatureItem(
+              'image-outline',
+              'Attachments',
+              'Files and images from entries',
+            )}
+            {renderBackupFeatureItem(
+              'time-outline',
+              'Change History',
+              'Complete modification records',
+            )}
+            {renderBackupFeatureItem(
+              'settings-outline',
+              'App Settings',
+              'Preferences and configuration',
+            )}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.securityBadges}>
+            <View style={styles.securityBadge}>
+              <Icon name="lock-closed-outline" size={16} color={theme.success} />
+              <Text style={styles.securityBadgeText}>AES-256 Encrypted</Text>
+            </View>
+            <View style={styles.securityBadge}>
+              <Icon name="shield-checkmark-outline" size={16} color={theme.success} />
+              <Text style={styles.securityBadgeText}>Zero-Knowledge</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <View style={styles.infoBox}>
             <Icon
               name="information-circle-outline"
@@ -507,29 +587,32 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
               color={theme.primary}
             />
             <Text style={styles.infoText}>
-              Backup includes: All passwords, metadata, attachments, history,
-              and settings.
+              Your backup is encrypted with your master password and stored securely on Google Drive. Only you can decrypt it.
             </Text>
           </View>
         </View>
 
         <Pressable
-          style={[styles.actionButton, styles.backupButton]}
+          style={[
+            styles.actionButton,
+            styles.backupButton,
+            localBackupLoading && styles.actionButtonLoading,
+          ]}
           onPress={() => {
             console.log('🔵 [BackupModal] Backup button onPress!');
             handleCreateBackup();
           }}
-          disabled={isLoading}
+          disabled={localBackupLoading}
         >
-          {isLoading ? (
+          {localBackupLoading ? (
             <ActivityIndicator size="small" color="white" />
           ) : (
             <Icon name="cloud-upload-outline" size={20} color="white" />
           )}
           <Text style={styles.actionButtonText}>
-            {isLoading
+            {localBackupLoading
               ? 'Backing up to Google Drive...'
-              : 'Backup to Google Drive'}
+              : 'Backup Now'}
           </Text>
         </Pressable>
       </ScrollView>
@@ -634,7 +717,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                 style={[styles.checkbox, isSelected && styles.checkboxChecked]}
               >
                 {isSelected && (
-                  <Icon name="checkmark" size={16} color="white" />
+                  <Icon name="checkmark" size={12} color="white" />
                 )}
               </View>
             </TouchableOpacity>
@@ -726,27 +809,8 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
         contentContainerStyle={styles.tabContentContainer}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
-              {showBackupList ? 'Select Backup' : 'Selected Backup'}
-            </Text>
-            {selectedBackup && !showBackupList && (
-              <TouchableOpacity
-                style={styles.changeButton}
-                onPress={() => setShowBackupList(true)}
-              >
-                <Icon name="swap-horizontal" size={16} color={theme.primary} />
-                <Text
-                  style={[styles.changeButtonText, { color: theme.primary }]}
-                >
-                  Change
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {availableBackups.length === 0 ? (
+        {availableBackups.length === 0 ? (
+          <View style={styles.emptyStateContainer}>
             <View style={styles.emptyState}>
               <Icon
                 name="cloud-upload-outline"
@@ -758,157 +822,236 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                 Create a backup first to restore from it later.
               </Text>
             </View>
-          ) : showBackupList ? (
-            <>
-              {/* Multi-select controls */}
-              {onDeleteBackup && (
-                <View style={styles.multiSelectControls}>
-                  {!multiSelectMode ? (
-                    <TouchableOpacity
-                      style={styles.multiSelectButton}
-                      onPress={() => setMultiSelectMode(true)}
+          </View>
+        ) : (
+          <>
+            <View style={styles.restoreHeaderSection}>
+              <View style={styles.backupHeaderIcon}>
+                <Icon
+                  name="cloud-download-outline"
+                  size={32}
+                  color={theme.primary}
+                />
+              </View>
+              <Text style={styles.backupHeaderTitle}>Restore from Backup</Text>
+              <Text style={styles.backupHeaderSubtitle}>
+                Recover your data from a previous backup
+              </Text>
+            </View>
+
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>
+                  {showBackupList ? 'Select Backup' : 'Selected Backup'}
+                </Text>
+                {selectedBackup && !showBackupList && (
+                  <TouchableOpacity
+                    style={styles.changeButton}
+                    onPress={() => setShowBackupList(true)}
+                  >
+                    <Icon
+                      name="swap-horizontal"
+                      size={14}
+                      color={theme.primary}
+                    />
+                    <Text
+                      style={[styles.changeButtonText, { color: theme.primary }]}
                     >
+                      Change
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {showBackupList ? (
+                <>
+                  {/* Multi-select controls */}
+                  {onDeleteBackup && (
+                    <View style={styles.multiSelectControls}>
+                      {!multiSelectMode ? (
+                        <TouchableOpacity
+                          style={styles.multiSelectButton}
+                          onPress={() => setMultiSelectMode(true)}
+                        >
+                          <Icon
+                            name="checkmark-circle-outline"
+                            size={16}
+                            color={theme.primary}
+                          />
+                          <Text style={styles.multiSelectButtonText}>
+                            Select Multiple
+                          </Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={styles.multiSelectActions}>
+                          <TouchableOpacity
+                            style={styles.cancelButton}
+                            onPress={handleCancelMultiSelect}
+                          >
+                            <Text style={styles.cancelButtonText}>Cancel</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[
+                              styles.deleteSelectedButton,
+                              selectedBackupsForDeletion.size === 0 &&
+                                styles.deleteSelectedButtonDisabled,
+                            ]}
+                            onPress={handleDeleteMultipleBackups}
+                            disabled={selectedBackupsForDeletion.size === 0}
+                          >
+                            <Icon name="trash-outline" size={16} color="white" />
+                            <Text style={styles.deleteSelectedButtonText}>
+                              Delete ({selectedBackupsForDeletion.size})
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  <ScrollView
+                    style={styles.backupList}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {availableBackups.map(backup => (
+                      <TouchableOpacity
+                        key={backup.id}
+                        onPress={() => {
+                          if (multiSelectMode) {
+                            handleToggleBackupSelection(backup.id);
+                          } else {
+                            setSelectedBackup(backup);
+                            setShowBackupList(false);
+                          }
+                        }}
+                        disabled={deletingBackupId === backup.id}
+                      >
+                        {renderBackupItemInList(backup)}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </>
+              ) : selectedBackup ? (
+                <View style={styles.selectedBackupContainer}>
+                  {renderBackupItem(selectedBackup)}
+                </View>
+              ) : null}
+            </View>
+
+            {selectedBackup && (
+              <>
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Will Restore</Text>
+                  <View style={styles.featuresList}>
+                    {renderBackupFeatureItem(
+                      'key-outline',
+                      'All Passwords',
+                      `${selectedBackup.entryCount} entries`,
+                    )}
+                    {renderBackupFeatureItem(
+                      'folder-outline',
+                      'Categories & Tags',
+                      `${selectedBackup.categoryCount} categories`,
+                    )}
+                    {renderBackupFeatureItem(
+                      'document-text-outline',
+                      'Metadata & Notes',
+                      'All additional information',
+                    )}
+                    {renderBackupFeatureItem(
+                      'image-outline',
+                      'Attachments',
+                      'Files and images',
+                    )}
+                    {renderBackupFeatureItem(
+                      'time-outline',
+                      'Change History',
+                      'Backup from ' +
+                        formatDate(selectedBackup.createdAt),
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Restore Options</Text>
+
+                  {renderSwitchOption(
+                    'Merge with Existing Data',
+                    'Add backup data to current data',
+                    restoreOptions.mergeWithExisting,
+                    value =>
+                      handleRestoreOptionChange('mergeWithExisting', value),
+                  )}
+
+                  {restoreOptions.mergeWithExisting &&
+                    renderSwitchOption(
+                      'Overwrite Duplicates',
+                      'Replace existing entries with backup versions',
+                      restoreOptions.overwriteDuplicates,
+                      value =>
+                        handleRestoreOptionChange('overwriteDuplicates', value),
+                    )}
+
+                  {renderSwitchOption(
+                    'Restore Categories',
+                    'Restore category settings and organization',
+                    restoreOptions.restoreCategories,
+                    value =>
+                      handleRestoreOptionChange('restoreCategories', value),
+                  )}
+
+                  {renderSwitchOption(
+                    'Restore App Settings',
+                    'Restore application preferences and settings',
+                    restoreOptions.restoreSettings,
+                    value => handleRestoreOptionChange('restoreSettings', value),
+                  )}
+
+                  {renderSwitchOption(
+                    'Restore Trusted Domains',
+                    'Restore your trusted domains list for autofill',
+                    restoreOptions.restoreDomains,
+                    value => handleRestoreOptionChange('restoreDomains', value),
+                  )}
+                </View>
+
+                {selectedBackup.encrypted && (
+                  <View style={styles.section}>
+                    <View style={styles.infoBox}>
                       <Icon
-                        name="checkmark-circle-outline"
+                        name="lock-closed-outline"
                         size={18}
                         color={theme.primary}
                       />
-                      <Text style={styles.multiSelectButtonText}>
-                        Select Multiple
+                      <Text style={styles.infoText}>
+                        This backup is encrypted with your master password. It will
+                        be decrypted automatically during restoration.
                       </Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.multiSelectActions}>
-                      <TouchableOpacity
-                        style={styles.cancelButton}
-                        onPress={handleCancelMultiSelect}
-                      >
-                        <Text style={styles.cancelButtonText}>Cancel</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          styles.deleteSelectedButton,
-                          selectedBackupsForDeletion.size === 0 &&
-                            styles.deleteSelectedButtonDisabled,
-                        ]}
-                        onPress={handleDeleteMultipleBackups}
-                        disabled={selectedBackupsForDeletion.size === 0}
-                      >
-                        <Icon name="trash-outline" size={18} color="white" />
-                        <Text style={styles.deleteSelectedButtonText}>
-                          Delete Selected ({selectedBackupsForDeletion.size})
-                        </Text>
-                      </TouchableOpacity>
                     </View>
-                  )}
-                </View>
-              )}
-
-              <ScrollView
-                style={styles.backupList}
-                showsVerticalScrollIndicator={false}
-              >
-                {availableBackups.map(backup => (
-                  <TouchableOpacity
-                    key={backup.id}
-                    onPress={() => {
-                      if (multiSelectMode) {
-                        handleToggleBackupSelection(backup.id);
-                      } else {
-                        setSelectedBackup(backup);
-                        setShowBackupList(false);
-                      }
-                    }}
-                    disabled={deletingBackupId === backup.id}
-                  >
-                    {renderBackupItemInList(backup)}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </>
-          ) : selectedBackup ? (
-            <View style={styles.selectedBackupContainer}>
-              {renderBackupItem(selectedBackup)}
-            </View>
-          ) : null}
-        </View>
-
-        {selectedBackup && (
-          <>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Restore Options</Text>
-
-              {renderSwitchOption(
-                'Merge with Existing Data',
-                selectedBackup.encrypted
-                  ? 'Add backup data to current data'
-                  : 'Replace all current data with backup',
-                restoreOptions.mergeWithExisting,
-                value => handleRestoreOptionChange('mergeWithExisting', value),
-              )}
-
-              {restoreOptions.mergeWithExisting &&
-                renderSwitchOption(
-                  'Overwrite Duplicates',
-                  'Replace existing entries with backup versions',
-                  restoreOptions.overwriteDuplicates,
-                  value =>
-                    handleRestoreOptionChange('overwriteDuplicates', value),
+                  </View>
                 )}
 
-              {renderSwitchOption(
-                'Restore Categories',
-                'Restore category settings and organization',
-                restoreOptions.restoreCategories,
-                value => handleRestoreOptionChange('restoreCategories', value),
-              )}
-
-              {renderSwitchOption(
-                'Restore App Settings',
-                'Restore application preferences and settings',
-                restoreOptions.restoreSettings,
-                value => handleRestoreOptionChange('restoreSettings', value),
-              )}
-
-              {renderSwitchOption(
-                'Restore Trusted Domains',
-                'Restore your trusted domains list for autofill',
-                restoreOptions.restoreDomains,
-                value => handleRestoreOptionChange('restoreDomains', value),
-              )}
-            </View>
-
-            {selectedBackup.encrypted && (
-              <View style={styles.section}>
-                <View style={styles.infoBox}>
-                  <Icon
-                    name="lock-closed-outline"
-                    size={20}
-                    color={theme.primary}
-                  />
-                  <Text style={styles.infoText}>
-                    This backup is encrypted with your master password. It will
-                    be decrypted automatically.
+                <Pressable
+                  style={[
+                    styles.actionButton,
+                    styles.restoreButton,
+                    isLoading && styles.actionButtonLoading,
+                  ]}
+                  onPress={handleRestoreBackup}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator size="small" color="white" />
+                  ) : (
+                    <Icon name="cloud-download-outline" size={20} color="white" />
+                  )}
+                  <Text style={styles.actionButtonText}>
+                    {isLoading ? 'Restoring...' : 'Restore Now'}
                   </Text>
-                </View>
-              </View>
+                </Pressable>
+              </>
             )}
-
-            <TouchableOpacity
-              style={[styles.actionButton, styles.restoreButton]}
-              onPress={handleRestoreBackup}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="white" />
-              ) : (
-                <Icon name="cloud-download-outline" size={20} color="white" />
-              )}
-              <Text style={styles.actionButtonText}>
-                {isLoading ? 'Restoring...' : 'Restore Backup'}
-              </Text>
-            </TouchableOpacity>
           </>
         )}
       </ScrollView>
@@ -1093,20 +1236,20 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.border,
       borderRadius: 2,
       alignSelf: 'center',
-      marginTop: 12,
-      marginBottom: 8,
+      marginTop: 6,
+      marginBottom: 4,
     },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: 20,
-      paddingVertical: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
       borderBottomWidth: 1,
       borderBottomColor: theme.border,
     },
     title: {
-      fontSize: 20,
+      fontSize: 18,
       fontWeight: '600',
       color: theme.text,
     },
@@ -1116,7 +1259,8 @@ const createStyles = (theme: any) =>
     tabBar: {
       flexDirection: 'row',
       backgroundColor: theme.surface,
-      margin: 20,
+      margin: 12,
+      marginBottom: 8,
       borderRadius: 12,
       padding: 4,
     },
@@ -1125,9 +1269,9 @@ const createStyles = (theme: any) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: 12,
+      paddingVertical: 8,
       borderRadius: 8,
-      gap: 8,
+      gap: 6,
     },
     activeTab: {
       backgroundColor: theme.background,
@@ -1138,7 +1282,7 @@ const createStyles = (theme: any) =>
       elevation: 2,
     },
     tabText: {
-      fontSize: 16,
+      fontSize: 14,
       fontWeight: '500',
       color: theme.textSecondary,
     },
@@ -1152,23 +1296,23 @@ const createStyles = (theme: any) =>
       flex: 1,
     },
     tabContentContainer: {
-      paddingHorizontal: 20,
-      paddingTop: 20,
-      paddingBottom: 20,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 16,
     },
     section: {
-      marginBottom: 24,
+      marginBottom: 12,
     },
     sectionTitle: {
-      fontSize: 18,
+      fontSize: 16,
       fontWeight: '600',
       color: theme.text,
-      marginBottom: 16,
+      marginBottom: 8,
     },
     optionRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: 16,
+      paddingVertical: 12,
       borderBottomWidth: 1,
       borderBottomColor: theme.border,
     },
@@ -1176,20 +1320,20 @@ const createStyles = (theme: any) =>
       flex: 1,
     },
     optionTitle: {
-      fontSize: 16,
+      fontSize: 14,
       fontWeight: '500',
       color: theme.text,
     },
     optionSubtitle: {
-      fontSize: 14,
+      fontSize: 12,
       color: theme.textSecondary,
       marginTop: 2,
     },
     optionSubtitleWithMargin: {
-      fontSize: 14,
+      fontSize: 12,
       color: theme.textSecondary,
       marginTop: 2,
-      marginBottom: 16,
+      marginBottom: 12,
     },
     switch: {
       width: 50,
@@ -1217,20 +1361,20 @@ const createStyles = (theme: any) =>
       transform: [{ translateX: 20 }],
     },
     inputGroup: {
-      marginBottom: 16,
+      marginBottom: 12,
     },
     inputLabel: {
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: '500',
       color: theme.text,
-      marginBottom: 8,
+      marginBottom: 6,
     },
     textInput: {
       backgroundColor: theme.surface,
-      borderRadius: 12,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      fontSize: 16,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 14,
       color: theme.text,
       borderWidth: 1,
       borderColor: theme.border,
@@ -1254,26 +1398,27 @@ const createStyles = (theme: any) =>
       flexDirection: 'row',
       alignItems: 'flex-start',
       backgroundColor: theme.surface,
-      borderRadius: 12,
-      padding: 16,
-      gap: 12,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      gap: 10,
       borderWidth: 1,
       borderColor: theme.border,
     },
     infoText: {
       flex: 1,
-      fontSize: 14,
+      fontSize: 12,
       color: theme.textSecondary,
-      lineHeight: 20,
+      lineHeight: 16,
     },
     actionButton: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: 16,
+      paddingVertical: 12,
       borderRadius: 12,
       gap: 8,
-      marginTop: 16,
+      marginTop: 12,
     },
     backupButton: {
       backgroundColor: theme.success,
@@ -1282,17 +1427,18 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.warning,
     },
     actionButtonText: {
-      fontSize: 16,
+      fontSize: 15,
       fontWeight: '600',
       color: 'white',
     },
     backupList: {
-      gap: 12,
+      gap: 8,
     },
     backupItem: {
       backgroundColor: theme.surface,
-      borderRadius: 12,
-      padding: 16,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
       borderWidth: 2,
       borderColor: 'transparent',
     },
@@ -1303,22 +1449,22 @@ const createStyles = (theme: any) =>
     backupItemHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginBottom: 12,
+      marginBottom: 8,
     },
     backupItemIcon: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
       backgroundColor: theme.background,
       alignItems: 'center',
       justifyContent: 'center',
-      marginRight: 12,
+      marginRight: 10,
     },
     backupItemContent: {
       flex: 1,
     },
     backupItemName: {
-      fontSize: 16,
+      fontSize: 14,
       fontWeight: '500',
       color: theme.text,
     },
@@ -1326,7 +1472,7 @@ const createStyles = (theme: any) =>
       color: theme.primary,
     },
     backupItemDate: {
-      fontSize: 14,
+      fontSize: 12,
       color: theme.textSecondary,
       marginTop: 2,
     },
@@ -1334,39 +1480,39 @@ const createStyles = (theme: any) =>
       padding: 4,
     },
     deleteButton: {
-      padding: 8,
-      borderRadius: 8,
+      padding: 6,
+      borderRadius: 6,
       backgroundColor: theme.error + '10',
     },
     backupItemStats: {
       flexDirection: 'row',
-      gap: 16,
+      gap: 12,
     },
     backupStat: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
+      gap: 3,
     },
     backupStatText: {
-      fontSize: 12,
+      fontSize: 11,
       color: theme.textSecondary,
     },
     emptyState: {
       alignItems: 'center',
-      paddingVertical: 48,
+      paddingVertical: 32,
     },
     emptyStateTitle: {
-      fontSize: 18,
+      fontSize: 16,
       fontWeight: '600',
       color: theme.text,
-      marginTop: 16,
+      marginTop: 12,
     },
     emptyStateSubtitle: {
-      fontSize: 14,
+      fontSize: 13,
       color: theme.textSecondary,
       textAlign: 'center',
-      marginTop: 8,
-      paddingHorizontal: 32,
+      marginTop: 6,
+      paddingHorizontal: 24,
     },
     modalOverlay: {
       flex: 1,
@@ -1384,13 +1530,13 @@ const createStyles = (theme: any) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: 20,
-      paddingVertical: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
       borderBottomWidth: 1,
       borderBottomColor: theme.border,
     },
     modalTitle: {
-      fontSize: 18,
+      fontSize: 16,
       fontWeight: '600',
       color: theme.text,
     },
@@ -1398,73 +1544,75 @@ const createStyles = (theme: any) =>
       padding: 4,
     },
     modalBody: {
-      padding: 20,
+      padding: 16,
     },
     detailSection: {
-      marginBottom: 16,
+      marginBottom: 12,
     },
     detailLabel: {
-      fontSize: 14,
+      fontSize: 12,
       fontWeight: '500',
       color: theme.textSecondary,
-      marginBottom: 4,
+      marginBottom: 3,
     },
     detailValue: {
-      fontSize: 16,
+      fontSize: 14,
       color: theme.text,
     },
     sectionHeader: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginBottom: 16,
+      marginBottom: 8,
     },
     changeButton: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 8,
+      gap: 3,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 6,
       backgroundColor: theme.surface,
     },
     changeButtonText: {
-      fontSize: 14,
+      fontSize: 12,
       fontWeight: '500',
     },
     selectedBackupContainer: {
-      marginBottom: 8,
+      marginBottom: 4,
     },
     // Multi-select styles
     multiSelectControls: {
-      marginBottom: 16,
+      marginBottom: 0,
     },
     multiSelectButton: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: 12,
-      paddingHorizontal: 16,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
       backgroundColor: theme.surface,
       borderRadius: 8,
       borderWidth: 1,
       borderColor: theme.primary,
-      gap: 8,
+      gap: 6,
+      marginBottom: 8,
     },
     multiSelectButtonText: {
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: '500',
       color: theme.primary,
     },
     multiSelectActions: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
+      gap: 8,
+      marginBottom: 8,
     },
     cancelButton: {
       flex: 1,
-      paddingVertical: 12,
-      paddingHorizontal: 16,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
       backgroundColor: theme.surface,
       borderRadius: 8,
       borderWidth: 1,
@@ -1472,7 +1620,7 @@ const createStyles = (theme: any) =>
       alignItems: 'center',
     },
     cancelButtonText: {
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: '500',
       color: theme.text,
     },
@@ -1481,28 +1629,28 @@ const createStyles = (theme: any) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: 12,
-      paddingHorizontal: 16,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
       backgroundColor: theme.error,
       borderRadius: 8,
-      gap: 8,
+      gap: 6,
     },
     deleteSelectedButtonDisabled: {
       backgroundColor: theme.textSecondary,
       opacity: 0.5,
     },
     deleteSelectedButtonText: {
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: '600',
       color: 'white',
     },
     checkboxContainer: {
-      marginRight: 12,
+      marginRight: 10,
     },
     checkbox: {
-      width: 24,
-      height: 24,
-      borderRadius: 6,
+      width: 20,
+      height: 20,
+      borderRadius: 5,
       borderWidth: 2,
       borderColor: theme.border,
       alignItems: 'center',
@@ -1516,6 +1664,106 @@ const createStyles = (theme: any) =>
     backupItemSelectedForDeletion: {
       borderColor: theme.error,
       backgroundColor: theme.error + '10',
+    },
+    backupHeaderSection: {
+      alignItems: 'center',
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+      marginBottom: 12,
+    },
+    backupHeaderIcon: {
+      width: 50,
+      height: 50,
+      borderRadius: 25,
+      backgroundColor: theme.primary + '15',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 6,
+    },
+    backupHeaderTitle: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: theme.text,
+      marginBottom: 2,
+      textAlign: 'center',
+    },
+    backupHeaderSubtitle: {
+      fontSize: 13,
+      color: theme.textSecondary,
+      textAlign: 'center',
+    },
+    featuresList: {
+      gap: 8,
+    },
+    featureItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.surface,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    featureIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 6,
+      backgroundColor: theme.primary + '15',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 10,
+    },
+    featureContent: {
+      flex: 1,
+    },
+    featureTitle: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: theme.text,
+      marginBottom: 1,
+    },
+    featureSubtitle: {
+      fontSize: 11,
+      color: theme.textSecondary,
+    },
+    securityBadges: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    securityBadge: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.success + '15',
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderWidth: 1,
+      borderColor: theme.success + '30',
+    },
+    securityBadgeText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: theme.success,
+      marginLeft: 4,
+    },
+    actionButtonLoading: {
+      opacity: 0.8,
+    },
+    restoreHeaderSection: {
+      alignItems: 'center',
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+      marginBottom: 12,
+    },
+    emptyStateContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      minHeight: 400,
     },
   });
 

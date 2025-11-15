@@ -12,6 +12,17 @@ import { getCurrentUser } from './firebase';
 import { decryptData, deriveKeyFromPassword } from './cryptoService';
 import FilePicker from '../modules/FilePicker';
 
+// Fixed constant string for export encryption - added for additional entropy
+const EXPORT_KEY_CONSTANT = '920374798$gsdg9@#875982kldsf';
+
+// Default export path (same for all Android devices - app-specific storage)
+// For Android: /storage/emulated/0/Android/data/com.passwordepic.mobile/files/
+// For iOS: Documents folder
+// This path doesn't require MANAGE_EXTERNAL_STORAGE permission (sensitive permission)
+const DEFAULT_EXPORT_PATH = Platform.OS === 'android'
+  ? RNFS.ExternalDirectoryPath
+  : RNFS.DocumentDirectoryPath;
+
 // Test if encryption key is correct by trying to decrypt/encrypt a test string
 const validateEncryptionKey = (encryptionKey: string): boolean => {
   try {
@@ -36,21 +47,20 @@ const validateEncryptionKey = (encryptionKey: string): boolean => {
   }
 };
 
-// Generate secure export key from masterPassword + email + uid (NEW - Enhanced Security)
+// Generate secure export key from plain text masterPassword + fixed constant
 const generateSecureExportKey = (
   masterPassword: string | null,
-  email: string,
-  uid: string,
+  email?: string,
+  uid?: string,
 ): string => {
-  // Combine master password with user identifiers
-  // This key is NEVER stored in metadata, only reconstructed during import
-  const exportKey = `${masterPassword}::${email}::${uid}`;
+  // Use plain text master password combined with fixed constant string
+  // Fixed constant ensures consistent decryption across reinstalls
+  const exportKey = `${masterPassword}::${EXPORT_KEY_CONSTANT}`;
 
   console.log('🔐 [SecureExportKey] Generated secure export key:', {
-    pattern: 'masterPassword::email::uid',
+    pattern: 'masterPassword::fixedConstant',
     keyLength: exportKey.length,
     keyHash: CryptoJS.SHA256(exportKey).toString().substring(0, 16),
-    preview: exportKey.substring(0, 50) + (exportKey.length > 50 ? '...' : ''),
   });
 
   return exportKey;
@@ -631,65 +641,40 @@ class ImportExportService {
         hasEncryptionPassword: !!options.encryptionPassword,
       });
 
-      // NEW SECURITY STRATEGY: Reconstruct secure export key from current credentials
-      // Key format: masterPassword::email::uid (same as export time)
+      // Get plain text master password for decryption
       const masterPasswordResult = await getEffectiveMasterPassword();
       const masterPassword = masterPasswordResult.success
         ? masterPasswordResult.password
         : null;
 
-      const currentUser = getCurrentUser();
-      if (!currentUser || !currentUser.email || !currentUser.uid) {
-        throw new Error(
-          'User not authenticated - cannot reconstruct import key',
-        );
-      }
-
-      // Reconstruct the EXACT export key that was used during export
-      const reconstructedExportKey = generateSecureExportKey(
-        masterPassword,
-        currentUser.email,
-        currentUser.uid,
-      );
+      // Reconstruct the EXACT export key that was used during export (masterPassword::fixedConstant)
+      const reconstructedExportKey = generateSecureExportKey(masterPassword);
 
       // Log key reconstruction
       console.log('🔐 [Import] Reconstructed secure import key:', {
-        pattern: 'masterPassword::email::uid',
+        pattern: 'masterPassword::fixedConstant',
         keyLength: reconstructedExportKey.length,
         keyHash: CryptoJS.SHA256(reconstructedExportKey)
           .toString()
           .substring(0, 16),
-        userEmail: currentUser.email,
-        userUid: currentUser.uid?.substring(0, 10) + '...',
       });
 
-      // CRITICAL FIX: Set up key hierarchy correctly
-      // Passwords were encrypted with: deriveKeyFromPassword(masterPassword, salt)
-      // NOT with the export key format, so we must try the original master password FIRST
+      // Set up encryption password for import
       if (!(options as any)._alternativeKeys) {
         (options as any)._alternativeKeys = [];
       }
 
-      // PRIMARY KEY: Use the original master password (this is what was used during encryption)
-      options.encryptionPassword = masterPassword;
+      // PRIMARY KEY: Use the reconstructed export key (masterPassword::fixedConstant)
+      options.encryptionPassword = reconstructedExportKey;
 
-      // FALLBACK: Add reconstructed export key as alternative
-      // This handles cases where export key was used during encryption
-      if (reconstructedExportKey !== masterPassword) {
-        (options as any)._alternativeKeys.push(reconstructedExportKey);
-        console.log(
-          '🔄 [Import] Using master password as primary, export key as fallback',
-        );
-      }
-
-      // Add user-provided encryption password as last resort (if provided)
+      // Add user-provided encryption password as fallback (if different)
       if (
         options.encryptionPassword &&
-        options.encryptionPassword !== masterPassword
+        options.encryptionPassword !== reconstructedExportKey
       ) {
         (options as any)._alternativeKeys.push(options.encryptionPassword);
         console.log(
-          '🔄 [Import] Added user-provided key as additional fallback',
+          '🔄 [Import] Added user-provided key as fallback',
         );
       }
 
@@ -889,33 +874,58 @@ class ImportExportService {
                 ) {
                   try {
                     const keyToTry = keysToTry[keyIndex];
-                    const derivedKey = deriveKeyFromPassword(
-                      keyToTry,
-                      rawEntry.salt,
-                    );
-                    const attemptedDecryption = decryptData(
-                      rawEntry.password,
-                      derivedKey,
-                      rawEntry.iv,
-                      rawEntry.authTag,
-                    );
+                    
+                    // Try with standard PBKDF2 derivation
+                    try {
+                      const derivedKey = deriveKeyFromPassword(
+                        keyToTry,
+                        rawEntry.salt,
+                      );
+                      const attemptedDecryption = decryptData(
+                        rawEntry.password,
+                        derivedKey,
+                        rawEntry.iv,
+                        rawEntry.authTag,
+                      );
 
-                    // Success!
-                    decryptedPassword = attemptedDecryption;
-                    const successfulKey = keysToTry[keyIndex];
-                    const successfulKeyPreview = successfulKey
-                      ? successfulKey.substring(0, 60) +
-                        (successfulKey.length > 60 ? '...' : '')
-                      : 'null';
-                    console.log(
-                      `✅ [Import] Successfully decrypted with key ${
-                        keyIndex + 1
-                      }: ${entry.title}`,
-                    );
-                    console.log(
-                      `   🔑 Key content: "${successfulKeyPreview}" (length: ${successfulKey?.length})`,
-                    );
-                    break;
+                      // Success!
+                      decryptedPassword = attemptedDecryption;
+                      const successfulKey = keysToTry[keyIndex];
+                      const successfulKeyPreview = successfulKey
+                        ? successfulKey.substring(0, 60) +
+                          (successfulKey.length > 60 ? '...' : '')
+                        : 'null';
+                      console.log(
+                        `✅ [Import] Successfully decrypted with key ${
+                          keyIndex + 1
+                        }: ${entry.title}`,
+                      );
+                      console.log(
+                        `   🔑 Key content: "${successfulKeyPreview}" (length: ${successfulKey?.length})`,
+                      );
+                      break;
+                    } catch (derivationError) {
+                      // Try as a raw hex key (for cases where pre-derived keys are used)
+                      try {
+                        const attemptedDecryption = decryptData(
+                          rawEntry.password,
+                          keyToTry, // Use as-is, assuming it's already derived
+                          rawEntry.iv,
+                          rawEntry.authTag,
+                        );
+                        
+                        decryptedPassword = attemptedDecryption;
+                        console.log(
+                          `✅ [Import] Successfully decrypted with raw key ${
+                            keyIndex + 1
+                          }: ${entry.title}`,
+                        );
+                        break;
+                      } catch (rawKeyError) {
+                        // Both attempts failed, continue to next key
+                        throw derivationError; // Throw original error for consistency
+                      }
+                    }
                   } catch (keyError) {
                     console.log(
                       `⚠️ [Import] Key ${keyIndex + 1} failed for ${
@@ -1037,24 +1047,14 @@ class ImportExportService {
         );
       }
 
-      // Get master password and current user info for secure export key generation
+      // Get master password for secure export key generation
       const masterPasswordResult = await getEffectiveMasterPassword();
       const masterPassword = masterPasswordResult.success
         ? masterPasswordResult.password
         : null;
 
-      const currentUser = getCurrentUser();
-      if (!currentUser) {
-        throw new Error('User not authenticated - cannot generate export key');
-      }
-
-      // Generate secure export key: masterPassword::email::uid
-      // This key is NEVER stored in metadata (security enhancement)
-      const exportKey = generateSecureExportKey(
-        masterPassword,
-        currentUser.email,
-        currentUser.uid,
-      );
+      // Generate secure export key (plain text master password only - FIXED, no email/uid)
+      const exportKey = generateSecureExportKey(masterPassword);
 
       // Generate export data (using secure export key)
       const exportData = await this.prepareExportData(
@@ -1753,7 +1753,7 @@ class ImportExportService {
               ? await this.getFixedSaltHash()
               : undefined,
             securityNote:
-              'Export key is not stored - it is reconstructed on import using your current Master Password and account information',
+              'Export key is not stored - it is reconstructed on import using your plain text Master Password combined with a fixed constant',
           },
           entries: data,
         };
@@ -1919,28 +1919,26 @@ class ImportExportService {
             console.log(`✅ Successfully wrote to custom folder: ${result}`);
             return result;
           } catch (writeError: any) {
-            console.warn('⚠️ Custom folder write failed, falling back to internal storage');
+            console.warn('⚠️ Custom folder write failed, falling back to default export path');
             console.warn(`Reason: ${writeError?.message || writeError}`);
             console.debug(`Full error: ${JSON.stringify(writeError)}`);
             
-            downloadPath = RNFS.DocumentDirectoryPath;
+            downloadPath = DEFAULT_EXPORT_PATH;
           }
         } else {
           downloadPath = customFolder;
         }
       } catch (uriError) {
         console.error('Failed to write using URI:', uriError);
-        console.warn('⚠️ Custom folder access failed. Falling back to internal storage...');
-        downloadPath = RNFS.DocumentDirectoryPath;
+        console.warn('⚠️ Custom folder access failed. Falling back to default export path...');
+        downloadPath = DEFAULT_EXPORT_PATH;
       }
-    } else if (Platform.OS === 'android') {
-      // Use app-specific directory (no special permissions required)
-      downloadPath = RNFS.ExternalDirectoryPath;
-      console.log(
-        `✅ Using app-specific directory for backups: ${downloadPath}`,
-      );
     } else {
-      downloadPath = RNFS.DocumentDirectoryPath;
+      // Use default export path (same for all devices)
+      downloadPath = DEFAULT_EXPORT_PATH;
+      console.log(
+        `✅ Using default export path: ${downloadPath}`,
+      );
     }
 
     const filePath = `${downloadPath}/${fileName}`;
@@ -2063,20 +2061,62 @@ class ImportExportService {
         },
       );
 
-      // Add recovery key: try deriving with stored salt from export
+      // Add recovery keys: try deriving with different PBKDF2 iterations and variations
       if (!options._recoveryKeys) {
         options._recoveryKeys = [];
       }
 
-      // Try to generate master password with old salt for recovery
       const currentUser = getCurrentUser();
       if (currentUser && options.encryptionPassword) {
-        const recoveryKey = `${options.encryptionPassword}::${currentUser.email}::recovered_old_salt`;
         options._alternativeKeys = options._alternativeKeys || [];
-        options._alternativeKeys.push(recoveryKey);
+        const addedKeys: string[] = [];
+        
+        // Generate comprehensive key variations for recovery
+        const basePassword = options.encryptionPassword;
+        const email = currentUser.email;
+        const uid = currentUser.uid;
+        
+        // Collection of all password variations to try
+        const keyVariations = [
+          // Direct password
+          basePassword,
+          
+          // With email
+          email ? `${basePassword}::${email}` : null,
+          email ? `${basePassword}:${email}` : null,
+          email ? `${email}::${basePassword}` : null,
+          
+          // With uid
+          uid ? `${basePassword}::${uid}` : null,
+          uid ? `${basePassword}:${uid}` : null,
+          uid ? `${uid}::${basePassword}` : null,
+          
+          // With both email and uid
+          email && uid ? `${basePassword}::${email}::${uid}` : null,
+          email && uid ? `${basePassword}:${email}:${uid}` : null,
+          email && uid ? `${email}::${uid}::${basePassword}` : null,
+          email && uid ? `${uid}::${email}::${basePassword}` : null,
+          
+          // Try with "recovered" suffix
+          `${basePassword}::recovered_old_salt`,
+          email ? `${basePassword}::${email}::recovered` : null,
+          
+          // Try with current session indicators
+          `${basePassword}::current_session`,
+          `${basePassword}::legacy_password`,
+        ].filter((k): k is string => k !== null);
+        
+        // Add all variations to alternative keys
+        for (let i = 0; i < keyVariations.length; i++) {
+          const variation = keyVariations[i];
+          if (variation && addedKeys.indexOf(variation) === -1) {
+            options._alternativeKeys.push(variation);
+            addedKeys.push(variation);
+          }
+        }
         
         console.log(
-          '🔧 [Import] Added recovery key for old salt encryption',
+          `🔧 [Import] Added ${options._alternativeKeys.length} recovery key variation(s) for salt mismatch`,
         );
       }
     } catch (error) {

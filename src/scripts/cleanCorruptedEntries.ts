@@ -68,11 +68,11 @@ export const cleanCorruptedEntries = async (): Promise<CleanupResult> => {
       );
 
       try {
-        // Try to decrypt with current static iterations (5000)
+        // Try to decrypt with fixed iterations (10000)
         const derivedKey = deriveKeyFromPassword(
           masterPassword,
           entry.salt,
-          CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC, // 5000 iterations
+          CRYPTO_CONSTANTS.PBKDF2_ITERATIONS,
         );
 
         const decryptedData = decryptData(

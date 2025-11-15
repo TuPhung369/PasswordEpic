@@ -969,22 +969,81 @@ export const SettingsScreen: React.FC = () => {
           );
 
           // Convert Google Drive files to BackupInfo format
-          const backups = driveResult.files
-            .filter(
-              file =>
-                file.name.endsWith('.bak') || file.name.endsWith('.backup'),
-            )
-            .map(file => ({
-              id: file.id,
-              filename: file.name,
-              createdAt: new Date(file.createdTime),
-              size: parseInt(file.size || '0', 10),
-              entryCount: 0, // Will be populated when backup is selected
-              categoryCount: 0, // Will be populated when backup is selected
-              encrypted: true, // Assume all backups are encrypted
-              version: '1.0',
-              appVersion: '1.0.0',
-            }));
+          const backups = await Promise.all(
+            driveResult.files
+              .filter(
+                file =>
+                  file.name.endsWith('.bak') || file.name.endsWith('.backup'),
+              )
+              .map(async file => {
+                try {
+                  // Download file to extract metadata
+                  const { downloadFromGoogleDrive } = await import(
+                    '../../services/googleDriveService'
+                  );
+                  const RNFS = await import('react-native-fs').then(m => m.default);
+                  
+                  const tempPath = RNFS.CachesDirectoryPath || RNFS.TemporaryDirectoryPath;
+                  const tempFile = `${tempPath}/backup_${file.id}.tmp`;
+                  
+                  const downloadResult = await downloadFromGoogleDrive(
+                    file.id,
+                    tempFile,
+                  );
+
+                  if (!downloadResult.success) {
+                    console.warn(`Failed to download backup metadata for ${file.name}`);
+                    return {
+                      id: file.id,
+                      filename: file.name,
+                      createdAt: new Date(file.createdTime),
+                      size: parseInt(file.size || '0', 10),
+                      entryCount: 0,
+                      categoryCount: 0,
+                      encrypted: true,
+                      version: '1.0',
+                      appVersion: '1.0.0',
+                    };
+                  }
+
+                  // Extract metadata from downloaded file
+                  const fileContent = await RNFS.readFile(tempFile, 'utf8');
+                  const metadata = await backupService.extractBackupMetadata(fileContent);
+                  
+                  // Clean up temp file
+                  try {
+                    await RNFS.unlink(tempFile);
+                  } catch (e) {
+                    console.warn('Failed to cleanup temp file:', e);
+                  }
+
+                  return {
+                    id: file.id,
+                    filename: file.name,
+                    createdAt: new Date(file.createdTime),
+                    size: parseInt(file.size || '0', 10),
+                    entryCount: metadata?.entryCount || 0,
+                    categoryCount: metadata?.categoryCount || 0,
+                    encrypted: true,
+                    version: metadata?.appVersion || '1.0',
+                    appVersion: metadata?.appVersion || '1.0.0',
+                  };
+                } catch (error) {
+                  console.error(`Error processing backup ${file.name}:`, error);
+                  return {
+                    id: file.id,
+                    filename: file.name,
+                    createdAt: new Date(file.createdTime),
+                    size: parseInt(file.size || '0', 10),
+                    entryCount: 0,
+                    categoryCount: 0,
+                    encrypted: true,
+                    version: '1.0',
+                    appVersion: '1.0.0',
+                  };
+                }
+              }),
+          );
 
           console.log(
             '🔵 [loadAvailableBackups] Converted backups:',

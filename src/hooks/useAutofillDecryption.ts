@@ -1,8 +1,7 @@
 import { useEffect } from 'react';
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
-import { decryptData, deriveKeyFromPassword } from '../services/cryptoService';
+import { decryptDataWithRetry } from '../services/cryptoService';
 import { sessionCache } from '../utils/sessionCache';
-import { Buffer } from 'buffer';
 
 const { AutofillBridge } = NativeModules;
 
@@ -72,38 +71,30 @@ export const useAutofillDecryption = () => {
               return;
             }
 
-            // Step 2: Derive decryption key from master password
+            // Step 2-3: Decrypt password using AES-GCM with automatic retry for backward compatibility
             console.log(
-              '🔑 [useAutofillDecryption] Deriving decryption key...',
+              '🔑 [useAutofillDecryption] Decrypting password with retry mechanism...',
             );
-            const salt = request.salt
-              ? Buffer.from(request.salt, 'hex')
-              : Buffer.alloc(32);
-
-            const derivationResult = deriveKeyFromPassword(
-              masterPassword,
-              salt,
-              100000, // iterations
-              32, // keyLength
-            );
-
-            const keyHex = derivationResult.key.toString('hex');
-            console.log('✅ [useAutofillDecryption] Key derived successfully');
-
-            // Step 3: Decrypt password using AES-GCM
-            console.log(
-              '🔓 [useAutofillDecryption] Decrypting password with AES-GCM...',
-            );
-            const decrypted = decryptData(
-              request.encryptedPassword,
-              keyHex,
-              request.iv,
-              request.tag,
-            );
-
-            console.log(
-              '✅ [useAutofillDecryption] Password decrypted successfully',
-            );
+            
+            const salt = request.salt || ''; // Use provided salt or empty string
+            
+            let decrypted: string;
+            try {
+              decrypted = decryptDataWithRetry(
+                request.encryptedPassword,
+                masterPassword,
+                salt,
+                request.iv,
+                request.tag,
+              );
+            } catch (retryError) {
+              console.error(
+                '❌ [useAutofillDecryption] Decryption failed with all retry attempts:',
+                retryError,
+              );
+              throw retryError;
+            }
+            
             console.log(
               `   Decrypted password length: ${decrypted.length} chars`,
             );

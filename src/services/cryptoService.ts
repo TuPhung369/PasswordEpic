@@ -3,9 +3,7 @@ import CryptoJS from 'crypto-js';
 
 // Constants for cryptographic operations
 export const CRYPTO_CONSTANTS = {
-  PBKDF2_ITERATIONS: 10000, // 10,000 iterations - for master password hashing
-  PBKDF2_ITERATIONS_STATIC: 2000, // 2,000 iterations - Optimized for mobile (reduced from 5000 for 60% faster performance)
-  PBKDF2_ITERATIONS_LEGACY: 5000, // 5,000 iterations - Legacy value for backward compatibility
+  PBKDF2_ITERATIONS: 10000, // 10,000 iterations - Fixed standard for all encryption
   SALT_LENGTH: 32, // 256 bits
   KEY_LENGTH: 32, // 256 bits for AES-256
   IV_LENGTH: 12, // 96 bits for GCM
@@ -47,7 +45,7 @@ const KEY_CACHE_TTL = 60 * 60 * 1000; // 60 minutes (increased from 5 for better
 export const deriveKeyFromPassword = (
   password: string,
   salt: string,
-  iterations: number = CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC, // STATIC default - DO NOT CHANGE
+  iterations: number = CRYPTO_CONSTANTS.PBKDF2_ITERATIONS,
 ): string => {
   // const startTime = Date.now();
   // Create a hash of the password for cache key to avoid collisions
@@ -149,6 +147,18 @@ export const decryptData = (
       .substring(0, CRYPTO_CONSTANTS.TAG_LENGTH * 2);
 
     if (expectedTag !== tag) {
+      console.error('🔍 [CryptoService] Tag verification failed:', {
+        ciphertextLength: ciphertext.length,
+        ivLength: iv.length,
+        keyLength: key.length,
+        tagLength: tag.length,
+        expectedTagLength: expectedTag.length,
+        storedTag: tag.substring(0, 16) + '...',
+        expectedTag: expectedTag.substring(0, 16) + '...',
+        ciphertextPreview: ciphertext.substring(0, 20),
+        ivPreview: iv.substring(0, 20),
+        tagMatch: expectedTag === tag,
+      });
       throw new Error('Authentication tag verification failed');
     }
 
@@ -176,6 +186,19 @@ export const decryptData = (
     console.error('Decryption failed:', error);
     throw new Error('Failed to decrypt data - invalid key or corrupted data');
   }
+};
+
+// Decrypt data with automatic retry using different PBKDF2 iteration counts
+export const decryptDataWithRetry = (
+  ciphertext: string,
+  masterKey: string,
+  salt: string,
+  iv: string,
+  tag: string,
+): string => {
+  const iterations = CRYPTO_CONSTANTS.PBKDF2_ITERATIONS;
+  const derivedKey = deriveKeyFromPassword(masterKey, salt, iterations);
+  return decryptData(ciphertext, derivedKey, iv, tag);
 };
 
 // Encrypt password entry
@@ -208,11 +231,11 @@ export const encryptPasswordEntry = (
     // Generate unique salt for this entry
     const salt = generateSalt();
 
-    // Derive entry-specific key with STATIC iterations (DO NOT CHANGE)
+    // Derive entry-specific key with fixed iterations
     const entryKey = deriveKeyFromPassword(
       masterKey,
       salt,
-      CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC,
+      CRYPTO_CONSTANTS.PBKDF2_ITERATIONS,
     );
 
     // Serialize entry data
@@ -249,11 +272,11 @@ export const decryptPasswordEntry = (
   masterKey: string,
 ): PasswordEntry => {
   try {
-    // Derive entry-specific key using stored salt with STATIC iterations (DO NOT CHANGE)
+    // Derive entry-specific key using stored salt with fixed iterations
     const entryKey = deriveKeyFromPassword(
       masterKey,
       encryptedEntry.salt,
-      CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC,
+      CRYPTO_CONSTANTS.PBKDF2_ITERATIONS,
     );
 
     // Decrypt the entry data

@@ -58,7 +58,11 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   onSettingsChange,
 }) => {
   const { theme } = useTheme();
-  const accessibility = useAccessibility();
+  const {
+    isSupported: isAccessibilitySupported,
+    isEnabled: isAccessibilityEnabled,
+    checkAccessibility,
+  } = useAccessibility();
   const [loading, setLoading] = useState(true);
   const [isSupported, setIsSupported] = useState(false);
   const [isEnabled, setIsEnabled] = useState(false);
@@ -108,7 +112,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
 
           if (isCheckingAccessibilityRef.current) {
             const enabled = await accessibilityService.isEnabled();
-            if (enabled !== accessibility.isEnabled) {
+            if (enabled !== isAccessibilityEnabled) {
               console.log(
                 `✅ Accessibility status changed: ${enabled ? 'Enabled' : 'Disabled'}`,
               );
@@ -119,7 +123,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                   'Accessibility service has been enabled! You can now use PasswordEpic accessibility features.',
                 );
               }
-              await accessibility.checkAccessibility();
+              await checkAccessibility();
             }
             isCheckingAccessibilityRef.current = false;
             setAccessibilityLoading(false);
@@ -133,7 +137,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
         }
       }
     },
-    [isEnabled, accessibility],
+    [isEnabled, isAccessibilityEnabled, checkAccessibility],
   );
 
   const loadAutofillData = useCallback(async () => {
@@ -169,11 +173,11 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
 
   const loadAccessibilityData = useCallback(async () => {
     try {
-      await accessibility.checkAccessibility();
+      await checkAccessibility();
     } catch (error) {
       console.error('Error loading accessibility data:', error);
     }
-  }, [accessibility]);
+  }, [checkAccessibility]);
 
   useEffect(() => {
     loadAutofillData();
@@ -556,7 +560,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
         console.log(`   Result: ${enabled ? 'Enabled ❌' : 'Disabled ✅'}`);
 
         if (!enabled) {
-          await accessibility.checkAccessibility();
+          await checkAccessibility();
           Alert.alert(
             '✅ Success!',
             'Accessibility has been disabled successfully. PasswordEpic is no longer your accessibility service.',
@@ -668,7 +672,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   };
 
   const accessibilityButtonStyle = {
-    backgroundColor: accessibility.isEnabled ? theme.error : theme.primary,
+    backgroundColor: isAccessibilityEnabled ? theme.error : theme.primary,
     opacity: accessibilityLoading ? 0.6 : 1,
   };
 
@@ -720,13 +724,13 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
       </View>
 
       {/* Accessibility Status Section */}
-      {accessibility.isSupported && (
+      {isAccessibilitySupported && (
         <View style={[styles.section, { backgroundColor: theme.surface }]}>
           <View style={styles.sectionHeader}>
             <Ionicons
-              name={accessibility.isEnabled ? 'checkmark-circle' : 'close-circle'}
+              name={isAccessibilityEnabled ? 'checkmark-circle' : 'close-circle'}
               size={24}
-              color={accessibility.isEnabled ? theme.success : theme.error}
+              color={isAccessibilityEnabled ? theme.success : theme.error}
             />
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
               Accessibility Status
@@ -740,10 +744,10 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
               <Text
                 style={[
                   styles.statusText,
-                  { color: accessibility.isEnabled ? theme.success : theme.error },
+                  { color: isAccessibilityEnabled ? theme.success : theme.error },
                 ]}
               >
-                {accessibility.isEnabled ? 'Enabled' : 'Disabled'}
+                {isAccessibilityEnabled ? 'Enabled' : 'Disabled'}
               </Text>
             </View>
           </View>
@@ -754,7 +758,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
             ]}
             onPress={async () => {
               try {
-                if (accessibility.isEnabled) {
+                if (isAccessibilityEnabled) {
                   await handleDisableAccessibility();
                 } else {
                   Alert.alert(
@@ -801,7 +805,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
               <ActivityIndicator color={theme.surface} size="small" />
             ) : (
               <Text style={styles.buttonText}>
-                {accessibility.isEnabled ? 'Disable Accessibility' : 'Enable Accessibility'}
+                {isAccessibilityEnabled ? 'Disable Accessibility' : 'Enable Accessibility'}
               </Text>
             )}
           </TouchableOpacity>

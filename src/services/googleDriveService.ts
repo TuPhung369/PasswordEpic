@@ -1,5 +1,6 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import RNFS from 'react-native-fs';
+import { Buffer } from 'buffer';
 
 const GOOGLE_DRIVE_API_URL = 'https://www.googleapis.com/drive/v3';
 const GOOGLE_DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3';
@@ -52,9 +53,23 @@ const getCachedTokens = async (): Promise<any> => {
 const getAccessToken = async (): Promise<string> => {
   try {
     const tokens = await getCachedTokens();
+    if (!tokens || !tokens.accessToken) {
+      // Clear cache and try to refresh
+      cachedTokens = null;
+      tokensCacheTime = 0;
+      
+      // Try to get fresh tokens
+      const freshTokens = await GoogleSignin.getTokens();
+      cachedTokens = freshTokens;
+      tokensCacheTime = Date.now();
+      return freshTokens.accessToken;
+    }
     return tokens.accessToken;
   } catch (error) {
     console.error('Failed to get access token:', error);
+    // Clear cache on error
+    cachedTokens = null;
+    tokensCacheTime = 0;
     throw new Error('Failed to authenticate with Google Drive');
   }
 };
@@ -73,7 +88,7 @@ export const uploadToGoogleDrive = async (
     console.log('🔵 [GoogleDrive] Starting upload:', fileName, `(${isPublic ? 'Public' : 'Hidden'})`);
 
     // Get access token
-    const accessToken = await getAccessToken();
+    let accessToken = await getAccessToken();
 
     // Read file content
     const fileContent = await RNFS.readFile(filePath, 'base64');
@@ -104,7 +119,7 @@ export const uploadToGoogleDrive = async (
       closeDelimiter;
 
     // Upload file
-    const response = await fetch(
+    let response = await fetch(
       `${GOOGLE_DRIVE_UPLOAD_URL}/files?uploadType=multipart`,
       {
         method: 'POST',
@@ -115,6 +130,33 @@ export const uploadToGoogleDrive = async (
         body: multipartRequestBody,
       },
     );
+
+    // If we get 401, try refreshing the token and retrying once
+    if (response.status === 401) {
+      console.log('🔵 [GoogleDrive] Received 401 on upload, refreshing token and retrying...');
+      
+      // Clear cache and force refresh
+      cachedTokens = null;
+      tokensCacheTime = 0;
+      
+      try {
+        accessToken = await getAccessToken();
+        response = await fetch(
+          `${GOOGLE_DRIVE_UPLOAD_URL}/files?uploadType=multipart`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': `multipart/related; boundary=${boundary}`,
+            },
+            body: multipartRequestBody,
+          },
+        );
+      } catch (refreshError) {
+        console.error('🔴 [GoogleDrive] Failed to refresh token on upload:', refreshError);
+        throw new Error('Authentication failed - please sign in again');
+      }
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -152,13 +194,13 @@ export const listGoogleDriveBackups = async (isPublic: boolean = false): Promise
   try {
     console.log('🔵 [GoogleDrive] Listing backups from', isPublic ? 'My Drive' : 'Hidden folder');
 
-    const accessToken = await getAccessToken();
+    let accessToken = await getAccessToken();
 
     // Query files - use different spaces/query based on public/private
     let url: string;
     if (isPublic) {
       url = `${GOOGLE_DRIVE_API_URL}/files?` +
-        `q=name contains 'PasswordEpic_Export' and trashed=false&` +
+        `q=name contains 'PasswordEpic_' and trashed=false&` +
         `spaces=drive&` +
         `fields=files(id,name,mimeType,size,createdTime,modifiedTime)&` +
         `orderBy=modifiedTime desc`;
@@ -169,12 +211,34 @@ export const listGoogleDriveBackups = async (isPublic: boolean = false): Promise
         `orderBy=modifiedTime desc`;
     }
 
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
     });
+
+    // If we get 401, try refreshing the token and retrying once
+    if (response.status === 401) {
+      console.log('🔵 [GoogleDrive] Received 401, refreshing token and retrying...');
+      
+      // Clear cache and force refresh
+      cachedTokens = null;
+      tokensCacheTime = 0;
+      
+      try {
+        accessToken = await getAccessToken();
+        response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+      } catch (refreshError) {
+        console.error('🔴 [GoogleDrive] Failed to refresh token:', refreshError);
+        throw new Error('Authentication failed - please sign in again');
+      }
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -208,10 +272,10 @@ export const downloadFromGoogleDrive = async (
   try {
     console.log('🔵 [GoogleDrive] Downloading file:', fileId);
 
-    const accessToken = await getAccessToken();
+    let accessToken = await getAccessToken();
 
     // Download file content
-    const response = await fetch(
+    let response = await fetch(
       `${GOOGLE_DRIVE_API_URL}/files/${fileId}?alt=media`,
       {
         method: 'GET',
@@ -221,6 +285,31 @@ export const downloadFromGoogleDrive = async (
       },
     );
 
+    // If we get 401, try refreshing the token and retrying once
+    if (response.status === 401) {
+      console.log('🔵 [GoogleDrive] Received 401 on download, refreshing token and retrying...');
+      
+      // Clear cache and force refresh
+      cachedTokens = null;
+      tokensCacheTime = 0;
+      
+      try {
+        accessToken = await getAccessToken();
+        response = await fetch(
+          `${GOOGLE_DRIVE_API_URL}/files/${fileId}?alt=media`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+      } catch (refreshError) {
+        console.error('🔴 [GoogleDrive] Failed to refresh token on download:', refreshError);
+        throw new Error('Authentication failed - please sign in again');
+      }
+    }
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error('🔴 [GoogleDrive] Download failed:', errorText);
@@ -229,7 +318,54 @@ export const downloadFromGoogleDrive = async (
       );
     }
 
-    const fileContent = await response.text();
+    // Try to get the content, handling both text and binary responses
+    let fileContent: string;
+    
+    try {
+      // First try to read as text (most backups are JSON/text)
+      fileContent = await response.text();
+      console.log('🔵 [GoogleDrive] Downloaded content as text, length:', fileContent.length);
+      console.log('🔵 [GoogleDrive] First 100 chars:', fileContent.substring(0, 100));
+    } catch (textError) {
+      console.warn('⚠️ [GoogleDrive] Failed to read as text, trying as blob');
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      fileContent = Buffer.from(arrayBuffer).toString('utf8');
+      console.log('🔵 [GoogleDrive] Downloaded content as blob, decoded length:', fileContent.length);
+    }
+
+    // Detect and decode base64 if needed
+    // Base64 will contain only: A-Za-z0-9+/= (and possibly whitespace)
+    const base64Pattern = /^[A-Za-z0-9+/=\s\r\n]*$/;
+    const trimmedContent = fileContent.trim();
+    
+    if (base64Pattern.test(trimmedContent) && trimmedContent.length > 0) {
+      try {
+        // Remove all whitespace before decoding
+        const cleanBase64 = trimmedContent.replace(/\s/g, '');
+        
+        // Verify it looks like valid base64 (length should be multiple of 4)
+        if (cleanBase64.length % 4 === 0) {
+          // Try to decode
+          const decoded = Buffer.from(cleanBase64, 'base64').toString('utf8');
+          
+          // Verify it's valid JSON by checking for common JSON markers
+          if ((decoded.includes('{') || decoded.includes('[') || decoded.includes('ENCRYPTED_V1:')) && 
+              decoded.length > trimmedContent.length / 2) { // Decoded should be significantly larger
+            fileContent = decoded;
+            console.log('🔵 [GoogleDrive] Successfully decoded base64 content');
+            console.log('🔵 [GoogleDrive] Decoded content length:', fileContent.length);
+            console.log('🔵 [GoogleDrive] First 100 chars of decoded:', fileContent.substring(0, 100));
+          } else {
+            console.log('⚠️ [GoogleDrive] Decoded content does not look like valid backup, keeping original');
+          }
+        }
+      } catch (decodeError) {
+        console.warn('⚠️ [GoogleDrive] Failed to decode base64:', decodeError);
+      }
+    } else {
+      console.log('🔵 [GoogleDrive] Content does not appear to be base64 encoded');
+    }
 
     // Write to destination
     await RNFS.writeFile(destinationPath, fileContent, 'utf8');
@@ -257,14 +393,36 @@ export const deleteFromGoogleDrive = async (
   try {
     console.log('🔵 [GoogleDrive] Deleting file:', fileId);
 
-    const accessToken = await getAccessToken();
+    let accessToken = await getAccessToken();
 
-    const response = await fetch(`${GOOGLE_DRIVE_API_URL}/files/${fileId}`, {
+    let response = await fetch(`${GOOGLE_DRIVE_API_URL}/files/${fileId}`, {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
     });
+
+    // If we get 401, try refreshing the token and retrying once
+    if (response.status === 401) {
+      console.log('🔵 [GoogleDrive] Received 401 on delete, refreshing token and retrying...');
+      
+      // Clear cache and force refresh
+      cachedTokens = null;
+      tokensCacheTime = 0;
+      
+      try {
+        accessToken = await getAccessToken();
+        response = await fetch(`${GOOGLE_DRIVE_API_URL}/files/${fileId}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+      } catch (refreshError) {
+        console.error('🔴 [GoogleDrive] Failed to refresh token on delete:', refreshError);
+        throw new Error('Authentication failed - please sign in again');
+      }
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -300,10 +458,16 @@ export const isGoogleDriveAvailable = async (): Promise<boolean> => {
       return false;
     }
 
-    // Check if we have the required scopes
+    // Try to get fresh tokens silently
     try {
-      const tokens = await getCachedTokens();
+      await GoogleSignin.signInSilently();
+      const tokens = await GoogleSignin.getTokens();
       console.log('🔵 [GoogleDrive] Has access token:', !!tokens.accessToken);
+      
+      // Update cache with fresh tokens
+      cachedTokens = tokens;
+      tokensCacheTime = Date.now();
+      
       return !!tokens.accessToken;
     } catch (error) {
       console.error('🔴 [GoogleDrive] Failed to get tokens:', error);

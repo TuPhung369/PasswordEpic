@@ -156,7 +156,7 @@ export const generateStaticMasterPassword =
         const derivedKey = deriveKeyFromPassword(
           staticPassword,
           fixedSalt,
-          CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC, // Uses configured iterations (5000)
+          CRYPTO_CONSTANTS.PBKDF2_ITERATIONS,
         );
 
         if (!derivedKey || typeof derivedKey !== 'string') {

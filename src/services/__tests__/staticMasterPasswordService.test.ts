@@ -23,7 +23,7 @@ jest.mock('../cryptoService', () => ({
   deriveKeyFromPassword: jest.fn(),
   generateSalt: jest.fn(),
   CRYPTO_CONSTANTS: {
-    PBKDF2_ITERATIONS_STATIC: 2000,
+    PBKDF2_ITERATIONS: 10000,
   },
 }));
 
@@ -146,7 +146,7 @@ describe('staticMasterPasswordService', () => {
       expect(cryptoService.deriveKeyFromPassword).toHaveBeenCalledWith(
         expect.stringContaining('test-user-123'),
         mockFixedSalt,
-        cryptoService.CRYPTO_CONSTANTS.PBKDF2_ITERATIONS_STATIC,
+        cryptoService.CRYPTO_CONSTANTS.PBKDF2_ITERATIONS,
       );
     });
   });

@@ -16,7 +16,7 @@ import ConfirmDialog from './ConfirmDialog';
 
 interface MasterPasswordPromptProps {
   visible: boolean;
-  onSuccess: () => void;
+  onSuccess: (password: string) => void;
   onCancel: () => void;
   title?: string;
   subtitle?: string;
@@ -64,8 +64,9 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
     try {
       const result = await verifyMasterPassword(password.trim());
       if (result.success) {
+        const verifiedPassword = password.trim();
         setPassword('');
-        onSuccess();
+        onSuccess(verifiedPassword);
       } else {
         setConfirmDialog({
           visible: true,

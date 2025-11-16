@@ -62,14 +62,39 @@ export const storeMasterPassword = async (
         accessControl: Keychain.ACCESS_CONTROL?.BIOMETRY_CURRENT_SET as any,
       };
 
-      await Keychain.setInternetCredentials(
-        KEYCHAIN_SERVICE,
-        'master_password',
-        password,
-        keychainOptions,
-      );
+      try {
+        await Keychain.setInternetCredentials(
+          KEYCHAIN_SERVICE,
+          'master_password',
+          password,
+          keychainOptions,
+        );
+        await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'true');
+      } catch (biometricError: any) {
+        console.warn(
+          'Biometric storage not available, falling back to basic keychain storage:',
+          biometricError.message,
+        );
 
-      await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'true');
+        const fallbackOptions = {
+          service: KEYCHAIN_SERVICE,
+          accessGroup:
+            Platform.OS === 'ios' ? 'group.passwordepic.keychain' : undefined,
+          showModal: false,
+        };
+
+        await Keychain.setInternetCredentials(
+          KEYCHAIN_SERVICE,
+          'master_password',
+          password,
+          fallbackOptions,
+        );
+
+        await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'false');
+        console.log(
+          'Master password stored without biometric - will be set up during biometric configuration',
+        );
+      }
     } else {
       await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'false');
     }
@@ -80,6 +105,39 @@ export const storeMasterPassword = async (
     return {
       success: false,
       error: error.message || 'Failed to store master password',
+    };
+  }
+};
+
+export const enableBiometricForMasterPassword = async (
+  password: string,
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const baseOptions = getKeychainOptions();
+    const keychainOptions = {
+      ...baseOptions,
+      accessControl: Keychain.ACCESS_CONTROL?.BIOMETRY_CURRENT_SET as any,
+    };
+
+    await Keychain.setInternetCredentials(
+      KEYCHAIN_SERVICE,
+      'master_password',
+      password,
+      keychainOptions,
+    );
+
+    await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'true');
+    console.log('✅ Biometric storage enabled for master password');
+
+    return { success: true };
+  } catch (error: any) {
+    console.warn(
+      'Failed to enable biometric storage for master password:',
+      error.message,
+    );
+    return {
+      success: false,
+      error: error.message || 'Failed to enable biometric storage',
     };
   }
 };

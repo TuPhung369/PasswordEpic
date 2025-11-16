@@ -19,6 +19,7 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   children?: ReactNode;
+  dismissible?: boolean;
 }
 
 const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
@@ -31,18 +32,32 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   onConfirm,
   onCancel,
   children,
+  dismissible = true,
 }) => {
   const { theme } = useTheme();
   const styles = createStyles(theme);
+
+  const handleBackPress = () => {
+    if (dismissible) {
+      onCancel();
+    }
+    return !dismissible;
+  };
+
+  const handleOverlayPress = () => {
+    if (dismissible) {
+      onCancel();
+    }
+  };
 
   return (
     <Modal
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onCancel}
+      onRequestClose={handleBackPress}
     >
-      <Pressable style={styles.overlay} onPress={onCancel}>
+      <Pressable style={styles.overlay} onPress={handleOverlayPress}>
         <Pressable style={styles.dialog} onPress={e => e.stopPropagation()}>
           <View style={styles.content}>
             <Text style={styles.title}>{title}</Text>

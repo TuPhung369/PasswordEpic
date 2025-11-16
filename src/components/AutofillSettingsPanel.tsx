@@ -52,10 +52,12 @@ interface AutofillStatistics {
 
 interface AutofillSettingsPanelProps {
   onSettingsChange?: (settings: AutofillSettings) => void;
+  onBothServicesEnabled?: () => void;
 }
 
 export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   onSettingsChange,
+  onBothServicesEnabled,
 }) => {
   const { theme } = useTheme();
   const {
@@ -84,6 +86,9 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   // Track app state to detect when user returns from settings
   const isCheckingAutofillRef = useRef(false);
   const [biometricVerifying, setBiometricVerifying] = useState(false);
+  const hasTriggeredBothServicesCallbackRef = useRef(false);
+  const initialStateRef = useRef<{ autofillEnabled: boolean; accessibilityEnabled: boolean } | null>(null);
+  const isInSetupModeRef = useRef(false);
 
   const handleAppStateChange = useCallback(
     async (state: string) => {
@@ -180,8 +185,24 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   }, [checkAccessibility]);
 
   useEffect(() => {
-    loadAutofillData();
-    loadAccessibilityData();
+    const initializePanel = async () => {
+      await loadAutofillData();
+      await loadAccessibilityData();
+      
+      // After loading, capture initial state and determine if in setup mode
+      // Setup mode = at least one service is not enabled when entering this screen
+      if (initialStateRef.current === null) {
+        const autofillEnabled = await autofillService.isEnabled();
+        const accessibilityEnabled = await accessibilityService.isEnabled();
+        
+        initialStateRef.current = { autofillEnabled, accessibilityEnabled };
+        isInSetupModeRef.current = !autofillEnabled || !accessibilityEnabled;
+        
+        console.log(`🔧 [AutofillSettingsPanel] Initial state - Autofill: ${autofillEnabled}, Accessibility: ${accessibilityEnabled}, Setup Mode: ${isInSetupModeRef.current}`);
+      }
+    };
+    
+    initializePanel();
   }, [loadAutofillData, loadAccessibilityData]);
 
   useEffect(() => {
@@ -194,6 +215,24 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
       subscription.remove();
     };
   }, [handleAppStateChange]);
+
+  useEffect(() => {
+    if (isEnabled && isAccessibilityEnabled && onBothServicesEnabled && !hasTriggeredBothServicesCallbackRef.current && isInSetupModeRef.current) {
+      console.log('✅ Both services enabled during setup - calling callback to navigate back');
+      hasTriggeredBothServicesCallbackRef.current = true;
+      setTimeout(() => {
+        onBothServicesEnabled();
+      }, 500);
+    }
+  }, [isEnabled, isAccessibilityEnabled, onBothServicesEnabled]);
+
+  useEffect(() => {
+    return () => {
+      initialStateRef.current = null;
+      hasTriggeredBothServicesCallbackRef.current = false;
+      isInSetupModeRef.current = false;
+    };
+  }, []);
 
   const handleEnableAutofill = async () => {
     console.log('🔵 [DEBUG] handleEnableAutofill called, isEnabled:', isEnabled);

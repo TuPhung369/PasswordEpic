@@ -15,10 +15,19 @@ import { gzip, ungzip } from 'pako';
 // This ensures Backup/Restore flow is completely separate from Import/Export flow
 const BACKUP_ENCRYPTION_CONSTANT = 'backup_encryption_v1_key_2024_#!@$%^&*()_backup_flow_only';
 
+export interface BackupPasswordEntry extends PasswordEntry {
+  isPasswordEncrypted?: boolean;
+  salt?: string;
+  iv?: string;
+  authTag?: string;
+  _corruptedDuringBackup?: boolean;
+  _corruptedDuringRestore?: boolean;
+}
+
 export interface BackupData {
   version: string;
   timestamp: Date;
-  entries: PasswordEntry[];
+  entries: BackupPasswordEntry[];
   categories: PasswordCategory[];
   settings: any;
   domains: any[]; // Trusted domains list
@@ -36,6 +45,7 @@ export interface BackupMetadata {
   encryptionMethod: string;
   compressionMethod: string;
   backupSize: number;
+  fixedSalt?: string;
 }
 
 export interface BackupOptions {
@@ -262,6 +272,52 @@ class BackupService {
         console.log('🔵 [BackupService] Content does not appear to be base64 encoded');
       }
 
+      let backupFixedSalt: string | null = null;
+      let decryptionPasswordToUse = options.decryptionPassword;
+
+      // Extract metadata from unencrypted prefix if present
+      if (content.startsWith('METADATA_V1:')) {
+        try {
+          const separatorIndex = content.indexOf('|||');
+          if (separatorIndex !== -1) {
+            const metadataBase64 = content.substring(12, separatorIndex);
+            const metadataJson = Buffer.from(metadataBase64, 'base64').toString('utf8');
+            const metadata: BackupMetadata = JSON.parse(metadataJson);
+            
+            if (metadata.fixedSalt) {
+              backupFixedSalt = metadata.fixedSalt;
+              console.log('🔐 [BackupService] Found fixedSalt in backup metadata:', backupFixedSalt.substring(0, 16) + '...');
+              
+              // If decryption password is provided, regenerate it using the backup's fixed salt
+              if (decryptionPasswordToUse) {
+                try {
+                  const { generateStaticMasterPasswordWithSalt } = await import(
+                    './staticMasterPasswordService'
+                  );
+                  const result = await generateStaticMasterPasswordWithSalt(
+                    decryptionPasswordToUse,
+                    backupFixedSalt,
+                  );
+                  if (result.success && result.password) {
+                    decryptionPasswordToUse = result.password;
+                    console.log('🔐 [BackupService] Using master password derived from backup fixedSalt');
+                  } else {
+                    console.error('❌ [BackupService] Failed to generate password with backup fixedSalt:', result.error);
+                  }
+                } catch (error) {
+                  console.error('❌ [BackupService] Exception regenerating password with backup fixedSalt:', error);
+                  // Continue with original password - it might still work if local salt matches
+                }
+              }
+            } else {
+              console.log('ℹ️ [BackupService] No fixedSalt in backup metadata - will use current system salt');
+            }
+          }
+        } catch (error) {
+          console.warn('⚠️ [BackupService] Failed to extract fixedSalt from metadata:', error);
+        }
+      }
+
       // Remove metadata prefix if present (new format stores metadata unencrypted at start)
       if (content.startsWith('METADATA_V1:')) {
         const separatorIndex = content.indexOf('|||');
@@ -272,12 +328,12 @@ class BackupService {
       }
 
       // Decrypt if needed
-      if (options.decryptionPassword) {
+      if (decryptionPasswordToUse) {
         try {
           console.log('🔓 [BackupService] Decrypting backup with password...');
           // Use combined decryption key: masterPassword::fixedConstant
           const backupDecryptionKey = this.generateBackupEncryptionKey(
-            options.decryptionPassword,
+            decryptionPasswordToUse,
           );
           const beforeDecrypt = content.substring(0, 100);
           content = (await this.decryptData(
@@ -341,7 +397,7 @@ class BackupService {
         );
 
         const decryptedEntries = await Promise.all(
-          backupData.entries.map(async entry => {
+          backupData.entries.map(async (entry: BackupPasswordEntry) => {
             if (entry.isPasswordEncrypted && entry.password && entry.salt && entry.iv && entry.authTag) {
               try {
                 const derivedKey = deriveKeyFromPassword(
@@ -355,7 +411,7 @@ class BackupService {
                   entry.authTag,
                 );
                 console.log(`✅ [BackupService] Decrypted entry: ${entry.title}`);
-                return {
+                const decrypted: BackupPasswordEntry = {
                   ...entry,
                   password: decryptedPassword,
                   isPasswordEncrypted: false,
@@ -363,18 +419,19 @@ class BackupService {
                   iv: undefined,
                   authTag: undefined,
                 };
+                return decrypted;
               } catch (error) {
                 console.error(
                   `❌ [BackupService] Failed to decrypt entry "${entry.title}" during restore. It will be skipped.`,
                   error,
                 );
-                return { ...entry, password: '', _corruptedDuringRestore: true };
+                return { ...entry, password: '', _corruptedDuringRestore: true } as BackupPasswordEntry;
               }
             }
             return entry;
           }),
         );
-        backupData.entries = decryptedEntries.filter(e => !e._corruptedDuringRestore);
+        backupData.entries = decryptedEntries.filter((e: BackupPasswordEntry) => !e._corruptedDuringRestore);
       }
 
       // Process restored entries
@@ -667,7 +724,7 @@ class BackupService {
           // Encrypt the plaintext password.
           const { ciphertext, tag } = encryptData(plainPassword, derivedKey, iv);
 
-          const backupEntry = {
+          const backupEntry: BackupPasswordEntry = {
             ...entry,
             password: ciphertext, // This is the new ciphertext for the backup
             salt: salt,
@@ -691,7 +748,7 @@ class BackupService {
             password: '',
             isPasswordEncrypted: false,
             _corruptedDuringBackup: true, // Mark for skipping during restore
-          };
+          } as BackupPasswordEntry;
         }
       });
     } else {
@@ -722,7 +779,17 @@ class BackupService {
     const deviceBrand = await DeviceInfo.getBrand();
     const systemVersion = await DeviceInfo.getSystemVersion();
 
-    // Create metadata
+    let fixedSalt: string | null = null;
+    try {
+      const { getFixedSalt } = await import('./staticMasterPasswordService');
+      fixedSalt = await getFixedSalt(options.encryptionPassword);
+      if (fixedSalt) {
+        console.log('🔐 [BackupService] Fixed salt included in backup metadata (from Firebase)');
+      }
+    } catch (error) {
+      console.warn('⚠️ [BackupService] Failed to get fixed salt for backup:', error);
+    }
+
     const metadata: BackupMetadata = {
       appVersion,
       platform: `${Platform.OS} ${systemVersion}`,
@@ -732,7 +799,8 @@ class BackupService {
       domainCount: backupDomains.length,
       encryptionMethod: options.encryptBackup ? 'AES-256-GCM' : 'none',
       compressionMethod: options.compressBackup ? 'gzip' : 'none',
-      backupSize: 0, // Will be calculated after compression/encryption
+      backupSize: 0,
+      fixedSalt: fixedSalt || undefined,
     };
 
     // Prepare settings with device info if needed
@@ -1057,16 +1125,20 @@ class BackupService {
   }
 
   private processRestoredEntries(
-    entries: PasswordEntry[],
+    entries: BackupPasswordEntry[],
     _options: RestoreOptions,
   ): PasswordEntry[] {
-    return entries.map(entry => ({
-      ...entry,
-      id: this.generateId(), // Generate new IDs to avoid conflicts
-      createdAt: new Date(entry.createdAt),
-      updatedAt: new Date(entry.updatedAt),
-      lastUsed: entry.lastUsed ? new Date(entry.lastUsed) : undefined,
-    }));
+    return entries.map(entry => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { _corruptedDuringBackup, _corruptedDuringRestore, isPasswordEncrypted, salt, iv, authTag, ...cleanEntry } = entry;
+      return {
+        ...cleanEntry,
+        id: this.generateId(),
+        createdAt: new Date(entry.createdAt),
+        updatedAt: new Date(entry.updatedAt),
+        lastUsed: entry.lastUsed ? new Date(entry.lastUsed) : undefined,
+      } as PasswordEntry;
+    });
   }
 
   private processRestoredCategories(

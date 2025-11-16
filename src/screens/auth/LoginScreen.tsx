@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -79,7 +78,7 @@ export const LoginScreen: React.FC = () => {
           `✅ [LoginScreen] User already logged in: ${authState.user.email}`,
         );
         setCachedUsername(
-          authState.user.name || authState.user.email || 'User',
+          authState.user.displayName || authState.user.email || 'User',
         );
 
         setIsAutoLoggingIn(true);
@@ -170,6 +169,10 @@ export const LoginScreen: React.FC = () => {
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
+        buttonPressedRef.current = false;
+        setButtonPressed(false);
+        isLoadingRef.current = false;
+        setIsLoading(false);
         return;
       }
 
@@ -183,6 +186,10 @@ export const LoginScreen: React.FC = () => {
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
+        buttonPressedRef.current = false;
+        setButtonPressed(false);
+        isLoadingRef.current = false;
+        setIsLoading(false);
         return;
       }
 
@@ -225,6 +232,12 @@ export const LoginScreen: React.FC = () => {
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
+
+        buttonPressedRef.current = false;
+        setButtonPressed(false);
+        isLoadingRef.current = false;
+        setIsLoading(false);
+        console.log('🔄 Google Sign-In cancelled or failed - button re-enabled');
       }
     } catch (error: any) {
       const errorMessage = error.message || 'An unexpected error occurred';
@@ -257,10 +270,8 @@ export const LoginScreen: React.FC = () => {
         <View
           style={[
             styles.gradientOverlay,
-            {
-              backgroundColor: theme.primary,
-              opacity: 0.05,
-            },
+            { backgroundColor: theme.primary },
+            styles.gradientOverlayOpacity,
           ]}
         />
 
@@ -273,7 +284,8 @@ export const LoginScreen: React.FC = () => {
             <View
               style={[
                 styles.iconCircle,
-                { backgroundColor: theme.primary, opacity: 0.1 },
+                { backgroundColor: theme.primary },
+                styles.iconCircleOpacity,
               ]}
             >
               <MaterialCommunityIcons
@@ -307,19 +319,22 @@ export const LoginScreen: React.FC = () => {
               <View
                 style={[
                   styles.dot,
-                  { backgroundColor: theme.primary, opacity: 0.3 },
+                  { backgroundColor: theme.primary },
+                  styles.dotOpacity1,
                 ]}
               />
               <View
                 style={[
                   styles.dot,
-                  { backgroundColor: theme.primary, opacity: 0.5 },
+                  { backgroundColor: theme.primary },
+                  styles.dotOpacity2,
                 ]}
               />
               <View
                 style={[
                   styles.dot,
-                  { backgroundColor: theme.primary, opacity: 0.7 },
+                  { backgroundColor: theme.primary },
+                  styles.dotOpacity3,
                 ]}
               />
             </View>
@@ -565,5 +580,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '500',
     lineHeight: 18,
+  },
+  gradientOverlayOpacity: {
+    opacity: 0.05,
+  },
+  iconCircleOpacity: {
+    opacity: 0.1,
+  },
+  dotOpacity1: {
+    opacity: 0.3,
+  },
+  dotOpacity2: {
+    opacity: 0.5,
+  },
+  dotOpacity3: {
+    opacity: 0.7,
   },
 });

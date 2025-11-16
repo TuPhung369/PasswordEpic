@@ -21,7 +21,7 @@ import { PasswordEntry } from '../../types/password';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
 import { PasswordValidationService } from '../../services/passwordValidationService';
 import { NavigationPersistenceService } from '../../services/navigationPersistenceService';
-import { calculateSecurityScore } from '../../utils/passwordUtils';
+import { calculateSecurityScore, isValidDomain } from '../../utils/passwordUtils';
 
 type AddPasswordScreenNavigationProp = NativeStackNavigationProp<
   PasswordsStackParamList,
@@ -400,18 +400,32 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       (formData?.username && formData.username.trim().length > 0) ||
       (formData?.website && formData.website.trim().length > 0)
     );
-    const isValid = hasTitle && hasPassword && hasUsernameOrEmail;
-    // Only log validation errors in development/debug
-    // console.log('🔍 isFormValid check:', { hasTitle, hasPassword, hasUsernameOrEmail, isValid });
+    const hasDomain = isValidDomain(formData?.website);
+    const isValid = hasTitle && hasPassword && hasUsernameOrEmail && hasDomain;
     return isValid;
   }, [formData]); // Depend on full formData to ensure callback stays updated
 
   const handleSave = async () => {
     if (!isFormValid()) {
+      const hasTitle = !!(formData?.title && formData.title.trim().length > 0);
+      const hasPassword = !!(formData?.password && formData.password.trim().length > 0);
+      const hasUsernameOrEmail = !!(
+        (formData?.username && formData.username.trim().length > 0) ||
+        (formData?.website && formData.website.trim().length > 0)
+      );
+      const hasDomain = isValidDomain(formData?.website);
+
+      let errorMessage = 'Please fill in all required fields:';
+      if (!hasTitle) errorMessage += ' Title,';
+      if (!hasPassword) errorMessage += ' Password,';
+      if (!hasUsernameOrEmail) errorMessage += ' Username/Email,';
+      if (!hasDomain) errorMessage += ' Valid Domain (URL or App Package),';
+      errorMessage = errorMessage.replace(/,$/, '.'); // Remove trailing comma and add period
+
       setConfirmDialog({
         visible: true,
         title: 'Validation Error',
-        message: 'Please fill in all required fields: Title, Password, and Username/Email.',
+        message: errorMessage,
         confirmText: 'OK',
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),

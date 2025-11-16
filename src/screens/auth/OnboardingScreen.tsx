@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -70,15 +70,19 @@ export const OnboardingScreen: React.FC = () => {
       animateElement(feature3Opacity, feature3TranslateY, 0),
       animateElement(feature4Opacity, feature4TranslateY, 0),
     ]).start();
-
-    // Auto-navigate to Login after 5 seconds
-    const timer = setTimeout(() => {
-      navigation.navigate('Login');
-    }, 4000);
-
-    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation]);
+  }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      // Auto-navigate to Login after 4 seconds when screen is focused
+      const timer = setTimeout(() => {
+        navigation.navigate('Login');
+      }, 4000);
+
+      return () => clearTimeout(timer);
+    }, [navigation]),
+  );
 
   return (
     <SafeAreaView

@@ -247,12 +247,6 @@ export const signInWithGoogleNative = async (): Promise<GoogleAuthResult> => {
 
     // Validate required user fields
     if (!user || !user.id || !user.email || !user.name) {
-      console.error('❌ Missing required user fields:', {
-        hasUser: !!user,
-        id: user?.id,
-        email: user?.email,
-        name: user?.name,
-      });
       return {
         success: false,
         error: 'Incomplete user information received from Google',

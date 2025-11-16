@@ -205,6 +205,7 @@ class AutofillAuthActivity : FragmentActivity() {
             .setDescription("Use your biometric credential to autofill your password")
             .setAllowedAuthenticators(authenticators)
             .setNegativeButtonText("Use master password")
+            .setConfirmationRequired(false)
             .build()
 
         biometricPrompt.authenticate(promptInfo)

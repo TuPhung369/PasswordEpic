@@ -8,13 +8,17 @@ import {
   TextInput,
   ScrollView,
   Alert,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAppDispatch } from '../../hooks/redux';
-import useBiometric from '../../hooks/useBiometric';
+import { AuthStackParamList } from '../../navigation/AuthNavigator';
+import { BiometricService } from '../../services/biometricService';
 import {
   setMasterPasswordConfigured,
   setIsInSetupFlow,
@@ -63,10 +67,15 @@ interface PasswordStrength {
   };
 }
 
+type MasterPasswordScreenNavigationProp = NativeStackNavigationProp<
+  AuthStackParamList,
+  'MasterPassword'
+>;
+
 export const MasterPasswordScreen: React.FC = () => {
   const { theme } = useTheme();
   const dispatch = useAppDispatch();
-  const biometric = useBiometric();
+  const navigation = useNavigation<MasterPasswordScreenNavigationProp>();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -87,6 +96,43 @@ export const MasterPasswordScreen: React.FC = () => {
     };
   }, [dispatch]);
 
+  // Track if we just navigated back from Face ID setup
+  const [faceIDSetupInitiated, setFaceIDSetupInitiated] = useState(false);
+  const autofillPromptShownRef = useRef(false);
+
+  // Prevent hardware back button from exiting master password setup
+  useFocusEffect(
+    React.useCallback(() => {
+      const backHandler = BackHandler.addEventListener(
+        'hardwareBackPress',
+        () => true, // Return true to prevent default back behavior
+      );
+
+      return () => backHandler.remove();
+    }, []),
+  );
+
+  // When returning from Face ID setup, show autofill prompt
+  useEffect(() => {
+    if (faceIDSetupInitiated && !autofillPromptShownRef.current) {
+      autofillPromptShownRef.current = true;
+      console.log(
+        '🔐 [MasterPasswordScreen] Returned from Face ID setup, showing autofill prompt...',
+      );
+      setFaceIDSetupInitiated(false);
+      // Small delay to ensure dialog state is ready
+      const timer = setTimeout(async () => {
+        try {
+          await showAutofillPrompt();
+        } catch (error) {
+          console.error('Error showing autofill prompt:', error);
+          autofillPromptShownRef.current = false;
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [faceIDSetupInitiated]);
+
   // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
     visible: boolean;
@@ -97,12 +143,14 @@ export const MasterPasswordScreen: React.FC = () => {
     cancelText?: string;
     confirmStyle?: 'default' | 'destructive';
     onCancel?: () => void;
+    dismissible?: boolean;
   }>({
     visible: false,
     title: '',
     message: '',
     onConfirm: () => {},
     onCancel: () => {},
+    dismissible: true,
   });
 
   // Calculate password strength
@@ -143,37 +191,56 @@ export const MasterPasswordScreen: React.FC = () => {
     password === confirmPassword && confirmPassword.length > 0;
 
   /**
-   * Show autofill prompt after master password setup
-   * Requires biometric verification first, then enables autofill if verified
+   * Show Face ID setup after master password setup
+   * First setup Face ID, then ask about autofill
    */
-  const showAutofillPrompt = async () => {
+  const showFaceIDSetup = async () => {
     try {
       console.log(
-        '🔐 [MasterPasswordScreen] Starting biometric verification for autofill...',
+        '🔐 [MasterPasswordScreen] Checking biometric capability for Face ID setup...',
       );
 
-      // Step 1: Request biometric verification
-      const authenticated = await biometric.authenticate(
-        'Verify to enable Autofill service',
-      );
+      const biometricService = BiometricService.getInstance();
+      const capability = await biometricService.checkBiometricCapability();
 
-      if (!authenticated) {
+      if (!capability.available) {
         console.log(
-          '❌ [MasterPasswordScreen] Biometric verification failed or cancelled',
+          '⚠️ [MasterPasswordScreen] Biometric not available, skipping setup',
         );
-        Alert.alert(
-          'Verification Failed',
-          'Biometric verification is required to enable autofill. You can enable it later from Settings.',
-          [{ text: 'OK' }],
-        );
+        showAutofillPrompt();
         return;
       }
 
       console.log(
-        '✅ [MasterPasswordScreen] Biometric verification successful',
+        '✅ [MasterPasswordScreen] Biometric available, navigating to setup...',
       );
 
-      // Step 2: Show autofill enable dialog
+      // Mark that we're initiating Face ID setup so we can show autofill when returning
+      autofillPromptShownRef.current = false; // Reset the ref so autofill prompt shows when we return
+      setFaceIDSetupInitiated(true);
+
+      // Navigate to BiometricSetup screen to set up Face ID first
+      navigation.navigate('BiometricSetup');
+    } catch (error) {
+      console.error(
+        '❌ [MasterPasswordScreen] Error in showFaceIDSetup:',
+        error,
+      );
+      // Continue with autofill prompt anyway
+      showAutofillPrompt();
+    }
+  };
+
+  /**
+   * Show autofill prompt after Face ID setup is complete
+   */
+  const showAutofillPrompt = async () => {
+    try {
+      console.log(
+        '🔐 [MasterPasswordScreen] Showing autofill prompt after Face ID setup...',
+      );
+
+      // Show autofill enable dialog
       setConfirmDialog({
         visible: true,
         title: '📱 Enable Autofill?',
@@ -181,6 +248,7 @@ export const MasterPasswordScreen: React.FC = () => {
           'Would you like to enable autofill for PasswordEpic now? You can select it from your Android autofill services. You can also enable or disable this anytime from Settings.',
         confirmText: 'Enable Now',
         cancelText: 'Skip for Now',
+        dismissible: false,
         onConfirm: async () => {
           setConfirmDialog(prev => ({ ...prev, visible: false }));
           setIsLoading(true);
@@ -190,7 +258,7 @@ export const MasterPasswordScreen: React.FC = () => {
             );
             await autofillService.autoPromptEnableAutofill();
             console.log(
-              '✅ [MasterPasswordScreen] Autofill prompt completed - navigation handled by AppNavigator',
+              '✅ [MasterPasswordScreen] Autofill prompt completed - setup flow finished',
             );
           } catch (error) {
             console.error(
@@ -206,7 +274,6 @@ export const MasterPasswordScreen: React.FC = () => {
             '⏭️ [MasterPasswordScreen] User skipped autofill prompt - closing dialog',
           );
           setConfirmDialog(prev => ({ ...prev, visible: false }));
-          // Navigation will be handled by AppNavigator based on auth state
         },
       });
     } catch (error) {
@@ -214,7 +281,7 @@ export const MasterPasswordScreen: React.FC = () => {
         '❌ [MasterPasswordScreen] Error in showAutofillPrompt:',
         error,
       );
-      Alert.alert('Error', 'Failed to verify biometric for autofill setup');
+      Alert.alert('Error', 'Failed to show autofill setup');
     }
   };
 
@@ -273,10 +340,11 @@ export const MasterPasswordScreen: React.FC = () => {
           message:
             'Master password has been set successfully. Your passwords will now be encrypted with this key.',
           confirmText: 'Continue',
+          dismissible: false,
           onConfirm: async () => {
             setConfirmDialog(prev => ({ ...prev, visible: false }));
-            // Show autofill prompt after master password success (with biometric verification)
-            await showAutofillPrompt();
+            // Show Face ID setup after master password success (or autofill prompt if not available)
+            await showFaceIDSetup();
           },
         });
       } catch (error: any) {
@@ -514,6 +582,7 @@ export const MasterPasswordScreen: React.FC = () => {
         confirmText={confirmDialog.confirmText}
         cancelText={confirmDialog.cancelText}
         confirmStyle={confirmDialog.confirmStyle}
+        dismissible={confirmDialog.dismissible}
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => {
           if (confirmDialog.onCancel) {

@@ -11,6 +11,7 @@ import {
   FlatList,
   Image,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -42,7 +43,8 @@ import { useBiometric } from '../../hooks/useBiometric';
 import BackupRestoreModal from '../../components/BackupRestoreModal';
 import { backupService } from '../../services/backupService';
 import { loadPasswordsLazy } from '../../store/slices/passwordsSlice';
-import { getEffectiveMasterPassword } from '../../services/staticMasterPasswordService';
+import { getEffectiveMasterPassword, syncFixedSaltWithFirebase, clearStaticMasterPasswordData } from '../../services/staticMasterPasswordService';
+import { MasterPasswordPrompt } from '../../components/MasterPasswordPrompt';
 import { useSecurity } from '../../hooks/useSecurity';
 import SecurityWarningModal from '../../components/SecurityWarningModal';
 import Toast from '../../components/Toast';
@@ -124,6 +126,10 @@ export const SettingsScreen: React.FC = () => {
 
   // Autofill state
   const [isCheckingAutofill, setIsCheckingAutofill] = useState(false);
+
+  // Firebase sync state
+  const [isFirebaseSyncLoading, setIsFirebaseSyncLoading] = useState(false);
+  const [showMasterPasswordPrompt, setShowMasterPasswordPrompt] = useState(false);
 
   // Avatar state
   const [showAvatarModal, setShowAvatarModal] = useState(false);
@@ -1167,6 +1173,50 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
+  // Firebase sync handler
+  const handleFirebaseSync = async (masterPassword: string) => {
+    try {
+      setIsFirebaseSyncLoading(true);
+      setShowMasterPasswordPrompt(false);
+
+      console.log('🔄 [SettingsScreen] Clearing stale cache before Firebase sync...');
+      await clearStaticMasterPasswordData();
+      console.log('✅ [SettingsScreen] Cache cleared');
+
+      console.log('🔄 [SettingsScreen] Regenerating master password to sync...');
+      const genResult = await getEffectiveMasterPassword(masterPassword);
+      if (!genResult.success) {
+        throw new Error(genResult.error || 'Failed to generate master password');
+      }
+      console.log('✅ [SettingsScreen] Master password regenerated');
+
+      console.log('🔄 [SettingsScreen] Starting Firebase sync...');
+      const result = await syncFixedSaltWithFirebase(masterPassword);
+
+      if (result.success) {
+        const actionMsg =
+          result.action === 'uploaded'
+            ? 'Salt uploaded to Firebase'
+            : 'Salt fetched from Firebase and synced';
+        console.log('✅ [SettingsScreen] Firebase sync successful:', actionMsg);
+        setToastMessage(`✅ ${actionMsg}`);
+        setToastType('success');
+      } else {
+        console.error('❌ [SettingsScreen] Firebase sync failed:', result.error);
+        setToastMessage(`❌ Sync failed: ${result.error || 'Unknown error'}`);
+        setToastType('error');
+      }
+      setShowToast(true);
+    } catch (error: any) {
+      console.error('❌ [SettingsScreen] Firebase sync error:', error);
+      setToastMessage(`❌ Error: ${error.message || 'Firebase sync failed'}`);
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setIsFirebaseSyncLoading(false);
+    }
+  };
+
   // Image picker handler
   const handlePickImage = async () => {
     try {
@@ -1545,6 +1595,33 @@ export const SettingsScreen: React.FC = () => {
               console.log('✅ Modal should now be visible');
             }}
           />
+
+          <SettingItem
+            icon="cloud-sync-outline"
+            title="Sync to Firebase"
+            subtitle={
+              isFirebaseSyncLoading
+                ? 'Syncing...'
+                : 'Upload or sync encryption salt'
+            }
+            theme={theme}
+            onPress={() => {
+              if (!isFirebaseSyncLoading) {
+                setShowMasterPasswordPrompt(true);
+              }
+            }}
+            rightElement={
+              isFirebaseSyncLoading ? (
+                <ActivityIndicator color={theme.primary} />
+              ) : (
+                <Ionicons
+                  name="chevron-forward-outline"
+                  size={24}
+                  color={theme.textSecondary}
+                />
+              )
+            }
+          />
         </View>
 
         {/* Support */}
@@ -1706,6 +1783,14 @@ export const SettingsScreen: React.FC = () => {
           setToastType(type);
           setShowToast(true);
         }}
+      />
+
+      <MasterPasswordPrompt
+        visible={showMasterPasswordPrompt}
+        onSuccess={handleFirebaseSync}
+        onCancel={() => setShowMasterPasswordPrompt(false)}
+        title="Enter Master Password"
+        subtitle="Required to sync encryption salt with Firebase"
       />
 
       <Toast

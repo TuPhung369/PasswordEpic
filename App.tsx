@@ -39,6 +39,24 @@ const App: React.FC = () => {
   const navigationPersistence = NavigationPersistenceService.getInstance();
   const userActivityService = UserActivityService.getInstance();
 
+  const isCurrentScreenAutofillManagement = (state: NavigationState | undefined): boolean => {
+    if (!state) return false;
+    
+    let currentState: any = state;
+    while (currentState.routes && currentState.index !== undefined) {
+      const activeRoute = currentState.routes[currentState.index];
+      if (activeRoute.name === 'AutofillManagement') {
+        return true;
+      }
+      if (activeRoute.state) {
+        currentState = activeRoute.state;
+      } else {
+        break;
+      }
+    }
+    return false;
+  };
+
   // Save navigation state when it changes (with debounce to avoid too many saves)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const handleNavigationStateChange = (state: NavigationState | undefined) => {
@@ -54,6 +72,17 @@ const App: React.FC = () => {
         timestamp: new Date().toLocaleTimeString(),
         path: path?.map(p => p.screenName).join(' -> ') || 'Unknown',
       });
+
+      // Check if we're on AutofillManagement - if so, don't persist the state
+      // This prevents getting stuck on AutofillManagement when tapping Settings tab
+      if (isCurrentScreenAutofillManagement(state)) {
+        console.log('🗺️ ⚠️ Currently on AutofillManagement - skipping navigation state persistence to prevent tab navigation issues');
+        // Clear any pending save
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+        return;
+      }
 
       // Debounce saves to avoid performance issues
       if (saveTimeoutRef.current) {
@@ -82,6 +111,15 @@ const App: React.FC = () => {
 
         const currentState = navigationRef.current?.getRootState();
         if (currentState) {
+          // Don't save if we're currently on AutofillManagement
+          if (isCurrentScreenAutofillManagement(currentState)) {
+            console.log(
+              '🗺️ ⚠️ App going to background but on AutofillManagement - skipping save',
+            );
+            appStateRef.current = nextAppState;
+            return;
+          }
+
           console.log(
             '🗺️ App going to background - saving navigation state immediately',
           );

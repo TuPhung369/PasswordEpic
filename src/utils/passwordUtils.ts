@@ -608,15 +608,121 @@ const isValidEmail = (email: string): boolean => {
 };
 
 /**
- * URL validation
+ * Valid TLDs - comprehensive list of generic, country, and modern TLDs
+ * Updated list covering most common domains worldwide
  */
-const isValidUrl = (url: string): boolean => {
+const VALID_TLDS = new Set([
+  // Generic TLDs
+  'com', 'org', 'net', 'edu', 'gov', 'mil', 'int', 'info', 'biz', 'name', 'pro', 'museum', 'post', 'tel', 'mobi', 'aero', 'coop',
+  
+  // Common country codes (Europe)
+  'uk', 'de', 'fr', 'it', 'es', 'nl', 'be', 'ch', 'at', 'se', 'no', 'dk', 'fi', 'pl', 'cz', 'ie', 'pt', 'gr', 'hu', 'ro', 'bg', 'hr', 'lt', 'lv', 'ee', 'si', 'sk', 'rs', 'ua', 'by', 'kz',
+  
+  // Common country codes (Asia-Pacific)
+  'jp', 'cn', 'in', 'au', 'nz', 'kr', 'hk', 'tw', 'sg', 'my', 'th', 'vn', 'ph', 'id', 'bd', 'pk', 'lk', 'mn', 'kh', 'la', 'mm', 'bn', 'mv',
+  
+  // Common country codes (Americas)
+  'us', 'ca', 'br', 'mx', 'ar', 'cl', 'co', 'pe', 've', 'uy', 'ec', 'bo', 'py', 'cr', 'pa', 'do', 'cu', 'jm', 'tt', 'bb', 'bs', 'ag', 'vc', 'lc',
+  
+  // Common country codes (Middle East & Africa)
+  'ru', 'tr', 'sa', 'ae', 'eg', 'ng', 'za', 'ke', 'gh', 'tz', 'ug', 'et', 'ma', 'tn', 'dz', 'sd', 'il', 'ir', 'iq', 'jo', 'lb', 'ps', 'sy', 'ye', 'om', 'qa', 'bh', 'kw',
+  
+  // Modern/New generic TLDs
+  'dev', 'app', 'online', 'site', 'website', 'cloud', 'ai', 'tech', 'io', 'co', 'tv', 'cc', 'ws', 'digital', 'agency', 'company', 'solutions', 'services',
+  'store', 'shop', 'blog', 'news', 'media', 'design', 'marketing', 'business', 'finance', 'careers', 'community', 'education', 'foundation', 'ventures', 'careers',
+  'download', 'software', 'systems', 'network', 'hosting', 'server', 'email', 'mail', 'space', 'link', 'asia', 'africa',
+  
+  // Second-level domains (country-specific)
+  'co.uk', 'ac.uk', 'gov.uk', 'co.jp', 'or.jp', 'ne.jp', 'co.kr', 'go.kr', 'co.in', 'org.in', 'gov.in', 'co.id', 'co.th', 'co.nz', 'com.au', 'org.au', 'gov.au', 'edu.au',
+  'com.br', 'gov.br', 'org.br', 'edu.br', 'com.mx', 'org.mx', 'com.vn', 'org.vn', 'gov.vn', 'edu.vn', 'co.za', 'org.za', 'gov.za',
+  'com.sg', 'org.sg', 'gov.sg', 'edu.sg', 'com.hk', 'org.hk', 'gov.hk', 'edu.hk', 'com.tw', 'org.tw', 'gov.tw', 'edu.tw',
+  'com.cn', 'org.cn', 'gov.cn', 'edu.cn', 'com.au', 'com.nz', 'org.nz', 'govt.nz',
+]);
+
+/**
+ * URL validation - checks for valid domain with proper TLD
+ */
+export const isValidUrl = (url: string): boolean => {
   try {
-    const testUrl = new URL(url.startsWith('http') ? url : `https://${url}`);
-    return testUrl.protocol === 'http:' || testUrl.protocol === 'https:';
-  } catch {
+    const urlWithProtocol = url.startsWith('http') ? url : `https://${url}`;
+    const testUrl = new URL(urlWithProtocol);
+    
+    if (testUrl.protocol !== 'http:' && testUrl.protocol !== 'https:') {
+      console.log('❌ isValidUrl: Invalid protocol:', testUrl.protocol);
+      return false;
+    }
+
+    const hostname = testUrl.hostname;
+    if (!hostname) {
+      console.log('❌ isValidUrl: No hostname');
+      return false;
+    }
+
+    // Extract TLD from hostname
+    const parts = hostname.split('.');
+    if (parts.length < 2) {
+      console.log('❌ isValidUrl: Less than 2 parts:', parts);
+      return false;
+    }
+
+    const lastPart = parts[parts.length - 1]; // Last part (TLD)
+    
+    // TLD must be at least 2 characters and not be all numbers
+    if (lastPart.length < 2 || /^\d+$/.test(lastPart)) {
+      console.log('❌ isValidUrl: Invalid TLD length or numeric:', lastPart);
+      return false;
+    }
+
+    // Check for known TLDs or second-level domains
+    const possibleTld = parts.slice(-2).join('.'); // Check last two parts (for co.uk, com.vn, etc.)
+    const isValid = VALID_TLDS.has(possibleTld) || VALID_TLDS.has(lastPart);
+    
+    console.log('🔍 isValidUrl:', { url, hostname, lastPart, possibleTld, isValid });
+    return isValid;
+  } catch (error) {
+    console.log('❌ isValidUrl error:', error);
     return false;
   }
+};
+
+/**
+ * Validate domain - checks if domain is either a valid URL or valid app package name
+ * Both must have a valid TLD from VALID_TLDS list
+ */
+export const isValidDomain = (domain: string | undefined): boolean => {
+  if (!domain || domain.trim().length === 0) {
+    return false;
+  }
+
+  const trimmed = domain.trim();
+
+  // Check if it's a valid app package (for mobile apps)
+  const isAppPackage =
+    /^[a-z][a-z0-9]*(\.[a-z0-9]+)+$/.test(trimmed) &&
+    !trimmed.includes('://') &&
+    !trimmed.includes('/');
+
+  if (isAppPackage) {
+    // For app packages, verify it has at least 2 segments (e.g., com.example)
+    const segments = trimmed.split('.');
+    if (segments.length < 2) {
+      return false;
+    }
+
+    // Last segment must be a valid TLD (2+ chars and in VALID_TLDS)
+    const lastSegment = segments[segments.length - 1];
+    if (lastSegment.length < 2) {
+      console.log('❌ isValidDomain: App package TLD too short:', lastSegment);
+      return false;
+    }
+
+    // Check if last segment is a valid TLD
+    const isValidTld = VALID_TLDS.has(lastSegment);
+    console.log('🔍 isValidDomain (app):', { domain: trimmed, lastSegment, isValidTld });
+    return isValidTld;
+  }
+
+  return isValidUrl(trimmed);
 };
 
 /**

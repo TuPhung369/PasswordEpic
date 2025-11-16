@@ -32,6 +32,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { domainVerificationService } from '../../services/domainVerificationService';
+import navigationPersistenceService from '../../services/navigationPersistenceService';
 import AutofillSettingsPanel from '../../components/AutofillSettingsPanel';
 import { AutofillStatisticsPanel } from '../../components/AutofillStatisticsPanel';
 import { DEFAULT_DOMAINS } from '../../constants/defaultDomains';
@@ -333,6 +334,15 @@ export const AutofillManagementScreen: React.FC = () => {
       onSettingsChange={settings => {
         console.log('Settings changed:', settings);
       }}
+      onBothServicesEnabled={async () => {
+        console.log('✅ Both services enabled - clearing navigation state and navigating back to SettingsList');
+        try {
+          await navigationPersistenceService.clearNavigationState();
+        } catch (error) {
+          console.error('Error clearing navigation state:', error);
+        }
+        navigation.navigate('SettingsList');
+      }}
     />
   );
 
@@ -542,7 +552,9 @@ export const AutofillManagementScreen: React.FC = () => {
         <View style={styles.headerContainer}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={() => {
+              navigation.goBack();
+            }}
           >
             <Ionicons name="chevron-back" size={28} color={theme.primary} />
           </TouchableOpacity>

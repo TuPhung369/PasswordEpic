@@ -19,7 +19,11 @@ export const AuthNavigator: React.FC = () => {
     <Stack.Navigator id={undefined} screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Onboarding" component={OnboardingScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="MasterPassword" component={MasterPasswordScreen} />
+      <Stack.Screen
+        name="MasterPassword"
+        component={MasterPasswordScreen}
+        options={{ gestureEnabled: false }}
+      />
       <Stack.Screen name="BiometricSetup" component={BiometricSetupScreen} />
     </Stack.Navigator>
   );

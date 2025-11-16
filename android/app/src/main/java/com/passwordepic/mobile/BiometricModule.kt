@@ -109,6 +109,7 @@ class BiometricModule(reactContext: ReactApplicationContext) :
                     .setDescription(description)
                     .setAllowedAuthenticators(authenticators)
                     .setNegativeButtonText(cancelButtonText)
+                    .setConfirmationRequired(false)
                     .build()
 
                 biometricPrompt.authenticate(promptInfo)

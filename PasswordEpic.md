@@ -247,6 +247,7 @@ integrityManager.requestIntegrityToken(
 This diagram outlines the user flow when they log in after a fresh install or re-install.
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 graph TD;
     A[LoginScreen] -- Login with Google --> B{Has Master Password in Firebase?};
     B -- No --> K[MasterPasswordScreen - mode: 'create'];
@@ -274,6 +275,7 @@ graph TD;
 When the user opens the app for the first time after installation or a full restart:
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 flowchart TD
     A[App Cold Start] --> B[AppNavigator Checks Auth State]
     B --> C{User Authenticated<br/>& Master Password Set?}
@@ -305,7 +307,7 @@ flowchart TD
 
     style J fill:#90EE90
     style L fill:#90EE90
-    style M fill:#FFB6C1
+    style M fill:#1F2020
 ```
 
 **Key Points:**
@@ -322,6 +324,7 @@ flowchart TD
 When the user switches back to the app after it was in the background:
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 flowchart TD
     A[App in Background] --> B[User Brings App to Foreground]
     B --> C[AppState Change: background → active]
@@ -369,7 +372,7 @@ flowchart TD
     style J fill:#FFD700
     style K fill:#90EE90
     style L fill:#FFA500
-    style Q fill:#FFB6C1
+    style Q fill:#1F2020
 ```
 
 **Key Points:**
@@ -404,6 +407,7 @@ flowchart TD
 This flowchart details the user interactions available on the main `PasswordsScreen`, which serves as the central hub for managing credentials.
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 flowchart TD
     subgraph "PasswordsScreen"
         A[Password List]
@@ -446,7 +450,7 @@ flowchart TD
 
     subgraph "Password Entry"
         Entry[Password Entry Item]
-        ViewPassword[Toggle Visibility (Eye Icon)]
+        ViewPassword["Toggle Visibility (Eye Icon)"]
         CopyPassword[Copy to Clipboard]
     end
 
@@ -659,6 +663,7 @@ This section summarizes the implementation of the Autofill Authentication Flow, 
 ### Autofill Workflow Diagram
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 graph TD
     subgraph "Autofill Triggered"
         A[User taps on a password field in a third-party app] --> B{Autofill Service Starts};
@@ -715,6 +720,7 @@ This section provides comprehensive documentation about the autofill authenticat
 ### Primary Flow: Biometric → PIN → Fill
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 flowchart TD
     A[User taps credential in autofill list] --> B[AutofillAuthActivity launches]
     B --> C[Biometric prompt shown]
@@ -737,6 +743,7 @@ flowchart TD
 #### Phase 1: Setup & Caching (React Native Layer)
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 sequenceDiagram
     participant User
     participant App as App.tsx
@@ -759,6 +766,7 @@ sequenceDiagram
 #### Phase 2: Autofill Trigger (Android Native Layer)
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 sequenceDiagram
     participant User
     participant Browser as Chrome/App
@@ -775,6 +783,7 @@ sequenceDiagram
 #### Phase 3: Authentication (Two-Factor)
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 sequenceDiagram
     participant User
     participant AuthActivity as AutofillAuthActivity
@@ -801,6 +810,7 @@ sequenceDiagram
 #### Phase 4: Decryption & Fill
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 sequenceDiagram
     participant AuthActivity as AutofillAuthActivity
     participant SharedPrefs
@@ -1115,6 +1125,7 @@ fun getEncryptedData(promise: Promise) {
 ### Data Flow Summary
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 graph LR
     A[Firebase] -->|Fetch| B[React Native]
     B -->|Write| C[AsyncStorage<br/>SQLite]
@@ -1570,11 +1581,13 @@ fun authenticateWithCredentialFallback(
 ## Import/Export/Backup/Restore Workflows
 
 This section documents the four data management workflows in PasswordEpic, based on actual implementation files:
+
 - **File Locations**: `src/services/importExportService.ts` & `src/services/backupService.ts`
 
 ### Understanding App Data Folder (Important Context)
 
 **App Data Folder** is a secure, isolated directory on Android where apps can store private files without requiring sensitive permissions:
+
 - **Path**: `/storage/emulated/0/Android/data/<package_name>/files/`
 - **Privacy**: Only PasswordEpic app can access (even file manager cannot browse it without special permissions)
 - **Permissions**: Uses standard WRITE_EXTERNAL_STORAGE (non-sensitive in app-specific directory)
@@ -1592,6 +1605,7 @@ This is why we recommend "Local Storage" as the default for export files - it pr
 **File**: `src/services/importExportService.ts` - `exportPasswords()` method (lines 902-990)
 
 **Key Points**:
+
 - **Double Encryption**: Entries already encrypted + entire file encrypted with master password
 - Uses **master password** + `EXPORT_KEY_CONSTANT` to generate entry encryption key
 - **File-Level Encryption**: Entire export wrapper encrypted using `masterPassword::FILE_EXPORT_::<EXPORT_KEY_CONSTANT>`
@@ -1607,7 +1621,7 @@ flowchart TD
     B -->|Yes| C[Generate Export Key]
     B -->|No| D[Trigger Authentication Callback]
     D --> C
-    
+
     C --> E[Filter entries by categories/tags]
     E --> F[Prepare export data with encryption metadata]
     F --> G[Generate JSON with clean metadata]
@@ -1616,11 +1630,11 @@ flowchart TD
     I -->|Local Storage| J[Save to App Data Folder]
     I -->|Google Drive| K[Upload to Google Drive]
     I -->|Hidden Google| L[Save to App Private Folder]
-    
+
     J --> M[Return file path & count]
     K --> M
     L --> M
-    
+
     style C fill:#2196F3
     style H fill:#4CAF50
     style I fill:#FF9800
@@ -1629,6 +1643,7 @@ flowchart TD
 #### Double Encryption Structure
 
 **Entry Level** (already encrypted in database):
+
 ```typescript
 {
   password: "U2FsdGVkX1...",  // AES-256-GCM encrypted
@@ -1639,6 +1654,7 @@ flowchart TD
 ```
 
 **File Level** (new in v3.0):
+
 ```typescript
 {
   _fileEncryption: true,
@@ -1657,16 +1673,20 @@ const EXPORT_KEY_CONSTANT = '920374798$gsdg9@#875982kldsf';
 // Entry-level: master password + fixed constant
 const exportKey = `${masterPassword}::${EXPORT_KEY_CONSTANT}`;
 
-// File-level: master password + FILE_EXPORT prefix + fixed constant  
+// File-level: master password + FILE_EXPORT prefix + fixed constant
 const fileEncryptionKey = `${masterPassword}::FILE_EXPORT_${EXPORT_KEY_CONSTANT}`;
 
 // Full export encrypted with file key
-const encrypted = CryptoJS.AES.encrypt(jsonContent, fileEncryptionKey).toString();
+const encrypted = CryptoJS.AES.encrypt(
+  jsonContent,
+  fileEncryptionKey,
+).toString();
 ```
 
 #### What Gets Exported (v3.0)
 
 Minimal metadata for security:
+
 ```typescript
 exportInfo: {
   exportDate: "2025-11-19T...",
@@ -1679,7 +1699,8 @@ exportInfo: {
 }
 ```
 
-**Important**: 
+**Important**:
+
 - Entire file is encrypted - attackers cannot read any content without master password
 - No export keys or hashes exposed in metadata
 - Entries preserved with original encryption to avoid re-encryption on import
@@ -1693,6 +1714,7 @@ exportInfo: {
 **File**: `src/services/importExportService.ts` - `importPasswords()` method (lines 633-899)
 
 **Key Points**:
+
 - **Auto-Decryption**: Detects and decrypts file-level encryption (v3.0) using master password
 - For **encrypted entries** (has salt/iv/authTag): Restore as-is without decrypt/re-encrypt cycle
 - For **plaintext entries**: Encrypt with current master password before saving
@@ -1702,44 +1724,45 @@ exportInfo: {
 #### Import Flow
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 flowchart TD
     A[User Selects File] --> B[Read File Content]
     B --> C{File Has<br/>_fileEncryption Flag?}
-    
+
     C -->|Yes - v3.0| D[Get Master Password]
     C -->|No - Legacy| E[Parse As-Is]
-    
+
     D --> F[Decrypt file with<br/>masterPassword::FILE_EXPORT_::CONSTANT]
     F --> G{Decryption<br/>Success?}
     G -->|Yes| H[Extract JSON Content]
     G -->|No| I[Error: Wrong Password]
-    
+
     H --> J[Parse Import Data]
     E --> J
-    
+
     J --> K[Get Master Password if needed]
     K --> L[Check for Salt Mismatch]
-    
+
     L --> M[Process Each Entry]
     M --> N{Entry Already<br/>Encrypted?}
-    
+
     N -->|Yes| O[Save encrypted entry directly<br/>using salt/iv/authTag]
     N -->|No| P[Encrypt with current<br/>master password]
-    
+
     O --> Q[Check Duplicates]
     P --> Q
-    
+
     Q --> R{Duplicate<br/>Action?}
     R -->|Skip| S[Skip Entry]
     R -->|Replace| T[Update Existing]
     R -->|Merge| U[Merge Data]
-    
+
     S --> V[Save to Database]
     T --> V
     U --> V
-    
+
     V --> W[Return Import Result]
-    
+
     style F fill:#2196F3
     style N fill:#FF5722
     style V fill:#4CAF50
@@ -1752,16 +1775,13 @@ flowchart TD
 if (rawEntry.salt && rawEntry.iv && rawEntry.authTag && rawEntry.password) {
   // OPTIMIZED: Entry is already encrypted in export format
   // Restore directly without decrypt/re-encrypt cycle
-  
-  await encryptedDatabase.savePasswordEntryWithEncryptedData(
-    entry,
-    {
-      ciphertext: rawEntry.password,  // Already encrypted
-      salt: rawEntry.salt,            // Original salt
-      iv: rawEntry.iv,                // Original IV
-      tag: rawEntry.authTag,          // Authentication tag
-    },
-  );
+
+  await encryptedDatabase.savePasswordEntryWithEncryptedData(entry, {
+    ciphertext: rawEntry.password, // Already encrypted
+    salt: rawEntry.salt, // Original salt
+    iv: rawEntry.iv, // Original IV
+    tag: rawEntry.authTag, // Authentication tag
+  });
   // Entry saved to DB with original encryption intact
 }
 ```
@@ -1773,11 +1793,11 @@ if (rawEntry.salt && rawEntry.iv && rawEntry.authTag && rawEntry.password) {
 else {
   // Plaintext entry or from other format
   // Need to encrypt before storage
-  
+
   if (!masterPassword) {
     throw new Error(`Cannot encrypt plaintext entry without master password`);
   }
-  
+
   await encryptedDatabase.savePasswordEntry(
     entry,
     masterPassword,  // Uses current master password for encryption
@@ -1792,6 +1812,7 @@ else {
 Users can choose where to save/load exported password files. Each option has different privacy and accessibility characteristics:
 
 #### 📁 Option 1: Local Storage (App Data Folder)
+
 **Default: Recommended for privacy**
 
 - **Location**: `/storage/emulated/0/Android/data/com.passwordepic.mobile/files/` (Android)
@@ -1803,6 +1824,7 @@ Users can choose where to save/load exported password files. Each option has dif
 - **Cons**: Lost if app or device storage reset
 
 #### ☁️ Option 2: Google Drive
+
 **For cloud sync and cross-device access**
 
 - **Location**: User's Google Drive account (`/root/PasswordEpic/exports/`)
@@ -1814,6 +1836,7 @@ Users can choose where to save/load exported password files. Each option has dif
 - **Cons**: Requires internet, Google account dependency, slight latency
 
 #### 🔐 Option 3: Hidden Google (App Private Folder)
+
 **Most secure cloud option**
 
 - **Location**: Google Drive `/appDataFolder/PasswordEpic/` (hidden from user, app-managed)
@@ -1826,15 +1849,15 @@ Users can choose where to save/load exported password files. Each option has dif
 
 #### Storage Option Comparison
 
-| Feature | Local | Google Drive | Hidden Google |
-|---------|-------|-------------|---------------|
-| **Privacy** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| **Accessibility** | Device only | All devices | App only |
-| **No permissions** | ✅ | ❌ | ❌ |
-| **Cloud sync** | ❌ | ✅ | ✅ |
-| **Manual browse** | ✅ | ✅ | ❌ |
-| **Internet required** | ❌ | ✅ | ✅ |
-| **Best use case** | Daily backup | Multi-device | Emergency recovery |
+| Feature               | Local        | Google Drive | Hidden Google      |
+| --------------------- | ------------ | ------------ | ------------------ |
+| **Privacy**           | ⭐⭐⭐⭐⭐   | ⭐⭐⭐       | ⭐⭐⭐⭐⭐         |
+| **Accessibility**     | Device only  | All devices  | App only           |
+| **No permissions**    | ✅           | ❌           | ❌                 |
+| **Cloud sync**        | ❌           | ✅           | ✅                 |
+| **Manual browse**     | ✅           | ✅           | ❌                 |
+| **Internet required** | ❌           | ✅           | ✅                 |
+| **Best use case**     | Daily backup | Multi-device | Emergency recovery |
 
 ---
 
@@ -1845,6 +1868,7 @@ Users can choose where to save/load exported password files. Each option has dif
 **File**: `src/services/backupService.ts` - `createBackup()` method (lines 132-236)
 
 **Key Points**:
+
 - Uses fixed `BACKUP_ENCRYPTION_KEY` constant (line 16)
 - **No master password needed** for backup creation
 - Entries stored with encryption metadata (salt/iv/authTag)
@@ -1864,29 +1888,30 @@ Users can choose where to save/load exported password files. Each option has dif
 #### Backup Flow
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 flowchart TD
     A[Call createBackup] --> B[Prepare Backup Data]
     B --> C[Get encrypted entries from database]
     C --> D[Load trusted domains]
     D --> E[Create metadata object]
-    
+
     E --> F[Convert to JSON]
     F --> G{Compress?}
     G -->|Yes| H[Gzip compress content]
     G -->|No| I{Encrypt?}
     H --> I
-    
+
     I -->|Yes| J["Encrypt with BACKUP_ENCRYPTION_KEY<br/>(line 196)"]
     I -->|No| K[Create metadata prefix]
     J --> K
-    
+
     K --> L[Prepend unencrypted metadata]
     L --> M[Write to file<br/>password-backup-TIMESTAMP.backup]
-    
+
     M --> N{Success?}
     N -->|Yes| O[Return BackupResult<br/>with file path & size]
     N -->|No| P[Return error]
-    
+
     style J fill:#2196F3
     style M fill:#FF9800
 ```
@@ -1896,24 +1921,24 @@ flowchart TD
 ```typescript
 // src/services/backupService.ts - lines 612-752
 interface BackupData {
-  version: string;           // "1.0"
-  timestamp: Date;           // Backup timestamp
+  version: string; // "1.0"
+  timestamp: Date; // Backup timestamp
   entries: BackupPasswordEntry[]; // All passwords (encrypted with salt/iv/authTag)
   categories: PasswordCategory[]; // All categories
-  settings: any;             // User settings (if includeSettings: true)
-  domains: any[];            // Trusted domains list
-  metadata: BackupMetadata;  // Backup info
+  settings: any; // User settings (if includeSettings: true)
+  domains: any[]; // Trusted domains list
+  metadata: BackupMetadata; // Backup info
 }
 
 interface BackupMetadata {
-  appVersion: string;        // App version
-  platform: string;          // OS info
-  deviceId: string;          // Device identifier
-  entryCount: number;        // # of passwords
-  categoryCount: number;      // # of categories
-  encryptionMethod: string;  // "AES-256-GCM" or "none"
+  appVersion: string; // App version
+  platform: string; // OS info
+  deviceId: string; // Device identifier
+  entryCount: number; // # of passwords
+  categoryCount: number; // # of categories
+  encryptionMethod: string; // "AES-256-GCM" or "none"
   compressionMethod: string; // "gzip" or "none"
-  backupSize: number;        // File size
+  backupSize: number; // File size
 }
 ```
 
@@ -1923,15 +1948,15 @@ interface BackupMetadata {
 // src/services/backupService.ts - lines 633-663
 const processedEntries = entries.map(entry => {
   const encryptedEntry = encryptedEntries.find(e => e.id === entry.id);
-  
+
   if (encryptedEntry) {
     // Use encrypted data as-is from database
     return {
       ...entry,
-      password: encryptedEntry.encryptedData,  // Ciphertext
-      salt: encryptedEntry.salt,               // Original salt
-      iv: encryptedEntry.iv,                   // Original IV
-      authTag: encryptedEntry.authTag,         // Auth tag
+      password: encryptedEntry.encryptedData, // Ciphertext
+      salt: encryptedEntry.salt, // Original salt
+      iv: encryptedEntry.iv, // Original IV
+      authTag: encryptedEntry.authTag, // Auth tag
       isPasswordEncrypted: true,
     };
   }
@@ -1947,6 +1972,7 @@ const processedEntries = entries.map(entry => {
 **File**: `src/services/backupService.ts` - `restoreFromBackup()` method (lines 238-421)
 
 **Key Points**:
+
 - Reads backup file (handles base64 decoding from cloud downloads)
 - Extracts unencrypted metadata for display
 - Decrypts with fixed `BACKUP_ENCRYPTION_KEY` (no master password needed)
@@ -1955,44 +1981,45 @@ const processedEntries = entries.map(entry => {
 #### Restore Flow
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 flowchart TD
     A[Call restoreFromBackup] --> B[Read Backup File]
     B --> C{Content is<br/>Base64?}
     C -->|Yes| D[Decode from base64]
     C -->|No| E{Has Metadata<br/>Prefix?}
     D --> E
-    
+
     E -->|Yes| F[Extract metadata<br/>METADATA_V1:]
     E -->|No| G{Encrypted?}
     F --> G
-    
+
     G -->|Yes| H["Decrypt with BACKUP_ENCRYPTION_KEY<br/>(line 305)"]
     G -->|No| I{Compressed?}
     H --> I
-    
+
     I -->|Yes| J[Decompress gzip]
     I -->|No| K[Parse JSON]
     J --> K
-    
+
     K --> L[Validate backup structure]
     L --> M{Valid?}
     M -->|No| N[Return error]
     M -->|Yes| O[Process entries]
-    
+
     O --> P{Merge or<br/>Replace?}
     P -->|Replace| Q[Clear existing entries]
     P -->|Merge| R[Keep existing]
-    
+
     Q --> S[For each entry in backup]
     R --> S
-    
+
     S --> T{Entry Already<br/>Encrypted?}
     T -->|Yes| U[Restore directly<br/>with salt/iv/authTag]
     T -->|No| V[This shouldn't happen<br/>in backups]
-    
+
     U --> W[Save to database]
     W --> X[Return RestoreResult]
-    
+
     style H fill:#2196F3
     style K fill:#FF9800
 ```
@@ -2009,10 +2036,12 @@ if (base64Pattern.test(trimmedContent)) {
   try {
     const cleanBase64 = trimmedContent.replace(/\s/g, '');
     const decoded = Buffer.from(cleanBase64, 'base64').toString('utf8');
-    
-    if ((decoded.includes('{') || decoded.includes('[')) && 
-        !content.includes('ENCRYPTED_V1:') &&
-        content.length !== decoded.length) {
+
+    if (
+      (decoded.includes('{') || decoded.includes('[')) &&
+      !content.includes('ENCRYPTED_V1:') &&
+      content.length !== decoded.length
+    ) {
       content = decoded; // Use decoded version
     }
   } catch (decodeError) {
@@ -2030,7 +2059,7 @@ if (base64Pattern.test(trimmedContent)) {
 
 const processedEntries = this.processRestoredEntries(
   backupData.entries,
-  options,  // Includes mergeStrategy
+  options, // Includes mergeStrategy
 );
 
 // All entries will have their original salt/iv/authTag preserved
@@ -2041,19 +2070,19 @@ const processedEntries = this.processRestoredEntries(
 
 ## Detailed Workflows Comparison
 
-| Aspect | Export | Import | Backup | Restore |
-|--------|--------|--------|--------|---------|
-| **File Location** | `importExportService.ts:902` | `importExportService.ts:633` | `backupService.ts:132` | `backupService.ts:238` |
-| **Purpose** | Manual export | Manual import | Automatic cloud ready | Cloud recovery |
-| **Default Storage** | App-specific path | File picker | Local/Cloud folder | Cloud folder |
-| **Encryption Key** | Master + Constant | Master + Constant | Fixed constant only | Fixed constant only |
-| **Needs Master Password** | Yes (for key gen) | Yes (for plaintext) | No | No |
-| **Entry Format** | Preserved encrypted | Preserved encrypted | Preserved encrypted | Preserved encrypted |
-| **Compression** | No | No | Optional (gzip) | Auto-detected |
-| **Metadata Prefix** | No | No | Yes (unencrypted) | Read & stripped |
-| **Base64 Handling** | No | No | No | Yes (cloud compat) |
-| **Merge Support** | Skip/Replace/Merge | Skip/Replace/Merge | Replace/Merge | Replace/Merge |
-| **Duplicate Handling** | Yes (configurable) | Yes (configurable) | N/A (fresh) | N/A (fresh) |
+| Aspect                    | Export                       | Import                       | Backup                 | Restore                |
+| ------------------------- | ---------------------------- | ---------------------------- | ---------------------- | ---------------------- |
+| **File Location**         | `importExportService.ts:902` | `importExportService.ts:633` | `backupService.ts:132` | `backupService.ts:238` |
+| **Purpose**               | Manual export                | Manual import                | Automatic cloud ready  | Cloud recovery         |
+| **Default Storage**       | App-specific path            | File picker                  | Local/Cloud folder     | Cloud folder           |
+| **Encryption Key**        | Master + Constant            | Master + Constant            | Fixed constant only    | Fixed constant only    |
+| **Needs Master Password** | Yes (for key gen)            | Yes (for plaintext)          | No                     | No                     |
+| **Entry Format**          | Preserved encrypted          | Preserved encrypted          | Preserved encrypted    | Preserved encrypted    |
+| **Compression**           | No                           | No                           | Optional (gzip)        | Auto-detected          |
+| **Metadata Prefix**       | No                           | No                           | Yes (unencrypted)      | Read & stripped        |
+| **Base64 Handling**       | No                           | No                           | No                     | Yes (cloud compat)     |
+| **Merge Support**         | Skip/Replace/Merge           | Skip/Replace/Merge           | Replace/Merge          | Replace/Merge          |
+| **Duplicate Handling**    | Yes (configurable)           | Yes (configurable)           | N/A (fresh)            | N/A (fresh)            |
 
 ---
 
@@ -2103,9 +2132,11 @@ Result: Double encryption with algorithm variety
 
 ```typescript
 // src/services/backupService.ts - lines 20-21
-const BACKUP_ENCRYPTION_KEY = 'backup_encryption_v1_key_2024_fixed_constant_#!@$%^&*()_backup_flow_only';
+const BACKUP_ENCRYPTION_KEY =
+  'backup_encryption_v1_key_2024_fixed_constant_#!@$%^&*()_backup_flow_only';
 
-const BACKUP_FILE_WRAPPER_KEY = 'backup_file_level_wrapper_v2_aes256cbc_#@$%^&*()_2024_wrapper_constant';
+const BACKUP_FILE_WRAPPER_KEY =
+  'backup_file_level_wrapper_v2_aes256cbc_#@$%^&*()_2024_wrapper_constant';
 
 // Key is fixed and independent of user master password
 // Ensures backup encryption is consistent across sessions
@@ -2114,23 +2145,26 @@ const BACKUP_FILE_WRAPPER_KEY = 'backup_file_level_wrapper_v2_aes256cbc_#@$%^&*(
 #### Encryption & Restoration
 
 **When backing up with encryption enabled:**
+
 - Step 1: Encrypt backup content with `BACKUP_ENCRYPTION_KEY` (produces `ENCRYPTED_V1` format)
 - Step 2: WRAP entire content with `BACKUP_FILE_WRAPPER_KEY` using AES-256-CBC (produces `BACKUP_ENCRYPTED_V2` format)
 - Step 3: Write wrapped content to file
 
 **When restoring from encrypted backup:**
+
 - Step 1: Auto-detect and unwrap `BACKUP_ENCRYPTED_V2` wrapper using `BACKUP_FILE_WRAPPER_KEY`
 - Step 2: Decrypt `ENCRYPTED_V1` content with `BACKUP_ENCRYPTION_KEY`
 - Step 3: Decompress if needed and parse JSON
 
 #### Algorithm Details
 
-| Level | Algorithm | Mode | Auth Tag | Key Source | IV Size |
-|-------|-----------|------|----------|-----------|---------|
-| **Entry (DB)** | AES-256 | CTR | HMAC-SHA256 | Master Password + Salt | 96 bits |
-| **File (Backup)** | AES-256 | CBC | HMAC-SHA512 | Fixed constant + Salt | 128 bits |
+| Level             | Algorithm | Mode | Auth Tag    | Key Source             | IV Size  |
+| ----------------- | --------- | ---- | ----------- | ---------------------- | -------- |
+| **Entry (DB)**    | AES-256   | CTR  | HMAC-SHA256 | Master Password + Salt | 96 bits  |
+| **File (Backup)** | AES-256   | CBC  | HMAC-SHA512 | Fixed constant + Salt  | 128 bits |
 
 **Security Benefits**:
+
 - ✅ Different algorithms reduce risk of algorithm-specific attacks
 - ✅ Different key derivation prevents key reuse across layers
 - ✅ HMAC-SHA512 provides stronger authentication at file level
@@ -2151,12 +2185,13 @@ const exportKey = `${masterPassword}::${EXPORT_KEY_CONSTANT}`;
 ### Encrypted Entry Structure
 
 All entries throughout workflows carry encryption metadata:
+
 ```typescript
 {
-  salt: string;      // Random 32-byte salt
-  iv: string;        // 16-byte initialization vector
-  authTag: string;   // 16-byte HMAC-SHA256 tag
-  password: string;  // Encrypted ciphertext (NOT plaintext)
+  salt: string; // Random 32-byte salt
+  iv: string; // 16-byte initialization vector
+  authTag: string; // 16-byte HMAC-SHA256 tag
+  password: string; // Encrypted ciphertext (NOT plaintext)
 }
 ```
 
@@ -2176,9 +2211,9 @@ The settings backup and restore feature is a critical component for ensuring a s
 
 The settings backup feature in PasswordEpic is **complete and verified**. It correctly backs up all **21 settings** from the Redux store, including:
 
--   **10 Security Settings**: Covers all security-related configurations such as biometric preferences, auto-lock timeout, screen protection, and root detection.
--   **9 Generator Settings**: Includes all password generator preferences like default length, character sets (uppercase, lowercase, numbers, symbols), and exclusion rules.
--   **2 UI Settings**: Captures the user's selected theme (light/dark/system) and language.
+- **10 Security Settings**: Covers all security-related configurations such as biometric preferences, auto-lock timeout, screen protection, and root detection.
+- **9 Generator Settings**: Includes all password generator preferences like default length, character sets (uppercase, lowercase, numbers, symbols), and exclusion rules.
+- **2 UI Settings**: Captures the user's selected theme (light/dark/system) and language.
 
 ### Technical Flow
 
@@ -2191,4 +2226,3 @@ The settings backup feature in PasswordEpic is **complete and verified**. It cor
 **Conclusion**: The system is robust and ensures that no user configurations are lost during a backup and restore cycle. All settings are fully accounted for.
 
 ---
-

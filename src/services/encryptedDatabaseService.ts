@@ -54,6 +54,7 @@ export class EncryptedDatabaseService {
     const startTime = Date.now();
     console.log('🔐 [Save] Starting password save...', {
       hasPassword: !!entry.password,
+      hasMasterPassword: !!masterPassword,
     });
 
     try {
@@ -120,6 +121,14 @@ export class EncryptedDatabaseService {
           passwordLength: entry.password?.length || 0,
           passwordPreview: entry.password?.substring(0, 20) + (entry.password && entry.password.length > 20 ? '...' : ''),
         });
+        
+        // CRITICAL: Validate master password exists before encryption
+        if (!masterPassword || masterPassword.length === 0) {
+          throw new Error(
+            `Cannot encrypt password "${entry.title}" - master password is required but not provided. This entry would be lost. Please provide the master password to save this password.`,
+          );
+        }
+        
         const salt = generateSecureRandom(32);
         const iv = generateSecureRandom(12);
         const derivedKey = deriveKeyFromPassword(masterPassword, salt);
@@ -439,10 +448,7 @@ export class EncryptedDatabaseService {
       );
 
       const duration = Date.now() - startTime;
-      console.log(`✅ [Decrypt] Password decrypted in ${duration}ms`, {
-        passwordLength: decryptedPassword?.length || 0,
-        passwordPreview: decryptedPassword?.substring(0, 3) + '***',
-      });
+      console.log(`✅ [Decrypt] Password decrypted in ${duration}ms`);
 
       return decryptedPassword;
     } catch (error) {

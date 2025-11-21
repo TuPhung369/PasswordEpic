@@ -40,7 +40,6 @@ import { decryptPasswordField } from '../../store/slices/passwordsSlice';
 import {
   getEffectiveMasterPassword,
   unlockMasterPasswordWithPin,
-  clearStaticMasterPasswordData,
 } from '../../services/staticMasterPasswordService';
 
 type EditPasswordRouteProp = RouteProp<PasswordsStackParamList, 'EditPassword'>;
@@ -662,7 +661,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
     setFormData(prev => ({ ...prev, password: historyItem.password }));
   };
 
-  const handleSave = async () => {
+  const handleSave = async (masterPassword?: string) => {
     if (!password || !isFormValid()) {
       const hasTitle = !!(formData.title && formData.title.trim().length > 0);
       const hasPassword = !!(
@@ -717,20 +716,32 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
         finalPassword = originalPassword;
         passwordChanged = false;
       } else {
-        // Password was never decrypted, keep the original encrypted value
-        // No need to decrypt - just pass encrypted password to save
-        console.log(
-          '💾 EditPasswordScreen: Password not modified, keeping encrypted',
-        );
-        finalPassword = password.password; // Keep encrypted password
-        passwordChanged = false;
+        // Password was never decrypted
+        // Check if user directly edited the password field (compare with original encrypted value)
+        const userEditedPassword = formData.password !== password.password;
+
+        if (userEditedPassword && formData.password) {
+          // User directly typed a new password without decrypting
+          finalPassword = formData.password;
+          passwordChanged = true;
+          console.log(
+            '💾 EditPasswordScreen: Password changed without decryption (direct edit)',
+          );
+        } else {
+          // Password not modified, keep the original encrypted value
+          console.log(
+            '💾 EditPasswordScreen: Password not modified, keeping encrypted',
+          );
+          finalPassword = password.password; // Keep encrypted password
+          passwordChanged = false;
+        }
       }
 
       // Store password changed status for error handling
       setIsPasswordChanged(passwordChanged);
 
-      // 🔐 PROACTIVE PIN CHECK: If password changed, verify authentication BEFORE saving
-      if (passwordChanged) {
+      // 🔐 PROACTIVE PIN CHECK: If password changed and no masterPassword provided, verify authentication BEFORE saving
+      if (passwordChanged && !masterPassword) {
         console.log(
           '🔐 EditPasswordScreen: Password changed - checking authentication...',
         );
@@ -749,6 +760,10 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
 
         console.log(
           '✅ EditPasswordScreen: Authentication verified - proceeding with save',
+        );
+      } else if (passwordChanged && masterPassword) {
+        console.log(
+          '✅ EditPasswordScreen: Password changed but masterPassword already provided (from PIN unlock) - proceeding with save',
         );
       }
 
@@ -817,7 +832,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
       await updatePassword(
         password.id,
         updatedPassword,
-        unlockedMasterPassword,
+        masterPassword || unlockedMasterPassword,
       );
 
       // 🔍 Run security audit and save audit result after password is saved
@@ -927,18 +942,9 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
       setShowPinDialog(false);
       setPin('');
 
-      // Store the unlocked master password temporarily for handleSave to use
-      setUnlockedMasterPassword(unlockResult.password);
-
-      // Now retry handleSave with the unlocked master password
-      await handleSave();
-
-      // 🔒 SECURITY: Clear master password cache immediately after use
-      await clearStaticMasterPasswordData();
-      console.log('🔒 Master password cache cleared for security');
-
-      // Clear the temporarily stored master password
-      setUnlockedMasterPassword(undefined);
+      // Now retry handleSave with the unlocked master password passed directly
+      // (Not using state to avoid React async timing issues)
+      await handleSave(unlockResult.password);
     } catch (error: any) {
       console.error('PIN unlock failed:', error);
       const errorMessage = error?.message || String(error);
@@ -1172,7 +1178,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
               (!isFormValid() || isSaving || !hasUnsavedChanges()) &&
                 styles.saveButtonDisabled,
             ]}
-            onPress={handleSave}
+            onPress={() => handleSave()}
             disabled={!isFormValid() || isSaving || !hasUnsavedChanges()}
           >
             <Ionicons

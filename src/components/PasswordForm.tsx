@@ -659,6 +659,19 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                   setPasswordValue(trimmedText);
                   notifyDataChange({ passwordValue: trimmedText });
                 }}
+                onFocus={() => {
+                  if (
+                    isEditing &&
+                    !isPasswordDecryptedRef.current &&
+                    passwordValue
+                  ) {
+                    console.log(
+                      '🔄 PasswordForm: Password field focused with encrypted password, clearing...',
+                    );
+                    setPasswordValue('');
+                    notifyDataChange({ passwordValue: '' });
+                  }
+                }}
                 // onBlur={handlePasswordBlur} // 🚫 Temporarily disabled - causing Google autofill modal
                 secureTextEntry={!isPasswordVisible}
                 placeholderTextColor={theme.textSecondary}

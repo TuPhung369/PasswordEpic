@@ -357,11 +357,7 @@ export const setupMasterPasswordWithPin = async (
       ['@encrypted_mp_iv', encryptedMP.iv],
       ['@encrypted_mp_tag', encryptedMP.tag],
     ]);
-    console.log('✅ [StaticMP] Encrypted MP saved to AsyncStorage:', {
-      ciphertextLength: encryptedMP.ciphertext.length,
-      ivLength: encryptedMP.iv.length,
-      tagLength: encryptedMP.tag.length,
-    });
+    console.log('✅ [StaticMP] Encrypted MP saved to AsyncStorage');
 
     // Mark setup complete locally
     await AsyncStorage.setItem(STATIC_MP_KEYS.PIN_SETUP_COMPLETE, 'true');
@@ -442,10 +438,7 @@ export const unlockMasterPasswordWithPin = async (
         fixedSalt = data?.fixedSalt;
 
         if (fixedSalt) {
-          console.log(
-            '✅ [StaticMP] Using salt from Firebase:',
-            fixedSalt.substring(0, 16) + '...',
-          );
+          console.log('✅ [StaticMP] Using salt from Firebase');
 
           // Update local storage to match Firebase
           await AsyncStorage.setItem(STATIC_MP_KEYS.FIXED_SALT, fixedSalt);
@@ -462,8 +455,7 @@ export const unlockMasterPasswordWithPin = async (
 
       if (fixedSalt) {
         console.log(
-          '⚠️ [StaticMP] Using local salt (Firebase should be updated):',
-          fixedSalt.substring(0, 16) + '...',
+          '⚠️ [StaticMP] Using local salt (Firebase should be updated)',
         );
       }
     }
@@ -492,11 +484,7 @@ export const unlockMasterPasswordWithPin = async (
       ['@encrypted_mp_iv', fbResult.encryptedMP.iv],
       ['@encrypted_mp_tag', fbResult.encryptedMP.tag],
     ]);
-    console.log('✅ [StaticMP] Encrypted MP saved to AsyncStorage:', {
-      ciphertextLength: fbResult.encryptedMP.ciphertext.length,
-      ivLength: fbResult.encryptedMP.iv.length,
-      tagLength: fbResult.encryptedMP.tag.length,
-    });
+    console.log('✅ [StaticMP] Encrypted MP saved to AsyncStorage');
 
     // Decrypt Master Password with PIN
     const decryptResult = pinSecurityService.decryptMasterPasswordWithPin(

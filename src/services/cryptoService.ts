@@ -136,12 +136,6 @@ export const decryptData = (
   tag: string,
 ): string => {
   try {
-    console.log(
-      '� [RN] Starting decryption (',
-      ciphertext.length / 2,
-      'bytes)',
-    );
-
     // Convert hex strings to WordArrays
     const keyWordArray = CryptoJS.enc.Hex.parse(key);
     const ivWordArray = CryptoJS.enc.Hex.parse(iv);
@@ -158,10 +152,7 @@ export const decryptData = (
       throw new Error('Authentication tag verification failed');
     }
 
-    console.log('✅ [RN] Tag verified successfully');
-
     // Decrypt using AES-CTR
-    console.log('� [RN] Starting AES-CTR decryption...');
 
     const decrypted = CryptoJS.AES.decrypt(
       {

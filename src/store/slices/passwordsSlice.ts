@@ -142,7 +142,12 @@ export const savePassword = createAsyncThunk(
     { rejectWithValue, getState },
   ) => {
     try {
-      console.log('💾 [Redux] Saving password');
+      const hasValidMasterPassword = masterPassword && masterPassword.length > 0;
+      console.log('💾 [Redux] Saving password', {
+        hasMasterPassword: hasValidMasterPassword,
+        isMetadataOnly: !hasValidMasterPassword,
+      });
+
       await encryptedDatabase.savePasswordEntryOptimized(entry, masterPassword);
 
       // 🔐 CRITICAL: Reload entry from database to get IV/TAG for autofill
@@ -150,7 +155,7 @@ export const savePassword = createAsyncThunk(
       // passed in doesn't have those fields populated yet.
       console.log('🔄 Loading saved entry from database to get IV/TAG...');
       const allEntries = await encryptedDatabase.getAllPasswordEntries(
-        masterPassword,
+        hasValidMasterPassword ? masterPassword : '',
       );
       const savedEntry = allEntries.find(e => e.id === entry.id);
       if (!savedEntry) {
@@ -160,33 +165,39 @@ export const savePassword = createAsyncThunk(
         `✅ Reloaded entry with IV=${!!savedEntry.passwordIv} TAG=${!!savedEntry.passwordTag}`,
       );
 
-      // Prepare credentials for autofill after saving
-      try {
-        console.log('🔄 Preparing autofill credentials...');
-        // Clear old autofill cache first to ensure updated password replaces old cached value
+      // Prepare credentials for autofill after saving (only if password was actually provided)
+      if (hasValidMasterPassword) {
         try {
-          await autofillService.clearCache();
-          console.log('✅ Autofill cache cleared');
-        } catch (clearError) {
-          console.warn('⚠️ Failed to clear autofill cache:', clearError);
-          // Continue anyway - not critical
+          console.log('🔄 Preparing autofill credentials...');
+          // Clear old autofill cache first to ensure updated password replaces old cached value
+          try {
+            await autofillService.clearCache();
+            console.log('✅ Autofill cache cleared');
+          } catch (clearError) {
+            console.warn('⚠️ Failed to clear autofill cache:', clearError);
+            // Continue anyway - not critical
+          }
+          const state = getState() as any;
+          const allPasswords = state.passwords.passwords || [];
+          // Include the newly saved entry with full IV/TAG context
+          const allPasswordsWithNew = allPasswords.filter(p => p.id !== entry.id);
+          allPasswordsWithNew.push(savedEntry);
+          await autofillService.prepareCredentialsForAutofill(
+            allPasswordsWithNew,
+            masterPassword,
+          );
+          console.log('✅ Autofill credentials prepared');
+        } catch (autofillError) {
+          console.warn(
+            '⚠️ Non-critical: Failed to prepare autofill:',
+            autofillError,
+          );
+          // Don't fail password save if autofill prep fails
         }
-        const state = getState() as any;
-        const allPasswords = state.passwords.passwords || [];
-        // Include the newly saved entry with full IV/TAG context
-        const allPasswordsWithNew = allPasswords.filter(p => p.id !== entry.id);
-        allPasswordsWithNew.push(savedEntry);
-        await autofillService.prepareCredentialsForAutofill(
-          allPasswordsWithNew,
-          masterPassword,
+      } else {
+        console.log(
+          '💾 Skipping autofill prep for metadata-only update (no master password)',
         );
-        console.log('✅ Autofill credentials prepared');
-      } catch (autofillError) {
-        console.warn(
-          '⚠️ Non-critical: Failed to prepare autofill:',
-          autofillError,
-        );
-        // Don't fail password save if autofill prep fails
       }
 
       return savedEntry;

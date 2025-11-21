@@ -36,20 +36,6 @@ class PinSecurityService {
   ): PinEncryptedMasterPassword {
     try {
       console.log('🔐 [PinSecurity] Encrypting Master Password with PIN...');
-      console.log(
-        '🔍 [PinSecurity] ORIGINAL Master Password length:',
-        masterPassword.length,
-      );
-      console.log(
-        '🔍 [PinSecurity] ORIGINAL Master Password (full):',
-        masterPassword,
-      );
-      console.log(
-        '🔍 [PinSecurity] ORIGINAL Master Password bytes:',
-        Array.from(masterPassword)
-          .map(c => c.charCodeAt(0).toString(16).padStart(2, '0'))
-          .join(' '),
-      );
 
       // Validate PIN
       if (!userPin || userPin.length < 6 || userPin.length > 8) {
@@ -69,12 +55,6 @@ class PinSecurityService {
       const encrypted = encryptData(masterPassword, encryptionKey);
 
       console.log('✅ [PinSecurity] Master Password encrypted successfully');
-      console.log(
-        '🔍 [PinSecurity] Ciphertext length:',
-        encrypted.ciphertext.length,
-      );
-      console.log('🔍 [PinSecurity] IV length:', encrypted.iv.length);
-      console.log('🔍 [PinSecurity] Tag length:', encrypted.tag.length);
 
       return {
         ciphertext: encrypted.ciphertext,
@@ -115,12 +95,6 @@ class PinSecurityService {
       }
 
       console.log('🔐 [PinSecurity] Decrypting Master Password with PIN...');
-      console.log(
-        '🔍 [PinSecurity] Ciphertext to decrypt length:',
-        encryptedMP.ciphertext.length,
-      );
-      console.log('🔍 [PinSecurity] IV length:', encryptedMP.iv.length);
-      console.log('🔍 [PinSecurity] Tag length:', encryptedMP.tag.length);
 
       // Validate PIN
       if (!userPin || userPin.length < 4 || userPin.length > 6) {
@@ -151,20 +125,6 @@ class PinSecurityService {
       this.pinLockoutExpiry = null;
 
       console.log('✅ [PinSecurity] Master Password decrypted successfully');
-      console.log(
-        '🔍 [PinSecurity] DECRYPTED Master Password length:',
-        masterPassword.length,
-      );
-      console.log(
-        '🔍 [PinSecurity] DECRYPTED Master Password (full):',
-        masterPassword,
-      );
-      console.log(
-        '🔍 [PinSecurity] DECRYPTED Master Password bytes:',
-        Array.from(masterPassword)
-          .map(c => c.charCodeAt(0).toString(16).padStart(2, '0'))
-          .join(' '),
-      );
 
       return { success: true, masterPassword };
     } catch (error) {

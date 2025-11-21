@@ -353,20 +353,36 @@ export const usePasswordManagement = (masterPassword?: string) => {
       providedMasterPassword?: string,
     ) => {
       try {
-        let currentMasterPassword: string;
+        const existingPassword = passwords.find(p => p.id === id);
+        if (!existingPassword) {
+          throw new Error('Password not found');
+        }
 
+        // Check if password actually changed
+        // Note: We need to handle both encrypted and decrypted passwords correctly
+        // When password field is updated with plaintext (from form), it will differ from stored value
+        const passwordChanged = updatedData.password !== undefined && 
+                               updatedData.password !== existingPassword.password;
+
+        let currentMasterPassword: string = '';
+
+        // Always use provided master password if given (from PIN/biometric unlock)
         if (providedMasterPassword) {
           console.log(
             '✅ updatePassword: Using provided master password (from PIN/biometric unlock)',
           );
           currentMasterPassword = providedMasterPassword;
-        } else {
+        } else if (passwordChanged) {
+          // Only get master password if password actually changed (and not provided)
+          console.log(
+            '🔐 updatePassword: Password changed - getting master password for encryption',
+          );
           currentMasterPassword = await getMasterPassword();
-        }
-
-        const existingPassword = passwords.find(p => p.id === id);
-        if (!existingPassword) {
-          throw new Error('Password not found');
+        } else {
+          console.log(
+            '💾 updatePassword: Only metadata changed - no master password needed',
+          );
+          // Password didn't change, no need for master password
         }
 
         const updatedEntry: PasswordEntry = {

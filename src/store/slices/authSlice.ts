@@ -22,6 +22,9 @@ interface AuthState {
   biometricEnabled: boolean;
   session: SessionState;
   isInSetupFlow: boolean; // Track if user is in master password/biometric setup
+  hasCompletedSessionAuth: boolean; // Track if user has completed session authentication (biometric/master password unlock)
+  shouldNavigateToUnlock: boolean; // Explicit flag to control when to show unlock screen (set by CredentialOptionsScreen)
+  shouldAutoTriggerBiometric: boolean; // Flag to signal MasterPasswordScreen to auto-trigger biometric on mount (cold start)
 }
 
 const initialState: AuthState = {
@@ -37,6 +40,9 @@ const initialState: AuthState = {
     timeRemaining: 0,
   },
   isInSetupFlow: false,
+  hasCompletedSessionAuth: false,
+  shouldNavigateToUnlock: false,
+  shouldAutoTriggerBiometric: false,
 };
 
 const authSlice = createSlice({
@@ -67,6 +73,9 @@ const authSlice = createSlice({
       state.masterPasswordConfigured = false;
       state.biometricEnabled = false;
       state.isInSetupFlow = false;
+      state.hasCompletedSessionAuth = false;
+      state.shouldNavigateToUnlock = false;
+      state.shouldAutoTriggerBiometric = false;
     },
     clearError: state => {
       state.error = null;
@@ -93,6 +102,15 @@ const authSlice = createSlice({
     setIsInSetupFlow: (state, action: PayloadAction<boolean>) => {
       state.isInSetupFlow = action.payload;
     },
+    setHasCompletedSessionAuth: (state, action: PayloadAction<boolean>) => {
+      state.hasCompletedSessionAuth = action.payload;
+    },
+    setShouldNavigateToUnlock: (state, action: PayloadAction<boolean>) => {
+      state.shouldNavigateToUnlock = action.payload;
+    },
+    setShouldAutoTriggerBiometric: (state, action: PayloadAction<boolean>) => {
+      state.shouldAutoTriggerBiometric = action.payload;
+    },
   },
 });
 
@@ -107,5 +125,8 @@ export const {
   setSessionExpired,
   clearSession,
   setIsInSetupFlow,
+  setHasCompletedSessionAuth,
+  setShouldNavigateToUnlock,
+  setShouldAutoTriggerBiometric,
 } = authSlice.actions;
 export default authSlice.reducer;

@@ -217,12 +217,17 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   }, [handleAppStateChange]);
 
   useEffect(() => {
-    if (isEnabled && isAccessibilityEnabled && onBothServicesEnabled && !hasTriggeredBothServicesCallbackRef.current && isInSetupModeRef.current) {
-      console.log('✅ Both services enabled during setup - calling callback to navigate back');
-      hasTriggeredBothServicesCallbackRef.current = true;
-      setTimeout(() => {
-        onBothServicesEnabled();
-      }, 500);
+    if (isEnabled && isAccessibilityEnabled && onBothServicesEnabled && !hasTriggeredBothServicesCallbackRef.current && isInSetupModeRef.current && initialStateRef.current) {
+      const wasAutofillDisabledInitially = !initialStateRef.current.autofillEnabled;
+      const wasAccessibilityDisabledInitially = !initialStateRef.current.accessibilityEnabled;
+      
+      if (wasAutofillDisabledInitially || wasAccessibilityDisabledInitially) {
+        console.log('✅ Both services enabled during setup - calling callback to navigate back');
+        hasTriggeredBothServicesCallbackRef.current = true;
+        setTimeout(() => {
+          onBothServicesEnabled();
+        }, 500);
+      }
     }
   }, [isEnabled, isAccessibilityEnabled, onBothServicesEnabled]);
 

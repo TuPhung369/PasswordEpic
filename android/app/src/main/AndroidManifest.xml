@@ -3,9 +3,10 @@
 
     <!-- Package visibility for Android 11+ (required for other apps to see this autofill service) -->
     <queries>
-        <package android:name="com.android.chrome" />
-        <package android:name="com.google.android.gms" />
-        <package android:name="com.android.settings" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
@@ -36,6 +37,9 @@
     
     <!-- Accessibility Service Permission for autofill refill mechanism -->
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
+
+    <!-- Permission to query all installed packages (Android 11+) -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <application
       android:name=".MainApplication"

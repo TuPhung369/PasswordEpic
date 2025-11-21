@@ -52,11 +52,11 @@ export const usePasswordManagement = (masterPassword?: string) => {
     string | null
   >(null);
   const [cacheTimestamp, setCacheTimestamp] = useState<number>(0);
-  const CACHE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+  const CACHE_TIMEOUT = 0; // DISABLED: No caching - require PIN/biometric for every operation
 
   // Helper function to get master password when needed
   const getMasterPassword = useCallback(async (): Promise<string> => {
-    console.log('🔐 getMasterPassword: Starting authentication process...');
+    console.log('🔐 🔒 getMasterPassword: Starting authentication process (NO CACHE - requires PIN/biometric)...');
     const authStartTime = Date.now();
 
     // First priority: provided master password (backwards compatibility)
@@ -67,31 +67,12 @@ export const usePasswordManagement = (masterPassword?: string) => {
       return masterPassword;
     }
 
-    // Second priority: check session cache (fastest - in-memory)
-    const sessionPassword = sessionCache.get<string>('dynamicMasterPassword');
-    if (sessionPassword) {
-      console.log('⚡ getMasterPassword: Using session cache (ultra-fast)');
-      return sessionPassword;
-    }
+    // DISABLED: All caching removed for maximum security
+    // Each operation now requires fresh authentication
+    // console.log('⚡ getMasterPassword: Using session cache (ultra-fast)');
+    // console.log('🎯 getMasterPassword: Using cached password');
 
-    // Third priority: check local cache (5-minute timeout)
     const now = Date.now();
-    if (cachedMasterPassword && now - cacheTimestamp < CACHE_TIMEOUT) {
-      const remainingTime = Math.round(
-        (CACHE_TIMEOUT - (now - cacheTimestamp)) / 1000,
-      );
-      console.log(
-        `🎯 getMasterPassword: Using cached password (${remainingTime}s remaining)`,
-      );
-
-      // Also cache in session for ultra-fast access
-      sessionCache.set(
-        'dynamicMasterPassword',
-        cachedMasterPassword,
-        2 * 60 * 1000,
-      ); // 2 minutes
-      return cachedMasterPassword;
-    }
 
     // New approach: Use static master password (UUID + email + fixed salt)
     console.log('🔐 [Static] Generating static master password...');
@@ -173,7 +154,7 @@ export const usePasswordManagement = (masterPassword?: string) => {
     throw new Error(
       'Master password required - please authenticate or sign in with Google',
     );
-  }, [masterPassword, cachedMasterPassword, cacheTimestamp, CACHE_TIMEOUT]);
+  }, [masterPassword]);
 
   const autoVerifyDomain = useCallback(async (website: string | undefined) => {
     if (!website || website.trim().length === 0) {
@@ -275,13 +256,29 @@ export const usePasswordManagement = (masterPassword?: string) => {
 
   // Create new password entry
   const createPassword = useCallback(
-    async (entry: Omit<PasswordEntry, 'id' | 'createdAt' | 'updatedAt'>) => {
+    async (
+      entry: Omit<PasswordEntry, 'id' | 'createdAt' | 'updatedAt'>,
+      providedMasterPassword?: string,
+    ) => {
       const createPasswordStart = Date.now();
       console.log('🏁 createPassword: Starting password creation...');
 
-      const masterPasswordStart = Date.now();
-      const currentMasterPassword = await getMasterPassword();
-      const masterPasswordDuration = Date.now() - masterPasswordStart;
+      let currentMasterPassword: string;
+      let masterPasswordDuration = 0;
+
+      if (providedMasterPassword) {
+        console.log(
+          '✅ createPassword: Using provided master password (from PIN/biometric unlock)',
+        );
+        currentMasterPassword = providedMasterPassword;
+      } else {
+        const masterPasswordStart = Date.now();
+        currentMasterPassword = await getMasterPassword();
+        masterPasswordDuration = Date.now() - masterPasswordStart;
+        console.log(
+          `🔐 createPassword: Got master password in ${masterPasswordDuration}ms`,
+        );
+      }
 
       const newEntry: PasswordEntry = {
         ...entry,
@@ -327,7 +324,11 @@ export const usePasswordManagement = (masterPassword?: string) => {
         console.log(
           `✅ createPassword: Password created successfully in ${totalDuration}ms`,
         );
-        console.log(`   - Get Master Password: ${masterPasswordDuration}ms`);
+        if (masterPasswordDuration > 0) {
+          console.log(`   - Get Master Password: ${masterPasswordDuration}ms`);
+        } else {
+          console.log('   - Master Password: Used provided (0ms)');
+        }
         console.log(`   - Redux Save: ${saveDuration}ms`);
         console.log(`   - Background Tasks: ${backgroundDuration}ms`);
 
@@ -346,9 +347,22 @@ export const usePasswordManagement = (masterPassword?: string) => {
 
   // Update existing password entry
   const updatePassword = useCallback(
-    async (id: string, updatedData: Partial<PasswordEntry>) => {
+    async (
+      id: string,
+      updatedData: Partial<PasswordEntry>,
+      providedMasterPassword?: string,
+    ) => {
       try {
-        const currentMasterPassword = await getMasterPassword();
+        let currentMasterPassword: string;
+
+        if (providedMasterPassword) {
+          console.log(
+            '✅ updatePassword: Using provided master password (from PIN/biometric unlock)',
+          );
+          currentMasterPassword = providedMasterPassword;
+        } else {
+          currentMasterPassword = await getMasterPassword();
+        }
 
         const existingPassword = passwords.find(p => p.id === id);
         if (!existingPassword) {
@@ -402,6 +416,14 @@ export const usePasswordManagement = (masterPassword?: string) => {
 
         // Update autofill cache with remaining passwords
         try {
+          // Clear old cache first to ensure deleted password is removed
+          try {
+            await autofillService.clearCache();
+            console.log('✅ Autofill cache cleared before update');
+          } catch (clearError) {
+            console.warn('⚠️ Failed to clear autofill cache:', clearError);
+            // Continue anyway - not critical
+          }
           const currentMasterPassword = await getMasterPassword();
           const remainingPasswords = passwords.filter(p => p.id !== id);
           await autofillService.prepareCredentialsForAutofill(

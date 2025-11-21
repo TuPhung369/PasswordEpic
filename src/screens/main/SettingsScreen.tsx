@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,18 +11,15 @@ import {
   FlatList,
   Image,
   Alert,
-  ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAppSelector, useAppDispatch } from '../../hooks/redux';
 import { RootState } from '../../store';
 import { logout } from '../../store/slices/authSlice';
 import { encryptedDatabase } from '../../services/encryptedDatabaseService';
-import {
-  deriveKeyFromPassword,
-  decryptData,
-} from '../../services/cryptoService';
 import {
   updateSecuritySettings,
   setBiometricEnabled,
@@ -43,14 +40,18 @@ import { useBiometric } from '../../hooks/useBiometric';
 import BackupRestoreModal from '../../components/BackupRestoreModal';
 import { backupService } from '../../services/backupService';
 import { loadPasswordsLazy } from '../../store/slices/passwordsSlice';
-import { getEffectiveMasterPassword, syncFixedSaltWithFirebase, clearStaticMasterPasswordData } from '../../services/staticMasterPasswordService';
-import { MasterPasswordPrompt } from '../../components/MasterPasswordPrompt';
+import {
+  getEffectiveMasterPassword,
+} from '../../services/staticMasterPasswordService';
+import { SettingsStackParamList } from '../../navigation/SettingsNavigator';
 import { useSecurity } from '../../hooks/useSecurity';
 import SecurityWarningModal from '../../components/SecurityWarningModal';
+import { usePasswordAuthentication } from '../../hooks/usePasswordAuthentication';
+import PasswordAuthenticationModal from '../../components/PasswordAuthenticationModal';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
-import { requestStoragePermission } from '../../utils/permissionsUtils';
+
 import {
   uploadToGoogleDrive,
   isGoogleDriveAvailable,
@@ -58,7 +59,8 @@ import {
   ensureGoogleDriveAuthenticated,
 } from '../../services/googleDriveService';
 import AutofillTestService from '../../services/autofillTestService';
-import FilePicker from '../../modules/FilePicker';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Memoized SettingItem để tránh re-render
 const SettingItem = React.memo<{
@@ -97,9 +99,14 @@ const SettingItem = React.memo<{
   </TouchableOpacity>
 ));
 
+type SettingsNavigationProp = NativeStackNavigationProp<
+  SettingsStackParamList,
+  'SettingsList'
+>;
+
 export const SettingsScreen: React.FC = () => {
   const dispatch = useAppDispatch();
-  const navigation = useNavigation();
+  const navigation = useNavigation<SettingsNavigationProp>();
   const { user } = useAppSelector((state: RootState) => state.auth);
   const { security, theme: themeMode } = useAppSelector(
     (state: RootState) => state.settings,
@@ -127,10 +134,6 @@ export const SettingsScreen: React.FC = () => {
   // Autofill state
   const [isCheckingAutofill, setIsCheckingAutofill] = useState(false);
 
-  // Firebase sync state
-  const [isFirebaseSyncLoading, setIsFirebaseSyncLoading] = useState(false);
-  const [showMasterPasswordPrompt, setShowMasterPasswordPrompt] = useState(false);
-
   // Avatar state
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [avatarEmoji, setAvatarEmoji] = useState('😊');
@@ -147,7 +150,11 @@ export const SettingsScreen: React.FC = () => {
     biometryType,
     setupBiometric,
     disableBiometric: disableBiometricService,
+    authenticate: authenticateBiometric,
   } = useBiometric();
+
+  // Track biometric status to prevent unnecessary syncs
+  const previousBiometricStatusRef = useRef<boolean | null>(null);
 
   // Security hooks
   const {
@@ -157,6 +164,194 @@ export const SettingsScreen: React.FC = () => {
     disableScreenProtection,
     getSecuritySummary,
   } = useSecurity();
+
+  // 🔐 Password authentication hook for backup/restore
+  const {
+    isAuthenticating: isPasswordAuthenticating,
+    showBiometricPrompt,
+    showFallbackModal,
+    showPinPrompt,
+    handleBiometricSuccess,
+    handleBiometricError,
+    handleBiometricClose,
+    handleFallbackSuccess,
+    handleFallbackCancel,
+    handlePinPromptSuccess,
+    handlePinPromptCancel,
+    authenticate: triggerPasswordAuthentication,
+  } = usePasswordAuthentication();
+
+  const loadAvailableBackups = useCallback(async () => {
+    console.log('🔵 [loadAvailableBackups] Function called!');
+    try {
+      console.log('📂 [loadAvailableBackups] Loading available backups...');
+
+      // Check if Google Drive is available
+      const isDriveAvailable = await isGoogleDriveAvailable();
+      console.log(
+        '🔵 [loadAvailableBackups] Google Drive available:',
+        isDriveAvailable,
+      );
+
+      if (isDriveAvailable) {
+        // Ensure authentication before calling Google Drive API
+        const authResult = await ensureGoogleDriveAuthenticated();
+        if (!authResult.success) {
+          console.warn(
+            '⚠️ [loadAvailableBackups] Authentication failed:',
+            authResult.error,
+          );
+          setAvailableBackups([]);
+          return;
+        }
+
+        // Load backups from Google Drive
+        console.log(
+          '🔵 [loadAvailableBackups] Importing listGoogleDriveBackups...',
+        );
+        const { listGoogleDriveBackups } = await import(
+          '../../services/googleDriveService'
+        );
+        console.log(
+          '🔵 [loadAvailableBackups] Calling listGoogleDriveBackups...',
+        );
+        const driveResult = await listGoogleDriveBackups();
+        console.log('🔵 [loadAvailableBackups] Drive result:', driveResult);
+
+        if (driveResult.success && driveResult.files) {
+          console.log(
+            '✅ [loadAvailableBackups] Loaded Google Drive backups:',
+            driveResult.files.length,
+            'items',
+          );
+          console.log(
+            '🔵 [loadAvailableBackups] Files:',
+            JSON.stringify(driveResult.files, null, 2),
+          );
+
+          // Convert Google Drive files to BackupInfo format
+          const backups = await Promise.all(
+            driveResult.files
+              .filter(
+                file =>
+                  file.name.endsWith('.bak') || file.name.endsWith('.backup'),
+              )
+              .map(async file => {
+                try {
+                  // Download file to extract metadata
+                  const { downloadFromGoogleDrive } = await import(
+                    '../../services/googleDriveService'
+                  );
+                  const RNFS = await import('react-native-fs').then(
+                    m => m.default,
+                  );
+
+                  const tempPath =
+                    RNFS.CachesDirectoryPath || RNFS.TemporaryDirectoryPath;
+                  const tempFile = `${tempPath}/backup_${file.id}.tmp`;
+
+                  const downloadResult = await downloadFromGoogleDrive(
+                    file.id,
+                    tempFile,
+                  );
+
+                  if (!downloadResult.success) {
+                    console.warn(
+                      `Failed to download backup metadata for ${file.name}`,
+                    );
+                    return {
+                      id: file.id,
+                      filename: file.name,
+                      createdAt: new Date(file.createdTime),
+                      size: parseInt(file.size || '0', 10),
+                      entryCount: 0,
+                      categoryCount: 0,
+                      encrypted: true,
+                      version: '1.0',
+                      appVersion: '1.0.0',
+                    };
+                  }
+
+                  // Extract metadata from downloaded file
+                  const fileContent = await RNFS.readFile(tempFile, 'utf8');
+                  const metadata = await backupService.extractBackupMetadata(
+                    fileContent,
+                  );
+
+                  // Clean up temp file
+                  try {
+                    await RNFS.unlink(tempFile);
+                  } catch (e) {
+                    console.warn('Failed to cleanup temp file:', e);
+                  }
+
+                  return {
+                    id: file.id,
+                    filename: file.name,
+                    createdAt: new Date(file.createdTime),
+                    size: parseInt(file.size || '0', 10),
+                    entryCount: metadata?.entryCount || 0,
+                    categoryCount: metadata?.categoryCount || 0,
+                    encrypted: true,
+                    version: metadata?.appVersion || '1.0',
+                    appVersion: metadata?.appVersion || '1.0.0',
+                  };
+                } catch (error) {
+                  console.error(`Error processing backup ${file.name}:`, error);
+                  return {
+                    id: file.id,
+                    filename: file.name,
+                    createdAt: new Date(file.createdTime),
+                    size: parseInt(file.size || '0', 10),
+                    entryCount: 0,
+                    categoryCount: 0,
+                    encrypted: true,
+                    version: '1.0',
+                    appVersion: '1.0.0',
+                  };
+                }
+              }),
+          );
+
+          console.log(
+            '🔵 [loadAvailableBackups] Converted backups:',
+            backups.length,
+            'items',
+          );
+          console.log(
+            '🔵 [loadAvailableBackups] Setting availableBackups state...',
+          );
+          setAvailableBackups(backups as any);
+          console.log('✅ [loadAvailableBackups] State updated successfully');
+        } else {
+          console.log(
+            '⚠️ [loadAvailableBackups] No backups found on Google Drive',
+          );
+          console.log('🔵 [loadAvailableBackups] Drive result details:', {
+            success: driveResult.success,
+            hasFiles: !!driveResult.files,
+            filesLength: driveResult.files?.length,
+            error: driveResult.error,
+          });
+          setAvailableBackups([]);
+        }
+      } else {
+        // Fallback to local backups if Google Drive is not available
+        console.log('📂 [loadAvailableBackups] Loading local backups...');
+        const backups = await backupService.listBackups();
+        console.log(
+          '✅ [loadAvailableBackups] Loaded local backups:',
+          backups?.length || 0,
+          'items',
+        );
+        setAvailableBackups(backups as any);
+      }
+    } catch (error) {
+      console.error('❌ [loadAvailableBackups] Failed to load backups:', error);
+      setAvailableBackups([]); // Set empty array on error
+    }
+    console.log('🔵 [loadAvailableBackups] Function completed');
+  }, []);
 
   // Debug backup modal state
   useEffect(() => {
@@ -199,6 +394,23 @@ export const SettingsScreen: React.FC = () => {
     };
   }, []);
 
+  // Load avatar from AsyncStorage on mount
+  useEffect(() => {
+    const loadAvatarFromStorage = async () => {
+      try {
+        const [savedEmoji, savedImageUri] = await Promise.all([
+          AsyncStorage.getItem('avatar_emoji'),
+          AsyncStorage.getItem('avatar_image_uri'),
+        ]);
+        if (savedEmoji) setAvatarEmoji(savedEmoji);
+        if (savedImageUri) setAvatarImageUri(savedImageUri);
+      } catch (error) {
+        console.error('Failed to load avatar:', error);
+      }
+    };
+    loadAvatarFromStorage();
+  }, []);
+
   // Load available backups on mount
   useEffect(() => {
     loadAvailableBackups();
@@ -234,14 +446,42 @@ export const SettingsScreen: React.FC = () => {
   useEffect(() => {
     const syncBiometricStatus = async () => {
       try {
-        const { storeBiometricStatus } = await import(
+        const { getBiometricStatus, storeBiometricStatus } = await import(
           '../../services/secureStorageService'
         );
-        await storeBiometricStatus(security.biometricEnabled);
+
+        const currentReduxStatus = security.biometricEnabled;
+        const previousStatus = previousBiometricStatusRef.current;
+
         console.log(
-          '✅ [SettingsScreen] Synced biometric status to SecureStorage:',
-          security.biometricEnabled,
+          `🔐 [SettingsScreen] Status check - Redux: ${currentReduxStatus}, Previous: ${previousStatus}`,
         );
+
+        if (previousStatus === null) {
+          console.log(
+            '🔐 [SettingsScreen] First render, initializing previousBiometricStatusRef',
+          );
+          previousBiometricStatusRef.current = currentReduxStatus;
+          return;
+        }
+
+        if (previousStatus !== currentReduxStatus) {
+          const currentStoredStatus = await getBiometricStatus();
+          console.log(
+            `🔐 [SettingsScreen] Redux changed from ${previousStatus} to ${currentReduxStatus}, stored value: ${currentStoredStatus}`,
+          );
+
+          if (currentStoredStatus !== currentReduxStatus) {
+            console.log(
+              `🔐 [SettingsScreen] Syncing Redux (${currentReduxStatus}) to storage`,
+            );
+            await storeBiometricStatus(currentReduxStatus);
+            console.log(
+              '✅ [SettingsScreen] Synced biometric status to SecureStorage',
+            );
+          }
+          previousBiometricStatusRef.current = currentReduxStatus;
+        }
       } catch (error) {
         console.error(
           '❌ [SettingsScreen] Failed to sync biometric status:',
@@ -256,9 +496,6 @@ export const SettingsScreen: React.FC = () => {
   useEffect(() => {
     const syncBiometricPreference = async () => {
       try {
-        const AsyncStorage = (
-          await import('@react-native-async-storage/async-storage')
-        ).default;
         await AsyncStorage.setItem(
           'biometric_preference',
           security.biometricPreference,
@@ -288,26 +525,25 @@ export const SettingsScreen: React.FC = () => {
         );
         return;
       }
-
       try {
-        // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
-        // console.log('⚙️ SettingsScreen: Starting biometric setup...');
         const success = await setupBiometric();
-        // console.log('⚙️ SettingsScreen: Setup result:', success);
-
         if (success) {
-          // console.log('⚙️ SettingsScreen: Setup successful, updating Redux...');
           dispatch(setBiometricEnabled(true));
           dispatch(updateSecuritySettings({ biometricEnabled: true }));
-          // console.log('⚙️ SettingsScreen: Redux states updated');
+          setToastMessage('✅ Biometric authentication enabled');
+          setToastType('success');
+          setShowToast(true);
         } else {
-          // console.log('⚙️ SettingsScreen: Setup failed');
+          showAlert(
+            'Biometric Setup Failed',
+            'Unable to enable biometric authentication. Please try again.',
+          );
         }
       } catch (error) {
-        // console.error('⚙️ SettingsScreen: Setup error:', error);
+        console.error('Failed to enable biometric:', error);
         showAlert(
-          'Setup Failed',
-          'Failed to setup biometric authentication. Please try again.',
+          'Biometric Error',
+          'An unexpected error occurred while enabling biometrics.',
         );
       }
     } else {
@@ -463,36 +699,24 @@ export const SettingsScreen: React.FC = () => {
     try {
       setIsBackupLoading(true);
 
-      // Get master password for encryption
-      console.log('🟢 [SettingsScreen] Getting master password...');
-      const masterPasswordResult = await getEffectiveMasterPassword();
-      if (!masterPasswordResult.success || !masterPasswordResult.password) {
-        console.log('❌ [SettingsScreen] Failed to get master password');
-        showAlert('Error', 'Failed to get master password for encryption');
-        return;
-      }
-      console.log('✅ [SettingsScreen] Master password retrieved');
-
       // Get passwords and settings from store
+      console.log('🟢 [SettingsScreen] Preparing backup...');
       const store = require('../../store').store;
       const { passwords } = store.getState().passwords;
       const settings = store.getState().settings;
 
-      // Prepare backup data with master password encryption
+      // Prepare backup data - uses fixed backup key (independent of master password)
       const backupOptions = {
         includeSettings: true,
         includePasswords: true,
         includeAttachments: options.includeAttachments,
         encryptBackup: true, // Always encrypt
         compressBackup: options.compression,
-        encryptionPassword: masterPasswordResult.password, // Use master password
         filename: options.filename,
+        onRequireAuthentication: triggerPasswordAuthentication,
       };
 
-      console.log('🟢 [SettingsScreen] Backup options prepared (cloud-only):', {
-        ...backupOptions,
-        encryptionPassword: '[REDACTED]',
-      });
+      console.log('🟢 [SettingsScreen] Backup options prepared (cloud-only)');
 
       // Get categories for backup
       const backupCategories = Array.from(
@@ -531,7 +755,8 @@ export const SettingsScreen: React.FC = () => {
           if (!authResult.success) {
             showAlert(
               'Google Drive Authentication Failed',
-              authResult.error || 'Please sign in to Google Drive in Settings first.',
+              authResult.error ||
+                'Please sign in to Google Drive in Settings first.',
             );
             return;
           }
@@ -596,15 +821,15 @@ export const SettingsScreen: React.FC = () => {
     try {
       setIsBackupLoading(true);
 
-      // Get master password for decryption
-      console.log('🟢 [SettingsScreen] Getting master password for restore...');
+      // Get master password for entry decryption (restored entries are encrypted with their own keys)
+      console.log('🟢 [SettingsScreen] Getting master password for entry decryption...');
       const masterPasswordResult = await getEffectiveMasterPassword();
       if (!masterPasswordResult.success || !masterPasswordResult.password) {
         console.log('❌ [SettingsScreen] Failed to get master password');
-        showAlert('Error', 'Failed to get master password for decryption');
+        showAlert('Error', 'Failed to get master password for entry decryption');
         return;
       }
-      console.log('✅ [SettingsScreen] Master password retrieved for restore');
+      console.log('✅ [SettingsScreen] Master password retrieved');
 
       const backup = availableBackups.find((b: any) => b.id === backupId);
       if (!backup) {
@@ -623,7 +848,9 @@ export const SettingsScreen: React.FC = () => {
         if (!isDriveAvailable) {
           const permissionResult = await requestDrivePermissions();
           if (!permissionResult.success) {
-            throw new Error('Failed to authenticate with Google Drive for backup download');
+            throw new Error(
+              'Failed to authenticate with Google Drive for backup download',
+            );
           }
         }
 
@@ -653,15 +880,17 @@ export const SettingsScreen: React.FC = () => {
         console.log('✅ [SettingsScreen] Backup downloaded to:', filePath);
       }
 
+      // Backup decryption uses fixed key (independent of master password)
+      // Master password is only needed for entry decryption after restore
       const restoreOptions = {
         mergeStrategy: options.mergeWithExisting
           ? ('merge' as const)
           : ('replace' as const),
-        decryptionPassword: masterPasswordResult.password, // Use master password
         restoreSettings: options.restoreSettings,
         restoreCategories: options.restoreCategories,
         restoreDomains: options.restoreDomains || false,
         overwriteDuplicates: options.overwriteDuplicates || false,
+        onRequireAuthentication: triggerPasswordAuthentication,
       };
 
       console.log(
@@ -755,65 +984,12 @@ export const SettingsScreen: React.FC = () => {
 
           for (const entry of result.data.entries) {
             try {
-              // Check if this entry has encrypted password data from backup
-              let entryToSave = entry;
-              if (
-                (entry as any).salt &&
-                (entry as any).iv &&
-                (entry as any).authTag &&
-                (entry as any).isPasswordEncrypted
-              ) {
-                // This is an encrypted entry from backup
-                // We need to decrypt it first, then re-encrypt with current format
-                console.log(
-                  `🔓 [SettingsScreen] Decrypting backed up entry: ${entry.title}`,
-                );
-
-                try {
-                  // Decrypt the password using the master password
-                  const derivedKey = deriveKeyFromPassword(
-                    masterPasswordResult.password,
-                    (entry as any).salt,
-                  );
-                  const decryptedPassword = decryptData(
-                    entry.password,
-                    derivedKey,
-                    (entry as any).iv,
-                    (entry as any).authTag,
-                  );
-
-                  // Create entry with decrypted password (remove encryption metadata)
-                  entryToSave = {
-                    ...entry,
-                    password: decryptedPassword,
-                  };
-                  // Remove encryption metadata fields
-                  delete (entryToSave as any).salt;
-                  delete (entryToSave as any).iv;
-                  delete (entryToSave as any).authTag;
-                  delete (entryToSave as any).isPasswordEncrypted;
-
-                  console.log(
-                    `✅ [SettingsScreen] Successfully decrypted: ${entry.title}`,
-                  );
-                } catch (decryptError) {
-                  console.error(
-                    `❌ [SettingsScreen] Failed to decrypt entry ${entry.title}:`,
-                    decryptError,
-                  );
-                  // Skip this entry if decryption fails
-                  skippedCount++;
-                  continue;
-                }
-              }
-
-              // Check for duplicates (same title and username)
               const isDuplicate = existingPasswords.some(
                 existing =>
                   existing.title?.toLowerCase() ===
-                    entryToSave.title?.toLowerCase() &&
+                    entry.title?.toLowerCase() &&
                   existing.username?.toLowerCase() ===
-                    entryToSave.username?.toLowerCase(),
+                    entry.username?.toLowerCase(),
               );
 
               if (isDuplicate) {
@@ -822,37 +998,81 @@ export const SettingsScreen: React.FC = () => {
                   const existingEntry = existingPasswords.find(
                     existing =>
                       existing.title?.toLowerCase() ===
-                        entryToSave.title?.toLowerCase() &&
+                        entry.title?.toLowerCase() &&
                       existing.username?.toLowerCase() ===
-                        entryToSave.username?.toLowerCase(),
+                        entry.username?.toLowerCase(),
                   );
                   if (existingEntry) {
                     await encryptedDatabase.deletePasswordEntry(
                       existingEntry.id,
                     );
                     console.log(
-                      `🔄 [SettingsScreen] Overwriting duplicate: ${entryToSave.title}`,
+                      `🔄 [SettingsScreen] Overwriting duplicate: ${entry.title}`,
                     );
                   }
-                  await encryptedDatabase.savePasswordEntry(
-                    entryToSave,
-                    masterPasswordResult.password,
-                  );
+
+                  // Check if entry has encryption metadata - restore as-is
+                  if (
+                    (entry as any).salt &&
+                    (entry as any).iv &&
+                    (entry as any).authTag &&
+                    (entry as any).isPasswordEncrypted
+                  ) {
+                    console.log(
+                      `✅ [SettingsScreen] Restoring encrypted entry as-is: ${entry.title}`,
+                    );
+                    await encryptedDatabase.savePasswordEntryWithEncryptedData(
+                      entry,
+                      {
+                        ciphertext: entry.password,
+                        salt: (entry as any).salt,
+                        iv: (entry as any).iv,
+                        tag: (entry as any).authTag,
+                      },
+                    );
+                  } else {
+                    // Plaintext entry - encrypt normally
+                    await encryptedDatabase.savePasswordEntry(
+                      entry,
+                      masterPasswordResult.password,
+                    );
+                  }
                   overwrittenCount++;
                 } else {
                   // Skip duplicate
                   console.log(
-                    `⏭️ [SettingsScreen] Skipping duplicate: ${entryToSave.title}`,
+                    `⏭️ [SettingsScreen] Skipping duplicate: ${entry.title}`,
                   );
                   skippedCount++;
                   continue;
                 }
               } else {
-                // Not a duplicate, save normally
-                await encryptedDatabase.savePasswordEntry(
-                  entryToSave,
-                  masterPasswordResult.password,
-                );
+                // Not a duplicate - check if entry has encryption metadata
+                if (
+                  (entry as any).salt &&
+                  (entry as any).iv &&
+                  (entry as any).authTag &&
+                  (entry as any).isPasswordEncrypted
+                ) {
+                  console.log(
+                    `✅ [SettingsScreen] Restoring encrypted entry as-is: ${entry.title}`,
+                  );
+                  await encryptedDatabase.savePasswordEntryWithEncryptedData(
+                    entry,
+                    {
+                      ciphertext: entry.password,
+                      salt: (entry as any).salt,
+                      iv: (entry as any).iv,
+                      tag: (entry as any).authTag,
+                    },
+                  );
+                } else {
+                  // Plaintext entry - encrypt normally
+                  await encryptedDatabase.savePasswordEntry(
+                    entry,
+                    masterPasswordResult.password,
+                  );
+                }
                 savedCount++;
               }
             } catch (saveError) {
@@ -899,7 +1119,24 @@ export const SettingsScreen: React.FC = () => {
   };
 
   const handleDeleteBackup = async (backupId: string) => {
+    // 🔐 SECURITY: Require biometric authentication before delete
+    // 🔑 IMPORTANT: Enable PIN fallback (allowDeviceCredentials=true) for delete operations
     try {
+      console.log('🔒 [Delete Backup] Requesting biometric authentication...');
+      const biometricResult = await authenticateBiometric(
+        'Authenticate to delete backup',
+      );
+
+      if (!biometricResult) {
+        console.log(
+          '❌ [Delete Backup] Biometric authentication failed or cancelled',
+        );
+        throw new Error(
+          'Biometric authentication is required to delete backups',
+        );
+      }
+
+      console.log('✅ [Delete Backup] Biometric authentication successful');
       console.log('🗑️ [SettingsScreen] Deleting backup:', backupId);
 
       // Import Google Drive service
@@ -925,171 +1162,6 @@ export const SettingsScreen: React.FC = () => {
       throw error; // Re-throw to be handled by the modal
     }
   };
-
-  const loadAvailableBackups = useCallback(async () => {
-    console.log('🔵 [loadAvailableBackups] Function called!');
-    try {
-      console.log('📂 [loadAvailableBackups] Loading available backups...');
-
-      // Check if Google Drive is available
-      const isDriveAvailable = await isGoogleDriveAvailable();
-      console.log(
-        '🔵 [loadAvailableBackups] Google Drive available:',
-        isDriveAvailable,
-      );
-
-      if (isDriveAvailable) {
-        // Ensure authentication before calling Google Drive API
-        const authResult = await ensureGoogleDriveAuthenticated();
-        if (!authResult.success) {
-          console.warn(
-            '⚠️ [loadAvailableBackups] Authentication failed:',
-            authResult.error,
-          );
-          setAvailableBackups([]);
-          return;
-        }
-
-        // Load backups from Google Drive
-        console.log(
-          '🔵 [loadAvailableBackups] Importing listGoogleDriveBackups...',
-        );
-        const { listGoogleDriveBackups } = await import(
-          '../../services/googleDriveService'
-        );
-        console.log(
-          '🔵 [loadAvailableBackups] Calling listGoogleDriveBackups...',
-        );
-        const driveResult = await listGoogleDriveBackups();
-        console.log('🔵 [loadAvailableBackups] Drive result:', driveResult);
-
-        if (driveResult.success && driveResult.files) {
-          console.log(
-            '✅ [loadAvailableBackups] Loaded Google Drive backups:',
-            driveResult.files.length,
-            'items',
-          );
-          console.log(
-            '🔵 [loadAvailableBackups] Files:',
-            JSON.stringify(driveResult.files, null, 2),
-          );
-
-          // Convert Google Drive files to BackupInfo format
-          const backups = await Promise.all(
-            driveResult.files
-              .filter(
-                file =>
-                  file.name.endsWith('.bak') || file.name.endsWith('.backup'),
-              )
-              .map(async file => {
-                try {
-                  // Download file to extract metadata
-                  const { downloadFromGoogleDrive } = await import(
-                    '../../services/googleDriveService'
-                  );
-                  const RNFS = await import('react-native-fs').then(m => m.default);
-                  
-                  const tempPath = RNFS.CachesDirectoryPath || RNFS.TemporaryDirectoryPath;
-                  const tempFile = `${tempPath}/backup_${file.id}.tmp`;
-                  
-                  const downloadResult = await downloadFromGoogleDrive(
-                    file.id,
-                    tempFile,
-                  );
-
-                  if (!downloadResult.success) {
-                    console.warn(`Failed to download backup metadata for ${file.name}`);
-                    return {
-                      id: file.id,
-                      filename: file.name,
-                      createdAt: new Date(file.createdTime),
-                      size: parseInt(file.size || '0', 10),
-                      entryCount: 0,
-                      categoryCount: 0,
-                      encrypted: true,
-                      version: '1.0',
-                      appVersion: '1.0.0',
-                    };
-                  }
-
-                  // Extract metadata from downloaded file
-                  const fileContent = await RNFS.readFile(tempFile, 'utf8');
-                  const metadata = await backupService.extractBackupMetadata(fileContent);
-                  
-                  // Clean up temp file
-                  try {
-                    await RNFS.unlink(tempFile);
-                  } catch (e) {
-                    console.warn('Failed to cleanup temp file:', e);
-                  }
-
-                  return {
-                    id: file.id,
-                    filename: file.name,
-                    createdAt: new Date(file.createdTime),
-                    size: parseInt(file.size || '0', 10),
-                    entryCount: metadata?.entryCount || 0,
-                    categoryCount: metadata?.categoryCount || 0,
-                    encrypted: true,
-                    version: metadata?.appVersion || '1.0',
-                    appVersion: metadata?.appVersion || '1.0.0',
-                  };
-                } catch (error) {
-                  console.error(`Error processing backup ${file.name}:`, error);
-                  return {
-                    id: file.id,
-                    filename: file.name,
-                    createdAt: new Date(file.createdTime),
-                    size: parseInt(file.size || '0', 10),
-                    entryCount: 0,
-                    categoryCount: 0,
-                    encrypted: true,
-                    version: '1.0',
-                    appVersion: '1.0.0',
-                  };
-                }
-              }),
-          );
-
-          console.log(
-            '🔵 [loadAvailableBackups] Converted backups:',
-            backups.length,
-            'items',
-          );
-          console.log(
-            '🔵 [loadAvailableBackups] Setting availableBackups state...',
-          );
-          setAvailableBackups(backups as any);
-          console.log('✅ [loadAvailableBackups] State updated successfully');
-        } else {
-          console.log(
-            '⚠️ [loadAvailableBackups] No backups found on Google Drive',
-          );
-          console.log('🔵 [loadAvailableBackups] Drive result details:', {
-            success: driveResult.success,
-            hasFiles: !!driveResult.files,
-            filesLength: driveResult.files?.length,
-            error: driveResult.error,
-          });
-          setAvailableBackups([]);
-        }
-      } else {
-        // Fallback to local backups if Google Drive is not available
-        console.log('📂 [loadAvailableBackups] Loading local backups...');
-        const backups = await backupService.listBackups();
-        console.log(
-          '✅ [loadAvailableBackups] Loaded local backups:',
-          backups?.length || 0,
-          'items',
-        );
-        setAvailableBackups(backups as any);
-      }
-    } catch (error) {
-      console.error('❌ [loadAvailableBackups] Failed to load backups:', error);
-      setAvailableBackups([]); // Set empty array on error
-    }
-    console.log('🔵 [loadAvailableBackups] Function completed');
-  }, []);
 
   const handleClearCorruptedData = async () => {
     showDestructive(
@@ -1173,82 +1245,67 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
-  // Firebase sync handler
-  const handleFirebaseSync = async (masterPassword: string) => {
+  // Save avatar to AsyncStorage
+  const saveAvatarToStorage = async (emoji: string, imageUri: string | null) => {
     try {
-      setIsFirebaseSyncLoading(true);
-      setShowMasterPasswordPrompt(false);
-
-      console.log('🔄 [SettingsScreen] Clearing stale cache before Firebase sync...');
-      await clearStaticMasterPasswordData();
-      console.log('✅ [SettingsScreen] Cache cleared');
-
-      console.log('🔄 [SettingsScreen] Regenerating master password to sync...');
-      const genResult = await getEffectiveMasterPassword(masterPassword);
-      if (!genResult.success) {
-        throw new Error(genResult.error || 'Failed to generate master password');
+      if (emoji) {
+        await AsyncStorage.setItem('avatar_emoji', emoji);
       }
-      console.log('✅ [SettingsScreen] Master password regenerated');
-
-      console.log('🔄 [SettingsScreen] Starting Firebase sync...');
-      const result = await syncFixedSaltWithFirebase(masterPassword);
-
-      if (result.success) {
-        const actionMsg =
-          result.action === 'uploaded'
-            ? 'Salt uploaded to Firebase'
-            : 'Salt fetched from Firebase and synced';
-        console.log('✅ [SettingsScreen] Firebase sync successful:', actionMsg);
-        setToastMessage(`✅ ${actionMsg}`);
-        setToastType('success');
+      if (imageUri) {
+        await AsyncStorage.setItem('avatar_image_uri', imageUri);
       } else {
-        console.error('❌ [SettingsScreen] Firebase sync failed:', result.error);
-        setToastMessage(`❌ Sync failed: ${result.error || 'Unknown error'}`);
-        setToastType('error');
+        await AsyncStorage.removeItem('avatar_image_uri');
       }
-      setShowToast(true);
-    } catch (error: any) {
-      console.error('❌ [SettingsScreen] Firebase sync error:', error);
-      setToastMessage(`❌ Error: ${error.message || 'Firebase sync failed'}`);
-      setToastType('error');
-      setShowToast(true);
-    } finally {
-      setIsFirebaseSyncLoading(false);
+    } catch (error) {
+      console.error('Failed to save avatar:', error);
     }
   };
 
   // Image picker handler
-  const handlePickImage = async () => {
-    try {
-      if (Platform.OS === 'android') {
-        const hasPermission = await requestStoragePermission();
-        if (!hasPermission) {
-          showAlert(
-            'Permission Denied',
-            'Storage permission is required to pick images.',
-          );
-          return;
+  const handlePickImage = () => {
+    launchImageLibrary(
+      {
+        mediaType: 'photo',
+        quality: 1,
+        maxWidth: 500,
+        maxHeight: 500,
+      },
+      response => {
+        if (response.didCancel) {
+          console.log('Image picker cancelled');
+        } else if (response.errorCode) {
+          showAlert('Error', `Failed to pick image: ${response.errorMessage}`);
+        } else if (response.assets && response.assets[0]?.uri) {
+          console.log('📸 Image picked:', response.assets[0].uri);
+          setAvatarImageUri(response.assets[0].uri);
+          saveAvatarToStorage(avatarEmoji, response.assets[0].uri);
         }
-      }
-
-      const filePath = await FilePicker.pickFile();
-      if (filePath) {
-        console.log('📸 Image picked:', filePath);
-        setAvatarImageUri(filePath);
-        // Don't close modal, let user see the preview
-      }
-    } catch (error) {
-      console.error('Failed to pick image:', error);
-      showAlert('Error', 'Failed to pick image. Please try again.');
-    }
+      },
+    );
   };
 
-  // Camera capture handler (for future implementation with react-native-camera)
   const handleCapturePhoto = () => {
-    Alert.alert(
-      'Coming Soon',
-      'Camera capture feature will be available in a future update.',
-      [{ text: 'OK' }],
+    console.log('📷 Launching camera...');
+    launchCamera(
+      {
+        mediaType: 'photo',
+        quality: 1,
+        maxWidth: 500,
+        maxHeight: 500,
+        cameraType: 'front',
+      },
+      response => {
+        if (response.didCancel) {
+          console.log('Camera cancelled by user');
+        } else if (response.errorCode) {
+          console.error('❌ Camera error:', response.errorMessage);
+          showAlert('Error', `Failed to capture photo: ${response.errorMessage}`);
+        } else if (response.assets && response.assets[0]?.uri) {
+          console.log('✅ Photo captured:', response.assets[0].uri);
+          setAvatarImageUri(response.assets[0].uri);
+          saveAvatarToStorage(avatarEmoji, response.assets[0].uri);
+        }
+      },
     );
   };
 
@@ -1256,6 +1313,7 @@ export const SettingsScreen: React.FC = () => {
   const handleClearAvatar = () => {
     setAvatarImageUri(null);
     setAvatarEmoji('😊');
+    saveAvatarToStorage('😊', null);
   };
 
   return (
@@ -1346,59 +1404,76 @@ export const SettingsScreen: React.FC = () => {
             }
           />
 
-          {security.biometricEnabled && biometricAvailable && Platform.OS === 'ios' && (
-            <View
-              style={[
-                styles.settingItem,
-                { backgroundColor: theme.card, borderColor: theme.border },
-              ]}
-            >
+          {security.biometricEnabled &&
+            biometricAvailable &&
+            Platform.OS === 'ios' && (
               <View
-                style={[styles.settingIcon, { backgroundColor: theme.surface }]}
+                style={[
+                  styles.settingItem,
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                ]}
               >
-                <Ionicons name="options-outline" size={24} color={theme.primary} />
-              </View>
-              <View style={styles.settingContent}>
-                <Text style={[styles.settingTitle, { color: theme.text }]}>
-                  Biometric Preference
-                </Text>
-                <Text
-                  style={[styles.settingSubtitle, { color: theme.textSecondary }]}
+                <View
+                  style={[
+                    styles.settingIcon,
+                    { backgroundColor: theme.surface },
+                  ]}
                 >
-                  {security.biometricPreference === 'fingerprint'
-                    ? 'Prefer Fingerprint'
-                    : security.biometricPreference === 'face'
-                    ? 'Prefer Face ID'
-                    : 'Use Any Available'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => {
-                  const currentIndex =
-                    security.biometricPreference === 'fingerprint'
-                      ? 1
+                  <Ionicons
+                    name="options-outline"
+                    size={24}
+                    color={theme.primary}
+                  />
+                </View>
+                <View style={styles.settingContent}>
+                  <Text style={[styles.settingTitle, { color: theme.text }]}>
+                    Biometric Preference
+                  </Text>
+                  <Text
+                    style={[
+                      styles.settingSubtitle,
+                      { color: theme.textSecondary },
+                    ]}
+                  >
+                    {security.biometricPreference === 'fingerprint'
+                      ? 'Prefer Fingerprint'
                       : security.biometricPreference === 'face'
-                      ? 2
-                      : 0;
-                  const nextIndex = (currentIndex + 1) % 3;
-                  const nextPref =
-                    nextIndex === 1
-                      ? 'fingerprint'
-                      : nextIndex === 2
-                      ? 'face'
-                      : 'any';
-                  dispatch(
-                    updateSecuritySettings({ biometricPreference: nextPref }),
-                  );
-                }}
-                style={styles.preferenceButton}
-              >
-                <Text style={[styles.preferenceButtonText, { color: theme.primary }]}>
-                  Change
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
+                      ? 'Prefer Face ID'
+                      : 'Use Any Available'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    const currentIndex =
+                      security.biometricPreference === 'fingerprint'
+                        ? 1
+                        : security.biometricPreference === 'face'
+                        ? 2
+                        : 0;
+                    const nextIndex = (currentIndex + 1) % 3;
+                    const nextPref =
+                      nextIndex === 1
+                        ? 'fingerprint'
+                        : nextIndex === 2
+                        ? 'face'
+                        : 'any';
+                    dispatch(
+                      updateSecuritySettings({ biometricPreference: nextPref }),
+                    );
+                  }}
+                  style={styles.preferenceButton}
+                >
+                  <Text
+                    style={[
+                      styles.preferenceButtonText,
+                      { color: theme.primary },
+                    ]}
+                  >
+                    Change
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
           <SettingItem
             icon="key-outline"
@@ -1595,33 +1670,6 @@ export const SettingsScreen: React.FC = () => {
               console.log('✅ Modal should now be visible');
             }}
           />
-
-          <SettingItem
-            icon="cloud-sync-outline"
-            title="Sync to Firebase"
-            subtitle={
-              isFirebaseSyncLoading
-                ? 'Syncing...'
-                : 'Upload or sync encryption salt'
-            }
-            theme={theme}
-            onPress={() => {
-              if (!isFirebaseSyncLoading) {
-                setShowMasterPasswordPrompt(true);
-              }
-            }}
-            rightElement={
-              isFirebaseSyncLoading ? (
-                <ActivityIndicator color={theme.primary} />
-              ) : (
-                <Ionicons
-                  name="chevron-forward-outline"
-                  size={24}
-                  color={theme.textSecondary}
-                />
-              )
-            }
-          />
         </View>
 
         {/* Support */}
@@ -1633,48 +1681,59 @@ export const SettingsScreen: React.FC = () => {
           <SettingItem
             icon="help-circle-outline"
             title="Help & Support"
+            subtitle="tuphung010787@gmail.com"
             theme={theme}
-            onPress={() => {}}
+            onPress={() => {
+              Linking.openURL('mailto:tuphung010787@gmail.com').catch(_err =>
+                Alert.alert('Error', 'Unable to open email client')
+              );
+            }}
           />
 
           <SettingItem
             icon="eye-off-outline"
             title="Privacy Policy"
             theme={theme}
-            onPress={() => {}}
+            onPress={() => {
+              Linking.openURL(
+                'https://sites.google.com/d/1lLNdVzYODUF47j5wcYL-xcIYx1qZcV_r/p/1MkZIPuRIyXdfx2KvyCxDsq9gKgKfb3p5/edit'
+              ).catch(_err =>
+                Alert.alert('Error', 'Unable to open Privacy Policy')
+              );
+            }}
           />
 
           <SettingItem
             icon="information-circle-outline"
             title="About"
-            subtitle="Version 1.0.0"
+            subtitle="Version 1.1.2"
             theme={theme}
             onPress={() => {}}
           />
         </View>
 
-        {/* Danger Zone */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.error }]}>
-            Danger Zone
-          </Text>
+        {/* Danger Zone - Dev Only */}
+        {__DEV__ && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.error }]}>
+              Danger Zone
+            </Text>
 
-          <SettingItem
-            icon="refresh-outline"
-            title="Fix Category Icons"
-            subtitle="Reset categories with corrected Ionicons (fixes missing icons)"
-            theme={theme}
-            onPress={handleResetCategories}
-            rightElement={
-              <Ionicons
-                name="information-circle-outline"
-                size={24}
-                color={theme.primary}
-              />
-            }
-          />
+            <SettingItem
+              icon="refresh-outline"
+              title="Fix Category Icons"
+              subtitle="Reset categories with corrected Ionicons (fixes missing icons)"
+              theme={theme}
+              onPress={handleResetCategories}
+              rightElement={
+                <Ionicons
+                  name="information-circle-outline"
+                  size={24}
+                  color={theme.primary}
+                />
+              }
+            />
 
-          {__DEV__ && (
             <SettingItem
               icon="bug-outline"
               title="Test Category Icons"
@@ -1698,26 +1757,26 @@ export const SettingsScreen: React.FC = () => {
                 <Ionicons name="bug-outline" size={24} color={theme.primary} />
               }
             />
-          )}
 
-          <SettingItem
-            icon="trash-outline"
-            title="Clear Corrupted Data"
-            subtitle="Delete all encrypted passwords (use if decryption fails)"
-            theme={theme}
-            onPress={handleClearCorruptedData}
-            rightElement={
-              <Ionicons
-                name="warning-outline"
-                size={24}
-                color={theme.warning}
-              />
-            }
-          />
-        </View>
+            <SettingItem
+              icon="trash-outline"
+              title="Clear Corrupted Data"
+              subtitle="Delete all encrypted passwords (use if decryption fails)"
+              theme={theme}
+              onPress={handleClearCorruptedData}
+              rightElement={
+                <Ionicons
+                  name="warning-outline"
+                  size={24}
+                  color={theme.warning}
+                />
+              }
+            />
+          </View>
+        )}
 
-        {/* Autofill Settings - Android Only */}
-        {Platform.OS === 'android' && (
+        {/* Autofill Settings - Android Dev Only */}
+        {__DEV__ && Platform.OS === 'android' && (
           <View style={styles.section}>
             <SettingItem
               icon="flask-outline"
@@ -1783,14 +1842,6 @@ export const SettingsScreen: React.FC = () => {
           setToastType(type);
           setShowToast(true);
         }}
-      />
-
-      <MasterPasswordPrompt
-        visible={showMasterPasswordPrompt}
-        onSuccess={handleFirebaseSync}
-        onCancel={() => setShowMasterPasswordPrompt(false)}
-        title="Enter Master Password"
-        subtitle="Required to sync encryption salt with Firebase"
       />
 
       <Toast
@@ -2001,6 +2052,7 @@ export const SettingsScreen: React.FC = () => {
                       onPress={() => {
                         setAvatarEmoji(emoji);
                         setAvatarImageUri(null); // Clear image when selecting emoji
+                        saveAvatarToStorage(emoji, null);
                         setShowAvatarModal(false);
                       }}
                       style={[
@@ -2087,6 +2139,25 @@ export const SettingsScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* 🔐 Password Authentication Modal for Backup/Restore */}
+      <PasswordAuthenticationModal
+        visible={isPasswordAuthenticating}
+        showBiometricPrompt={showBiometricPrompt}
+        showFallbackModal={showFallbackModal}
+        showPinPrompt={showPinPrompt}
+        onBiometricSuccess={handleBiometricSuccess}
+        onBiometricError={handleBiometricError}
+        onBiometricClose={handleBiometricClose}
+        onFallbackSuccess={handleFallbackSuccess}
+        onFallbackCancel={handleFallbackCancel}
+        onPinPromptSuccess={handlePinPromptSuccess}
+        onPinPromptCancel={handlePinPromptCancel}
+        biometricTitle="Authenticate to backup/restore"
+        biometricSubtitle="Use biometric to verify your identity"
+        pinTitle="Unlock Backup/Restore"
+        pinSubtitle="Enter your PIN to proceed"
+      />
     </SafeAreaView>
   );
 };

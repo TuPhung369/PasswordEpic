@@ -41,6 +41,24 @@ export class BiometricService {
   }
 
   /**
+   * Check if biometric sensor is available (simple boolean check)
+   */
+  public async isSensorAvailable(): Promise<boolean> {
+    try {
+      console.log('🔐 BiometricService: isSensorAvailable called');
+      const capability = await this.checkBiometricCapability();
+      console.log(
+        '🔐 BiometricService: isSensorAvailable result:',
+        capability.available,
+      );
+      return capability.available;
+    } catch (error) {
+      console.error('Error checking if sensor available:', error);
+      return false;
+    }
+  }
+
+  /**
    * Check if biometric authentication is available on the device
    */
   public async checkBiometricCapability(): Promise<BiometricCapability> {
@@ -77,7 +95,9 @@ export class BiometricService {
       case BiometryTypes.FaceID:
         return 'Face ID';
       case BiometryTypes.Biometrics:
-        return Platform.OS === 'android' ? 'Fingerprint or Face ID' : 'Biometrics';
+        return Platform.OS === 'android'
+          ? 'Fingerprint or Face ID'
+          : 'Biometrics';
       default:
         return 'Biometric Authentication';
     }
@@ -149,8 +169,29 @@ export class BiometricService {
           }
         }
 
+        console.log('🔐 [setupBiometricAuth] Storing biometric status to true');
         // Store biometric setup status
-        await SecureStorageService.getInstance().storeBiometricStatus(true);
+        try {
+          console.log(
+            '🔐 [setupBiometricAuth] About to call storeBiometricStatus(true)',
+          );
+          await SecureStorageService.getInstance().storeBiometricStatus(true);
+          console.log(
+            '✅ [setupBiometricAuth] Biometric status stored successfully',
+          );
+
+          const verification =
+            await SecureStorageService.getInstance().getBiometricStatus();
+          console.log(
+            `🔐 [setupBiometricAuth] Verification after store: ${verification}`,
+          );
+        } catch (storageError) {
+          console.error(
+            '❌ [setupBiometricAuth] Failed to store biometric status:',
+            storageError,
+          );
+          throw storageError;
+        }
 
         //const isEmulator = publicKey === 'emulator_mock_key';
         // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
@@ -182,6 +223,8 @@ export class BiometricService {
 
   /**
    * Authenticate using biometrics
+   * @param promptMessage - Message to show in biometric prompt
+   * @param biometricPreference - Preferred biometric type (fingerprint, face, any)
    */
   public async authenticateWithBiometrics(
     promptMessage: string = 'Authenticate to access your passwords',
@@ -190,11 +233,14 @@ export class BiometricService {
     try {
       console.log('🔐 [BiometricService] authenticateWithBiometrics called');
       console.log('🔐 [BiometricService] promptMessage:', promptMessage);
-      console.log('🔐 [BiometricService] biometricPreference:', biometricPreference);
-      
+      console.log(
+        '🔐 [BiometricService] biometricPreference:',
+        biometricPreference,
+      );
+
       const capability = await this.checkBiometricCapability();
       console.log('🔐 [BiometricService] capability:', capability);
-      
+
       if (!capability.available) {
         console.log('❌ [BiometricService] Biometric not available');
         return {
@@ -203,24 +249,18 @@ export class BiometricService {
         };
       }
 
-      console.log('🔐 [BiometricService] Checking if biometric is setup...');
-      const isSetup = await this.isBiometricSetup();
-      console.log('🔐 [BiometricService] isSetup:', isSetup);
-      
-      if (!isSetup) {
-        console.log('❌ [BiometricService] Biometric not setup');
-        return {
-          success: false,
-          error: 'Biometric authentication is not set up',
-        };
-      }
+      // Don't check isSetup - allow authentication even if not configured in storage
+      // This allows users to authenticate after reinstall without needing to reconfigure
+      console.log(
+        '✅ [BiometricService] Hardware available, proceeding with authentication',
+      );
 
       try {
         console.log('🔐 [BiometricService] Preparing authentication prompt...');
         let finalPromptMessage = promptMessage;
         let title = 'Authenticate';
         let subtitle = 'Biometric Authentication';
-        
+
         if (biometricPreference === 'face') {
           finalPromptMessage = 'Look at the camera to unlock';
           title = 'Face Recognition';
@@ -232,12 +272,18 @@ export class BiometricService {
         }
 
         console.log('🔐 [BiometricService] Platform.OS:', Platform.OS);
-        console.log('🔐 [BiometricService] BiometricModule exists:', !!BiometricModule);
+        console.log(
+          '🔐 [BiometricService] BiometricModule exists:',
+          !!BiometricModule,
+        );
 
         if (Platform.OS === 'android' && BiometricModule) {
           try {
             console.log('🔐 [BiometricService] Using native BiometricModule');
-            console.log('🔐 [BiometricService] Calling authenticateWithPreference...');
+            console.log(
+              '🔐 [BiometricService] Calling authenticateWithPreference (biometric only)',
+            );
+
             await BiometricModule.authenticateWithPreference(
               title,
               subtitle,
@@ -245,18 +291,26 @@ export class BiometricService {
               'Cancel',
               biometricPreference,
             );
-            console.log('✅ [BiometricService] Authentication succeeded (native module)');
+
+            console.log(
+              '✅ [BiometricService] Authentication succeeded (native module)',
+            );
             return {
               success: true,
               signature: 'auth_signature_' + Date.now(),
             };
           } catch (nativeError: any) {
-            console.log('❌ [BiometricService] Native module error:', nativeError);
+            console.log(
+              '❌ [BiometricService] Native module error:',
+              nativeError,
+            );
             if (
               nativeError.message?.includes('cancelled') ||
               nativeError.message?.includes('Cancel')
             ) {
-              console.log('❌ [BiometricService] User cancelled authentication');
+              console.log(
+                '❌ [BiometricService] User cancelled authentication',
+              );
               return {
                 success: false,
                 error: 'Authentication cancelled by user',
@@ -266,9 +320,13 @@ export class BiometricService {
           }
         }
 
-        console.log('🔐 [BiometricService] Using react-native-biometrics fallback');
+        console.log(
+          '🔐 [BiometricService] Using react-native-biometrics fallback',
+        );
 
-        const authResult = await this.rnBiometricsWithFallback.simplePrompt({
+        const biometricInstance = this.rnBiometrics;
+
+        const authResult = await biometricInstance.simplePrompt({
           promptMessage: finalPromptMessage,
           cancelButtonText: 'Cancel',
         });
@@ -361,54 +419,57 @@ export class BiometricService {
    */
   public async isBiometricSetup(): Promise<boolean> {
     try {
-      // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
-      // console.log('🔐 BiometricService: isBiometricSetup called');
+      console.log('🔐 BiometricService: isBiometricSetup called');
       const status =
         await SecureStorageService.getInstance().getBiometricStatus();
-      // console.log('🔐 BiometricService: Storage status:', status);
+      console.log('🔐 BiometricService: Storage status:', status);
       // If biometric is disabled in storage, return false
       if (!status) {
-        // console.log(
-        //   '🔐 BiometricService: Biometric disabled in storage, returning false',
-        // );
+        console.log(
+          '🔐 BiometricService: Biometric disabled in storage, returning false',
+        );
         return false;
       }
 
       try {
-        // console.log('🔐 BiometricService: Checking if biometric keys exist...');
-        // console.log(
-        //   '⚠️ WARNING: biometricKeysExist() might trigger native biometric prompt!',
-        // );
+        console.log('🔐 BiometricService: Checking if biometric keys exist...');
+        console.log(
+          '⚠️ WARNING: biometricKeysExist() might trigger native biometric prompt!',
+        );
         const { keysExist } = await this.rnBiometrics.biometricKeysExist();
-        // console.log('🔐 BiometricService: Keys exist:', keysExist);
-        // console.log(
-        //   '✅ biometricKeysExist() completed without triggering prompt',
-        // );
+        console.log('🔐 BiometricService: Keys exist:', keysExist);
+        console.log(
+          '✅ biometricKeysExist() completed without triggering prompt',
+        );
 
         if (keysExist) {
           // Real device with actual keys
-          // console.log(
-          //   '🔐 BiometricService: Real device with keys, returning true',
-          // );
+          console.log(
+            '🔐 BiometricService: Real device with keys, returning true',
+          );
           return true;
         } else {
           // Emulator or no keys - use storage status for emulator mode
-          // console.log(
-          //   '🔐 BiometricService: Emulator mode, returning storage status:',
-          //   status,
-          // );
+          console.log(
+            '🔐 BiometricService: Emulator mode, returning storage status:',
+            status,
+          );
           return status;
         }
       } catch (keyCheckError) {
         // For emulator or when key check fails, rely on storage status only
-        // console.log(
-        //   '🔐 BiometricService: Key check error, returning storage status:',
-        //   status,
-        // );
+        console.log(
+          '🔐 BiometricService: Key check error, returning storage status:',
+          status,
+        );
+        console.log(
+          '🔐 BiometricService: Key check error details:',
+          keyCheckError,
+        );
         return status;
       }
     } catch (error) {
-      console.error('Error checking biometric setup:', error);
+      console.error('❌ Error checking biometric setup:', error);
       return false;
     }
   }

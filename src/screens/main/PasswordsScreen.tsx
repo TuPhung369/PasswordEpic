@@ -29,6 +29,7 @@ import { PasswordEntry as Password } from '../../types/password';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordManagement } from '../../hooks/usePasswordManagement';
 import { getEffectiveMasterPassword } from '../../services/staticMasterPasswordService';
+import { useBiometric } from '../../hooks/useBiometric';
 import {
   loadPasswordsLazy,
   decryptAllAndPrepareAutofill,
@@ -54,6 +55,8 @@ import { importExportService } from '../../services/importExportService';
 import { backupService } from '../../services/backupService';
 import FilePicker from '../../modules/FilePicker';
 import { useActivityTracking } from '../../hooks/useActivityTracking';
+import { usePasswordAuthentication } from '../../hooks/usePasswordAuthentication';
+import PasswordAuthenticationModal from '../../components/PasswordAuthenticationModal';
 
 import {
   uploadToGoogleDrive,
@@ -68,7 +71,6 @@ import { encryptedDatabase } from '../../services/encryptedDatabaseService';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { autofillService } from '../../services/autofillService';
-import { setIsInSetupFlow } from '../../store/slices/authSlice';
 import RNFS from 'react-native-fs';
 
 // Define local types for PasswordsScreen string-based filtering
@@ -102,8 +104,28 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   const dispatch = useAppDispatch();
   const { passwords } = useAppSelector((state: RootState) => state.passwords);
   const settings = useAppSelector((state: RootState) => state.settings);
+  const { isInSetupFlow, hasCompletedSessionAuth } = useAppSelector(
+    (state: RootState) => state.auth,
+  );
   const { deletePassword, updatePassword } = usePasswordManagement();
   const { onScroll: trackScrollActivity } = useActivityTracking();
+  const { authenticate: authenticateBiometric } = useBiometric();
+
+  // 🔐 Password authentication hook for import/export
+  const {
+    isAuthenticating: isPasswordAuthenticating,
+    showBiometricPrompt,
+    showFallbackModal,
+    showPinPrompt,
+    handleBiometricSuccess,
+    handleBiometricError,
+    handleBiometricClose,
+    handleFallbackSuccess,
+    handleFallbackCancel,
+    handlePinPromptSuccess,
+    handlePinPromptCancel,
+    authenticate: triggerPasswordAuthentication,
+  } = usePasswordAuthentication();
 
   // Confirm dialog hook
   const { confirmDialog, showAlert, showDestructive, hideConfirm } =
@@ -255,23 +277,82 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             'items',
           );
 
-          // Convert Google Drive files to BackupInfo format (without downloading)
-          const backups = driveResult.files
-            .filter(
-              file =>
-                file.name.endsWith('.bak') || file.name.endsWith('.backup'),
-            )
-            .map(file => ({
-              id: file.id,
-              filename: file.name,
-              createdAt: new Date(file.createdTime),
-              size: parseInt(file.size || '0', 10),
-              entryCount: 0,
-              categoryCount: 0,
-              encrypted: true,
-              version: '1.0',
-              appVersion: '1.0.0',
-            }));
+          // Convert Google Drive files to BackupInfo format (WITH metadata extraction)
+          const backups = await Promise.all(
+            driveResult.files
+              .filter(
+                file =>
+                  file.name.endsWith('.bak') || file.name.endsWith('.backup'),
+              )
+              .map(async file => {
+                try {
+                  // Download file to extract metadata (using already imported functions)
+                  const tempPath =
+                    RNFS.CachesDirectoryPath || RNFS.TemporaryDirectoryPath;
+                  const tempFile = `${tempPath}/backup_${file.id}.tmp`;
+
+                  const downloadResult = await downloadFromGoogleDrive(
+                    file.id,
+                    tempFile,
+                  );
+
+                  if (!downloadResult.success) {
+                    console.warn(
+                      `Failed to download backup metadata for ${file.name}`,
+                    );
+                    return {
+                      id: file.id,
+                      filename: file.name,
+                      createdAt: new Date(file.createdTime),
+                      size: parseInt(file.size || '0', 10),
+                      entryCount: 0,
+                      categoryCount: 0,
+                      encrypted: true,
+                      version: '1.0',
+                      appVersion: '1.0.0',
+                    };
+                  }
+
+                  // Extract metadata from downloaded file
+                  const fileContent = await RNFS.readFile(tempFile, 'utf8');
+                  const metadata = await backupService.extractBackupMetadata(
+                    fileContent,
+                  );
+
+                  // Clean up temp file
+                  try {
+                    await RNFS.unlink(tempFile);
+                  } catch (e) {
+                    console.warn('Failed to cleanup temp file:', e);
+                  }
+
+                  return {
+                    id: file.id,
+                    filename: file.name,
+                    createdAt: new Date(file.createdTime),
+                    size: parseInt(file.size || '0', 10),
+                    entryCount: metadata?.entryCount || 0,
+                    categoryCount: metadata?.categoryCount || 0,
+                    encrypted: true,
+                    version: metadata?.appVersion || '1.0',
+                    appVersion: metadata?.appVersion || '1.0.0',
+                  };
+                } catch (error) {
+                  console.error(`Error processing backup ${file.name}:`, error);
+                  return {
+                    id: file.id,
+                    filename: file.name,
+                    createdAt: new Date(file.createdTime),
+                    size: parseInt(file.size || '0', 10),
+                    entryCount: 0,
+                    categoryCount: 0,
+                    encrypted: true,
+                    version: '1.0',
+                    appVersion: '1.0.0',
+                  };
+                }
+              }),
+          );
 
           console.log(
             '🔵 [PasswordsScreen] Converted backups:',
@@ -326,89 +407,41 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         try {
           setIsLoadingPasswords(true);
 
-          // Remove initial delay - rely on pre-warmed cache from AppNavigator
-          // await new Promise(resolve => setTimeout(resolve, 300));
+          // Load encrypted password list (no master password needed)
+          // Passwords are already encrypted in storage and will be decrypted
+          // on-demand when user views them
+          console.log(
+            '📖 [PasswordsScreen] Loading encrypted password list...',
+          );
+          await dispatch(loadPasswordsLazy('')).unwrap();
+          console.log('✅ [PasswordsScreen] Password list loaded');
 
-          // Get the master password (should be cached from AppNavigator pre-warming)
-          //const mpStartTime = Date.now();
-          const result = await getEffectiveMasterPassword();
-          //const mpDuration = Date.now() - mpStartTime;
-
-          // Debug log to see what we got
-          // console.log('🔍 [PasswordsScreen] Master password result:', {
-          //   success: result.success,
-          //   hasPassword: !!result.password,
-          //   passwordLength: result.password?.length || 0,
-          //   duration: `${mpDuration}ms`,
-          //   error: result.error,
-          // });
-
-          if (result.success && result.password) {
-            //const loadStartTime = Date.now();
-            await dispatch(loadPasswordsLazy(result.password)).unwrap();
-            //const loadDuration = Date.now() - loadStartTime;
-            //const totalDuration = Date.now() - screenStartTime;
-            // console.log(
-            //   `✅ [PasswordsScreen] Passwords loaded (load: ${loadDuration}ms, total: ${totalDuration}ms)`,
-            // );
-
-            // Decrypt all passwords and prepare autofill in background (non-blocking)
-            // console.log(
-            //   '🔄 [PasswordsScreen] Starting background autofill preparation...',
-            // );
-            dispatch(decryptAllAndPrepareAutofill(result.password))
-              .unwrap()
-              .then(() =>
-                console.log(
-                  '✅ [PasswordsScreen] Autofill preparation completed',
-                ),
-              )
-              .catch((err: any) =>
-                console.warn(
-                  '⚠️ [PasswordsScreen] Autofill preparation failed:',
-                  err,
-                ),
-              );
-          } else {
-            // Don't show warning yet - auth might not be ready, try retry first
-            console.log(
-              '🔄 [PasswordsScreen] First attempt failed, retrying after 500ms...',
-            );
-            await new Promise(resolve => setTimeout(resolve, 500));
-            const retryResult = await getEffectiveMasterPassword();
-            if (retryResult.success && retryResult.password) {
-              const loadStartTime = Date.now();
-              await dispatch(loadPasswordsLazy(retryResult.password)).unwrap();
-              const loadDuration = Date.now() - loadStartTime;
-              const totalDuration = Date.now() - screenStartTime;
+          // Prepare autofill in background (non-blocking)
+          // Try to get master password if available, but don't fail if not
+          try {
+            const mpResult = await getEffectiveMasterPassword();
+            if (mpResult.success && mpResult.password) {
               console.log(
-                `✅ [PasswordsScreen] Passwords loaded on retry (load: ${loadDuration}ms, total: ${totalDuration}ms)`,
+                '🔄 [PasswordsScreen] Preparing autofill with cached master password...',
               );
-
-              // Decrypt all passwords and prepare autofill in background (non-blocking)
-              console.log(
-                '🔄 [PasswordsScreen] Starting background autofill preparation on retry...',
-              );
-              dispatch(decryptAllAndPrepareAutofill(retryResult.password))
+              dispatch(decryptAllAndPrepareAutofill(mpResult.password))
                 .unwrap()
                 .then(() =>
                   console.log(
-                    '✅ [PasswordsScreen] Autofill preparation completed on retry',
+                    '✅ [PasswordsScreen] Autofill preparation completed',
                   ),
                 )
                 .catch((err: any) =>
                   console.warn(
-                    '⚠️ [PasswordsScreen] Autofill preparation failed on retry:',
+                    '⚠️ [PasswordsScreen] Autofill preparation failed:',
                     err,
                   ),
                 );
-            } else {
-              // Only show warning if both attempts failed
-              console.warn(
-                '⚠️ PasswordsScreen: Failed to get master password after retry:',
-                retryResult.error,
-              );
             }
+          } catch (mpError) {
+            console.log(
+              'ℹ️ [PasswordsScreen] Master password not available (OK - will decrypt on-demand)',
+            );
           }
         } catch (error) {
           console.error('❌ PasswordsScreen: Failed to load passwords:', error);
@@ -429,8 +462,26 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   useFocusEffect(
     React.useCallback(() => {
       const checkAndPromptAutofillSetup = async () => {
-        // Only check once, and only on Android
-        if (autofillPromptShownRef.current || Platform.OS !== 'android') {
+        // Only check once, and only on Android, not during setup flow, and AFTER session auth is complete
+        console.log(
+          '🔍 [PasswordsScreen] Autofill check guard - autofillPromptShownRef:',
+          autofillPromptShownRef.current,
+          'Platform.OS:',
+          Platform.OS,
+          'isInSetupFlow:',
+          isInSetupFlow,
+          'hasCompletedSessionAuth:',
+          hasCompletedSessionAuth,
+        );
+        if (
+          autofillPromptShownRef.current ||
+          Platform.OS !== 'android' ||
+          isInSetupFlow ||
+          !hasCompletedSessionAuth
+        ) {
+          console.log(
+            '🔍 [PasswordsScreen] Autofill check skipped - guard prevented execution',
+          );
           return;
         }
 
@@ -444,8 +495,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             console.log(
               '⚠️ Autofill not enabled - navigating directly to setup',
             );
-            // Mark that user is in setup flow to prevent auto-lock during autofill configuration
-            dispatch(setIsInSetupFlow(true));
+
+            // Don't set isInSetupFlow - we're already in Main stack
+            // This is just a settings navigation, not initial setup flow
 
             // Add a small delay to let the UI settle
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -463,7 +515,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       };
 
       checkAndPromptAutofillSetup();
-    }, [dispatch, navigation]),
+    }, [navigation, isInSetupFlow, hasCompletedSessionAuth]),
   );
 
   // Initialize export folder on mount
@@ -765,21 +817,45 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   };
 
   const handlePasswordDelete = async (password: Password) => {
-    showDestructive(
-      'Delete Password',
-      `Are you sure you want to delete "${password.title}"?`,
-      async () => {
-        try {
-          // console.log('Delete password:', password.id);
-          await deletePassword(password.id);
-          // console.log('✅ Password deleted successfully:', password.id);
-        } catch (error) {
-          console.error('❌ Failed to delete password:', error);
-          showAlert('Error', 'Failed to delete password');
-        }
-      },
-      'Delete',
-    );
+    // 🔐 SECURITY: Require biometric authentication before delete
+    // 🔑 IMPORTANT: Enable PIN fallback (allowDeviceCredentials=true) for delete operations
+    try {
+      console.log('🔒 [Delete] Requesting biometric authentication...');
+      const biometricResult = await authenticateBiometric(
+        'Authenticate to delete password',
+      );
+
+      if (!biometricResult) {
+        console.log('❌ [Delete] Biometric authentication failed or cancelled');
+        showAlert(
+          'Authentication Failed',
+          'Biometric authentication is required to delete passwords',
+        );
+        return;
+      }
+
+      console.log('✅ [Delete] Biometric authentication successful');
+
+      // Show confirmation dialog after biometric success
+      showDestructive(
+        'Delete Password',
+        `Are you sure you want to delete "${password.title}"?`,
+        async () => {
+          try {
+            // console.log('Delete password:', password.id);
+            await deletePassword(password.id);
+            // console.log('✅ Password deleted successfully:', password.id);
+          } catch (error) {
+            console.error('❌ Failed to delete password:', error);
+            showAlert('Error', 'Failed to delete password');
+          }
+        },
+        'Delete',
+      );
+    } catch (error) {
+      console.error('❌ [Delete] Biometric authentication error:', error);
+      showAlert('Error', 'Failed to authenticate. Please try again.');
+    }
   };
 
   const togglePasswordSelection = (passwordId: string) => {
@@ -809,42 +885,66 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     }
   };
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (selectedPasswords.length === 0) return;
 
-    showDestructive(
-      'Delete Passwords',
-      `Are you sure you want to delete ${selectedPasswords.length} password(s)?`,
-      async () => {
-        try {
-          // console.log('🗑️ Bulk deleting passwords:', selectedPasswords);
+    try {
+      console.log('🔒 [Bulk Delete] Requesting biometric authentication...');
+      const biometricResult = await authenticateBiometric(
+        'Authenticate to delete passwords',
+      );
 
-          // Delete all selected passwords
-          const deletePromises = selectedPasswords.map(passwordId =>
-            deletePassword(passwordId),
-          );
+      if (!biometricResult) {
+        console.log(
+          '❌ [Bulk Delete] Biometric authentication failed or cancelled',
+        );
+        showAlert(
+          'Authentication Failed',
+          'Biometric authentication is required to delete passwords',
+        );
+        return;
+      }
 
-          await Promise.all(deletePromises);
+      console.log('✅ [Bulk Delete] Biometric authentication successful');
 
-          // console.log('✅ Bulk delete completed successfully');
+      // Show confirmation dialog after biometric success
+      showDestructive(
+        'Delete Passwords',
+        `Are you sure you want to delete ${selectedPasswords.length} password(s)?`,
+        async () => {
+          try {
+            // console.log('🗑️ Bulk deleting passwords:', selectedPasswords);
 
-          // Show success toast
-          setToastMessage(
-            `Successfully deleted ${selectedPasswords.length} password(s)`,
-          );
-          setToastType('success');
-          setShowToast(true);
+            // Delete all selected passwords
+            const deletePromises = selectedPasswords.map(passwordId =>
+              deletePassword(passwordId),
+            );
 
-          // Exit bulk mode and clear selection
-          setBulkMode(false);
-          clearSelection();
-        } catch (error) {
-          console.error('❌ Failed to bulk delete passwords:', error);
-          showAlert('Error', 'Failed to delete passwords');
-        }
-      },
-      'Delete',
-    );
+            await Promise.all(deletePromises);
+
+            // console.log('✅ Bulk delete completed successfully');
+
+            // Show success toast
+            setToastMessage(
+              `Successfully deleted ${selectedPasswords.length} password(s)`,
+            );
+            setToastType('success');
+            setShowToast(true);
+
+            // Exit bulk mode and clear selection
+            setBulkMode(false);
+            clearSelection();
+          } catch (error) {
+            console.error('❌ Failed to bulk delete passwords:', error);
+            showAlert('Error', 'Failed to delete passwords');
+          }
+        },
+        'Delete',
+      );
+    } catch (error) {
+      console.error('❌ [Bulk Delete] Biometric authentication error:', error);
+      showAlert('Error', 'Failed to authenticate. Please try again.');
+    }
   };
 
   // Toggle favorite handler
@@ -1002,6 +1102,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           ? options.encryptionPassword
           : undefined,
         fileName: `${fileName}.${format.extension}`,
+        onRequireAuthentication: triggerPasswordAuthentication,
       };
 
       // Add destination folder for local exports
@@ -1450,7 +1551,28 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     destination: 'local' | 'google' | 'google-hidden',
     filePath: string,
   ): Promise<boolean> => {
+    // 🔐 SECURITY: Require biometric authentication before delete
+    // 🔑 IMPORTANT: Enable PIN fallback (allowDeviceCredentials=true) for delete operations
     try {
+      console.log('🔒 [Delete File] Requesting biometric authentication...');
+      const biometricResult = await authenticateBiometric(
+        'Authenticate to delete file',
+      );
+
+      if (!biometricResult) {
+        console.log(
+          '❌ [Delete File] Biometric authentication failed or cancelled',
+        );
+        showAlert(
+          'Authentication Failed',
+          'Biometric authentication is required to delete files',
+        );
+        return false;
+      }
+
+      console.log('✅ [Delete File] Biometric authentication successful');
+
+      // Proceed with deletion after biometric success
       if (destination === 'local') {
         console.log('🔵 [Delete] Deleting local file:', filePath);
         await RNFS.unlink(filePath);
@@ -1549,22 +1671,44 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       console.log('✅ [Import] File downloaded successfully');
 
       // Get current master password for decryption
-      const masterPasswordResult = await getEffectiveMasterPassword();
-      if (!masterPasswordResult.success) {
-        setToastMessage(
-          'Master password not found. Please log out and log back in.',
-        );
-        setToastType('error');
-        setShowToast(true);
-        setIsImportLoading(false);
+      let masterPasswordResult = await getEffectiveMasterPassword();
 
-        // Clean up temp file
+      // If static password fails, try PIN/biometric authentication
+      if (!masterPasswordResult.success) {
+        console.log(
+          '🔐 [Google Drive Import] Static password failed, triggering PIN/biometric authentication...',
+        );
+
         try {
-          await RNFS.unlink(tempFilePath);
-        } catch (e) {
-          console.warn('Failed to delete temp file:', e);
+          const authenticatedPassword = await triggerPasswordAuthentication();
+
+          if (authenticatedPassword) {
+            masterPasswordResult = {
+              success: true,
+              password: authenticatedPassword,
+            };
+            console.log('✅ [Google Drive Import] Authentication successful');
+          } else {
+            throw new Error('Authentication cancelled');
+          }
+        } catch (authError) {
+          console.error(
+            '❌ [Google Drive Import] Authentication failed:',
+            authError,
+          );
+          setToastMessage('Authentication required to import passwords');
+          setToastType('error');
+          setShowToast(true);
+          setIsImportLoading(false);
+
+          // Clean up temp file
+          try {
+            await RNFS.unlink(tempFilePath);
+          } catch (e) {
+            console.warn('Failed to delete temp file:', e);
+          }
+          return;
         }
-        return;
       }
 
       const importResult = await importExportService.importPasswords(
@@ -1781,8 +1925,37 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       setIsImportLoading(true);
 
       // Get current master password for decryption
-      const masterPasswordResult = await getEffectiveMasterPassword();
+      let masterPasswordResult = await getEffectiveMasterPassword();
+
+      // If static password fails, try PIN/biometric authentication
       if (!masterPasswordResult.success) {
+        console.log(
+          '🔐 [Import] Static password failed, triggering PIN/biometric authentication...',
+        );
+
+        try {
+          const authenticatedPassword = await triggerPasswordAuthentication();
+
+          if (authenticatedPassword) {
+            masterPasswordResult = {
+              success: true,
+              password: authenticatedPassword,
+            };
+            console.log('✅ [Import] Authentication successful');
+          } else {
+            throw new Error('Authentication cancelled');
+          }
+        } catch (authError) {
+          console.error('❌ [Import] Authentication failed:', authError);
+          setToastMessage('Authentication required to import passwords');
+          setToastType('error');
+          setShowToast(true);
+          setIsImportLoading(false);
+          return;
+        }
+      }
+
+      if (!masterPasswordResult.success || !masterPasswordResult.password) {
         setToastMessage(
           'Master password not found. Please log out and log back in.',
         );
@@ -1792,7 +1965,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         return;
       }
 
-      const isBackupFile = importedFilePath.endsWith('.backup') ||
+      const isBackupFile =
+        importedFilePath.endsWith('.backup') ||
         importedFilePath.endsWith('.bak');
       const isExportFile = importedFilePath.endsWith('.json');
 
@@ -1802,10 +1976,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           masterPasswordResult.password,
         );
       } else if (isExportFile) {
-        handleImportExportFile(
-          importedFilePath,
-          masterPasswordResult.password,
-        );
+        handleImportExportFile(importedFilePath, masterPasswordResult.password);
       } else {
         setToastMessage(
           'Invalid file format. Please select a .backup, .bak, or .json file.',
@@ -1853,9 +2024,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       );
 
       if (importResult.success) {
-        await dispatch(
-          loadPasswordsLazy(masterPassword),
-        ).unwrap();
+        await dispatch(loadPasswordsLazy(masterPassword)).unwrap();
 
         setToastMessage(
           `✅ Import successful! ${
@@ -1937,9 +2106,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             }
           }
 
-          await dispatch(
-            loadPasswordsLazy(masterPassword),
-          ).unwrap();
+          await dispatch(loadPasswordsLazy(masterPassword)).unwrap();
 
           setToastMessage(
             `✅ Restore successful! ${savedCount} passwords restored${
@@ -1993,18 +2160,21 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
   const performBackup = async (options: any) => {
     try {
-
-      // Get master password for encryption
-      console.log('🟢 [BACKUP/RESTORE FLOW] Getting master password...');
-      const masterPasswordResult = await getEffectiveMasterPassword();
-      if (!masterPasswordResult.success || !masterPasswordResult.password) {
-        console.log('❌ [PasswordsScreen] Failed to get master password');
-        setToastMessage('Failed to get master password for encryption');
+      // Get master password for encryption using PIN authentication
+      console.log(
+        '🟢 [BACKUP/RESTORE FLOW] Getting master password via authentication...',
+      );
+      const masterPassword = await triggerPasswordAuthentication();
+      if (!masterPassword) {
+        console.log('❌ [PasswordsScreen] Authentication cancelled or failed');
+        setToastMessage('Authentication required to backup passwords');
         setToastType('error');
         setShowToast(true);
         return;
       }
-      console.log('✅ [PasswordsScreen] Master password retrieved');
+      console.log(
+        '✅ [PasswordsScreen] Master password retrieved via authentication',
+      );
 
       // Prepare backup data with master password encryption
       const backupOptions = {
@@ -2013,7 +2183,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         includeAttachments: options.includeAttachments,
         encryptBackup: true, // Always encrypt
         compressBackup: options.compression,
-        encryptionPassword: masterPasswordResult.password, // Use master password
+        encryptionPassword: masterPassword, // Use master password
         filename: options.filename,
       };
 
@@ -2173,19 +2343,21 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     try {
       setIsExportLoading(true);
 
-      // Get master password for decryption
+      // Get master password for decryption using PIN authentication
       console.log(
-        '🟢 [BACKUP/RESTORE FLOW] Getting master password for restore...',
+        '🟢 [BACKUP/RESTORE FLOW] Getting master password for restore via authentication...',
       );
-      const masterPasswordResult = await getEffectiveMasterPassword();
-      if (!masterPasswordResult.success || !masterPasswordResult.password) {
-        console.log('❌ [PasswordsScreen] Failed to get master password');
-        setToastMessage('Failed to get master password for decryption');
+      const masterPassword = await triggerPasswordAuthentication();
+      if (!masterPassword) {
+        console.log('❌ [PasswordsScreen] Authentication cancelled or failed');
+        setToastMessage('Authentication required to restore backup');
         setToastType('error');
         setShowToast(true);
         return;
       }
-      console.log('✅ [PasswordsScreen] Master password retrieved for restore');
+      console.log(
+        '✅ [PasswordsScreen] Master password retrieved for restore via authentication',
+      );
 
       // Find the backup file path
       const backup = availableBackups.find((b: any) => b.id === backupId);
@@ -2238,7 +2410,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         mergeStrategy: options.mergeWithExisting
           ? ('merge' as const)
           : ('replace' as const),
-        decryptionPassword: masterPasswordResult.password, // Use master password
+        decryptionPassword: masterPassword, // Use master password
         restoreSettings: options.restoreSettings,
         restoreCategories: options.restoreCategories,
         restoreDomains: options.restoreDomains,
@@ -2255,15 +2427,21 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         restoreOptions,
       );
 
-      console.log('🔵 [DEBUG_RESTORE STEP 1] Restore service finished. Result:', {
-        success: result.result.success,
-        entriesCount: result.data?.entries?.length,
-        firstEntry: result.data?.entries?.[0] ? {
-          ...result.data.entries[0],
-          password: `(plaintext, length: ${result.data.entries[0].password?.length || 0})`,
-        } : 'N/A',
-      });
-
+      console.log(
+        '🔵 [DEBUG_RESTORE STEP 1] Restore service finished. Result:',
+        {
+          success: result.result.success,
+          entriesCount: result.data?.entries?.length,
+          firstEntry: result.data?.entries?.[0]
+            ? {
+                ...result.data.entries[0],
+                password: `(plaintext, length: ${
+                  result.data.entries[0].password?.length || 0
+                })`,
+              }
+            : 'N/A',
+        },
+      );
 
       if (result.result.success) {
         console.log('✅ [PasswordsScreen] Restore successful');
@@ -2297,9 +2475,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             '🗑️ [PasswordsScreen] Replace mode: clearing existing passwords...',
           );
           const existingPasswords =
-            await encryptedDatabase.getAllPasswordEntries(
-              masterPasswordResult.password,
-            );
+            await encryptedDatabase.getAllPasswordEntries(masterPassword);
           for (const existingEntry of existingPasswords) {
             try {
               await encryptedDatabase.deletePasswordEntry(existingEntry.id);
@@ -2326,27 +2502,39 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           // Get existing passwords for duplicate detection (only in merge mode)
           let existingPasswords: any[] = [];
           if (restoreOptions.mergeStrategy === 'merge') {
-            console.log('🔵 [DEBUG_RESTORE STEP 2] Checking for duplicates. Loading existing entries from DB...');
+            console.log(
+              '🔵 [DEBUG_RESTORE STEP 2] Checking for duplicates. Loading existing entries from DB...',
+            );
             try {
               existingPasswords = await encryptedDatabase.getAllPasswordEntries(
-                masterPasswordResult.password,
+                masterPassword,
               );
-              
-              const decryptedCount = existingPasswords.filter(e => e.isDecrypted).length;
+
+              const decryptedCount = existingPasswords.filter(
+                e => e.isDecrypted,
+              ).length;
               const encryptedCount = existingPasswords.length - decryptedCount;
-              
+
               console.log(
                 `🔍 [PasswordsScreen] Found ${existingPasswords.length} existing passwords for duplicate detection`,
                 {
                   fullyDecrypted: decryptedCount,
                   withEncryptedPassword: encryptedCount,
-                  note: encryptedCount > 0 ? 'Some entries have corrupted encryption tags but can still be used for title/username matching' : 'All passwords decrypted successfully',
+                  note:
+                    encryptedCount > 0
+                      ? 'Some entries have corrupted encryption tags but can still be used for title/username matching'
+                      : 'All passwords decrypted successfully',
                 },
               );
             } catch (error) {
-              console.error('❌ [DEBUG_RESTORE] CRITICAL: Failed to load existing passwords from the database for duplicate check. The error is with local data, not the backup file.', error);
+              console.error(
+                '❌ [DEBUG_RESTORE] CRITICAL: Failed to load existing passwords from the database for duplicate check. The error is with local data, not the backup file.',
+                error,
+              );
               existingPasswords = [];
-              console.warn('⚠️ [PasswordsScreen] Proceeding with empty duplicate detection list - all restored entries will be saved');
+              console.warn(
+                '⚠️ [PasswordsScreen] Proceeding with empty duplicate detection list - all restored entries will be saved',
+              );
             }
           }
 
@@ -2358,11 +2546,15 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             try {
               // The entry is now decrypted by the backupService, so we can use it directly.
               const entryToSave = entry;
-              console.log('🔵 [DEBUG_RESTORE STEP 3] Processing entry to save:', {
-                title: entryToSave.title,
-                password: `(plaintext, length: ${entryToSave.password?.length || 0})`,
-              });
-
+              console.log(
+                '🔵 [DEBUG_RESTORE STEP 3] Processing entry to save:',
+                {
+                  title: entryToSave.title,
+                  password: `(plaintext, length: ${
+                    entryToSave.password?.length || 0
+                  })`,
+                },
+              );
 
               // Check for duplicates (same title and username)
               // NOTE: This works even if some existing entries have encrypted passwords (isDecrypted=false)
@@ -2374,8 +2566,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
                   existing.username?.toLowerCase() ===
                     entryToSave.username?.toLowerCase(),
               );
-              console.log(`🔵 [DEBUG_RESTORE STEP 4] Is '${entryToSave.title}' a duplicate? ${isDuplicate}`);
-
+              console.log(
+                `🔵 [DEBUG_RESTORE STEP 4] Is '${entryToSave.title}' a duplicate? ${isDuplicate}`,
+              );
 
               if (isDuplicate) {
                 if (restoreOptions.overwriteDuplicates) {
@@ -2395,10 +2588,12 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
                       `🔄 [PasswordsScreen] Overwriting duplicate: ${entryToSave.title}`,
                     );
                   }
-                  console.log(`🔵 [DEBUG_RESTORE STEP 5] Saving (overwrite) entry: ${entryToSave.title}`);
+                  console.log(
+                    `🔵 [DEBUG_RESTORE STEP 5] Saving (overwrite) entry: ${entryToSave.title}`,
+                  );
                   await encryptedDatabase.savePasswordEntry(
                     entryToSave,
-                    masterPasswordResult.password,
+                    masterPassword,
                   );
                   overwrittenCount++;
                 } else {
@@ -2411,10 +2606,12 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
                 }
               } else {
                 // Not a duplicate, save normally
-                console.log(`🔵 [DEBUG_RESTORE STEP 5] Saving (new) entry: ${entryToSave.title}`);
+                console.log(
+                  `🔵 [DEBUG_RESTORE STEP 5] Saving (new) entry: ${entryToSave.title}`,
+                );
                 await encryptedDatabase.savePasswordEntry(
                   entryToSave,
-                  masterPasswordResult.password,
+                  masterPassword,
                 );
                 savedCount++;
               }
@@ -2481,9 +2678,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         setShowToast(true);
 
         // Reload passwords after restore
-        await dispatch(
-          loadPasswordsLazy(masterPasswordResult.password),
-        ).unwrap();
+        await dispatch(loadPasswordsLazy(masterPassword)).unwrap();
 
         // Close the modal
         setShowBackupModal(false);
@@ -2712,7 +2907,24 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   };
 
   const handleDeleteBackup = async (backupId: string) => {
+    // 🔐 SECURITY: Require biometric authentication before delete
+    // 🔑 IMPORTANT: Enable PIN fallback (allowDeviceCredentials=true) for delete operations
     try {
+      console.log('🔒 [Delete Backup] Requesting biometric authentication...');
+      const biometricResult = await authenticateBiometric(
+        'Authenticate to delete backup',
+      );
+
+      if (!biometricResult) {
+        console.log(
+          '❌ [Delete Backup] Biometric authentication failed or cancelled',
+        );
+        throw new Error(
+          'Biometric authentication is required to delete backups',
+        );
+      }
+
+      console.log('✅ [Delete Backup] Biometric authentication successful');
       console.log('🗑️ [PasswordsScreen] Deleting backup:', backupId);
 
       // Delete from Google Drive
@@ -3813,6 +4025,25 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           </View>
         </View>
       </ConfirmDialog>
+
+      {/* 🔐 Password Authentication Modal for Import/Export */}
+      <PasswordAuthenticationModal
+        visible={isPasswordAuthenticating}
+        showBiometricPrompt={showBiometricPrompt}
+        showFallbackModal={showFallbackModal}
+        showPinPrompt={showPinPrompt}
+        onBiometricSuccess={handleBiometricSuccess}
+        onBiometricError={handleBiometricError}
+        onBiometricClose={handleBiometricClose}
+        onFallbackSuccess={handleFallbackSuccess}
+        onFallbackCancel={handleFallbackCancel}
+        onPinPromptSuccess={handlePinPromptSuccess}
+        onPinPromptCancel={handlePinPromptCancel}
+        biometricTitle="Authenticate to export/import"
+        biometricSubtitle="Use biometric to verify your identity"
+        pinTitle="Unlock Export/Import"
+        pinSubtitle="Enter your PIN to proceed"
+      />
     </SafeAreaView>
   );
 };

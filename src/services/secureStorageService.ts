@@ -69,7 +69,7 @@ export const storeMasterPassword = async (
           password,
           keychainOptions,
         );
-        await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'true');
+        await storeBiometricStatus(true);
       } catch (biometricError: any) {
         console.warn(
           'Biometric storage not available, falling back to basic keychain storage:',
@@ -90,13 +90,13 @@ export const storeMasterPassword = async (
           fallbackOptions,
         );
 
-        await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'false');
+        await storeBiometricStatus(false);
         console.log(
           'Master password stored without biometric - will be set up during biometric configuration',
         );
       }
     } else {
-      await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'false');
+      await storeBiometricStatus(false);
     }
 
     return { success: true };
@@ -113,12 +113,14 @@ export const enableBiometricForMasterPassword = async (
   password: string,
 ): Promise<{ success: boolean; error?: string }> => {
   try {
+    console.log('🔐 [enableBiometricForMasterPassword] Starting...');
     const baseOptions = getKeychainOptions();
     const keychainOptions = {
       ...baseOptions,
       accessControl: Keychain.ACCESS_CONTROL?.BIOMETRY_CURRENT_SET as any,
     };
 
+    console.log('🔐 [enableBiometricForMasterPassword] Setting keychain credentials...');
     await Keychain.setInternetCredentials(
       KEYCHAIN_SERVICE,
       'master_password',
@@ -126,7 +128,8 @@ export const enableBiometricForMasterPassword = async (
       keychainOptions,
     );
 
-    await AsyncStorage.setItem(STORAGE_KEYS.BIOMETRIC_ENABLED, 'true');
+    console.log('🔐 [enableBiometricForMasterPassword] Storing biometric status...');
+    await storeBiometricStatus(true);
     console.log('✅ Biometric storage enabled for master password');
 
     return { success: true };
@@ -212,12 +215,10 @@ export const getMasterPasswordFromBiometric = async (): Promise<{
   try {
     // Fast check: is biometric enabled?
     const checkStart = Date.now();
-    const biometricEnabled = await AsyncStorage.getItem(
-      STORAGE_KEYS.BIOMETRIC_ENABLED,
-    );
+    const biometricStatus = await getBiometricStatus();
     console.log(`🔍 [Biometric] Enabled check: ${Date.now() - checkStart}ms`);
 
-    if (biometricEnabled !== 'true') {
+    if (!biometricStatus) {
       console.log(`❌ [Biometric] Not enabled (${Date.now() - startTime}ms)`);
       return { success: false, error: 'Biometric authentication not enabled' };
     }
@@ -451,6 +452,42 @@ export const clearAllStoredData = async (): Promise<{
 // Check if master password is set
 export const isMasterPasswordSet = async (): Promise<boolean> => {
   try {
+    // First check Firebase if user is authenticated
+    const { getCurrentUser, getFirebaseFirestore } = await import('./firebase');
+    const currentUser = getCurrentUser();
+    
+    if (currentUser?.uid) {
+      try {
+        const { doc, getDoc } = await import('firebase/firestore');
+        const firestore = getFirebaseFirestore();
+        if (firestore) {
+          const userDocRef = doc(firestore, 'users', currentUser.uid);
+          const userDoc = await getDoc(userDocRef);
+          
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            // Check if encrypted master password exists in Firebase
+            if (data?.encryptedMasterPassword) {
+              return true;
+            }
+          }
+        }
+      } catch (fbError) {
+        console.warn('Error checking Firebase for master password:', fbError);
+        // Fall through to local storage check
+      }
+    }
+    
+    // Fallback: check local storage for new PIN-based setup
+    const { STATIC_MP_KEYS } = await import('./staticMasterPasswordService');
+    const pinSetupComplete = await AsyncStorage.getItem(
+      STATIC_MP_KEYS.PIN_SETUP_COMPLETE,
+    );
+    if (pinSetupComplete === 'true') {
+      return true;
+    }
+
+    // Legacy: check old password hash
     const passwordHash = await AsyncStorage.getItem(
       STORAGE_KEYS.MASTER_PASSWORD_HASH,
     );
@@ -464,22 +501,49 @@ export const isMasterPasswordSet = async (): Promise<boolean> => {
 // Biometric authentication management
 export const storeBiometricStatus = async (enabled: boolean): Promise<void> => {
   try {
+    const stringValue = enabled ? 'true' : 'false';
+    console.log(`🔐 [storeBiometricStatus] Storing enabled=${enabled} as "${stringValue}"`);
     await AsyncStorage.setItem(
       STORAGE_KEYS.BIOMETRIC_ENABLED,
-      JSON.stringify(enabled),
+      stringValue,
     );
+    console.log(`✅ [storeBiometricStatus] Successfully stored`);
+    
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Verify the value was actually stored (non-blocking verification)
+    try {
+      const verification = await AsyncStorage.getItem(STORAGE_KEYS.BIOMETRIC_ENABLED);
+      if (verification === stringValue) {
+        console.log(`🔐 [storeBiometricStatus] Verification successful - value is: "${verification}"`);
+      } else {
+        console.warn(`⚠️ [storeBiometricStatus] VERIFICATION ISSUE! Expected "${stringValue}" but got "${verification}"`);
+      }
+    } catch (verificationError) {
+      console.warn(`⚠️ [storeBiometricStatus] Verification check failed:`, verificationError);
+    }
   } catch (error) {
-    console.error('Failed to store biometric status:', error);
-    // Silently fail - this is a non-critical operation
+    console.error('❌ Failed to store biometric status:', error);
   }
 };
 
 export const getBiometricStatus = async (): Promise<boolean> => {
   try {
     const status = await AsyncStorage.getItem(STORAGE_KEYS.BIOMETRIC_ENABLED);
-    return status ? JSON.parse(status) : false;
+    console.log(`🔐 [getBiometricStatus] Retrieved raw value: "${status}"`);
+    
+    if (status === 'true') {
+      console.log(`🔐 [getBiometricStatus] Parsed result: true`);
+      return true;
+    } else if (status === 'false') {
+      console.log(`🔐 [getBiometricStatus] Parsed result: false`);
+      return false;
+    } else {
+      console.log(`🔐 [getBiometricStatus] No valid status found (null/undefined), returning false`);
+      return false;
+    }
   } catch (error) {
-    console.error('Failed to get biometric status:', error);
+    console.error('❌ Failed to get biometric status:', error);
     return false;
   }
 };
@@ -567,11 +631,21 @@ export class SecureStorageService {
   }
 
   public async storeBiometricStatus(enabled: boolean): Promise<void> {
-    return storeBiometricStatus(enabled);
+    try {
+      return await storeBiometricStatus(enabled);
+    } catch (error) {
+      console.error('❌ SecureStorageService: Failed to store biometric status:', error);
+      throw error;
+    }
   }
 
   public async getBiometricStatus(): Promise<boolean> {
-    return getBiometricStatus();
+    try {
+      return await getBiometricStatus();
+    } catch (error) {
+      console.error('❌ SecureStorageService: Failed to get biometric status:', error);
+      return false;
+    }
   }
 
   /**

@@ -18,16 +18,18 @@ import {
   logout,
   setMasterPasswordConfigured,
   setBiometricEnabled,
+  setHasCompletedSessionAuth,
+  setShouldNavigateToUnlock,
+  setIsInSetupFlow,
+  setShouldAutoTriggerBiometric,
 } from '../store/slices/authSlice';
 import { isMasterPasswordSet } from '../services/secureStorageService';
 import { useBiometric } from '../hooks/useBiometric';
 import { useSession } from '../hooks/useSession';
 import { useTheme } from '../contexts/ThemeContext';
-import { BiometricPrompt } from '../components/BiometricPrompt';
-import { MasterPasswordPrompt } from '../components/MasterPasswordPrompt';
-import ConfirmDialog from '../components/ConfirmDialog';
 import { useUserActivity } from '../hooks/useUserActivity';
 import { NavigationPersistenceService } from '../services/navigationPersistenceService';
+import { cacheEncryptedMasterPasswordToAsyncStorage } from '../services/staticMasterPasswordService';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -43,7 +45,6 @@ interface AppNavigatorProps {
 export const AppNavigator: React.FC<AppNavigatorProps> = ({
   navigationRef,
 }) => {
-  // console.log('🔄 AppNavigator: Component rendering...');
   const dispatch = useAppDispatch();
   const { theme } = useTheme();
   const navPersistence = NavigationPersistenceService.getInstance();
@@ -51,53 +52,52 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
     isAuthenticated,
     masterPasswordConfigured,
     biometricEnabled,
-    session,
     isInSetupFlow,
+    shouldNavigateToUnlock,
   } = useAppSelector(state => state.auth);
   const { security } = useAppSelector(state => state.settings);
-  // console.log('🔄 AppNavigator: Redux state:', {
-  //   isAuthenticated,
-  //   masterPasswordConfigured,
-  //   biometricEnabled,
-  //   session,
-  // });
 
-  // Biometric and session hooks - ALWAYS call these
-  const { isAvailable: biometricAvailable } = useBiometric();
+  const {
+    isAvailable: biometricAvailable,
+    authenticate: authenticateBiometric,
+  } = useBiometric();
+  const { startSession, endSession } = useSession();
 
-  const { isActive: sessionActive, startSession, endSession } = useSession();
+  // 🔍 DEBUG: Log biometric availability
+  React.useEffect(() => {
+    console.log(
+      `🔍 [AppNavigator] Biometric hardware check: biometricAvailable=${biometricAvailable}`,
+    );
+  }, [biometricAvailable]);
 
-  // User activity tracking for proper auto-lock based on interaction
+  const [appReady, setAppReady] = useState(false);
+  const [hasAuthenticatedInSession, setHasAuthenticatedInSession] =
+    useState(false);
+  const isAuthenticatingRef = React.useRef(false); // Prevent duplicate authentication attempts
+  const [initialAuthComplete, setInitialAuthComplete] = useState(false);
+  const [biometricStatusChecked, setBiometricStatusChecked] = useState(false);
+  const appStateRef = React.useRef(AppState.currentState);
+  const prevDecisionRef = React.useRef<string>(''); // Track previous navigation decision
+  const prevNeedsUnlockRef = React.useRef<boolean | null>(null); // Track previous needsUnlock state
+  const isResumingFromBackgroundRef = React.useRef(false); // Track if app is resuming from background
+
   const { updateConfig: updateActivityConfig, panResponder } = useUserActivity(
     async () => {
-      // Auto-lock callback when user is inactive
       console.log('🎯 🔒 Auto-lock triggered due to user inactivity');
-
-      // Skip auto-lock if user is in setup flow (master password or biometric setup)
       if (isInSetupFlow) {
         console.log('🎯 🔒 Auto-lock: Skipping - user is in setup flow');
         return;
       }
-
       if (
         isAuthenticated &&
         masterPasswordConfigured &&
         biometricEnabled &&
         biometricAvailable
       ) {
-        // Save navigation state immediately to restore after unlock
-        // This ensures the current screen is preserved during lock/unlock
         try {
           const currentState = navigationRef?.current?.getRootState();
           if (currentState) {
-            console.log('🎯 🔒 Auto-lock: Saving navigation state for restore');
-            const path = navPersistence.getNavigationPath(currentState);
-            console.log(
-              '🎯 🔒 Current route:',
-              path?.map(p => p.screenName).join(' -> ') || 'Unknown',
-            );
             await navPersistence.saveNavigationState(currentState);
-            console.log('🎯 🔒 Auto-lock: Navigation state saved successfully');
           }
         } catch (error) {
           console.error(
@@ -105,158 +105,46 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
             error,
           );
         }
-
-        // Trigger biometric authentication requirement (no session extension needed)
-        // Session remains valid (7 days), only user interaction is locked
-        console.log('🎯 🔒 Auto-lock: Requiring biometric authentication');
         setHasAuthenticatedInSession(false);
-        setBiometricCancelled(false);
+        dispatch(setHasCompletedSessionAuth(false));
       }
     },
     {
-      inactivityTimeout: security.autoLockTimeout || 5, // Use setting value, default to 5 minutes
+      inactivityTimeout: security.autoLockTimeout || 5,
       trackUserInteraction: true,
     },
   );
 
-  // App state - ALWAYS declare these
-  const [appReady, setAppReady] = useState(true);
-  const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
-  const [sessionTimeoutVisible, setSessionTimeoutVisible] = useState(false);
-  const [biometricCancelled, setBiometricCancelled] = useState(false);
-  // Start with hasAuthenticatedInSession = true on app start to prevent biometric prompt on restart
-  // This will be set to false when user explicitly logs in (fresh login)
-  const [hasAuthenticatedInSession, setHasAuthenticatedInSession] =
-    useState(true);
-  const [initialAuthComplete, setInitialAuthComplete] = useState(false);
-  const [showMasterPasswordPrompt, setShowMasterPasswordPrompt] =
-    useState(false);
-  const [isCheckingSessionOnResume, setIsCheckingSessionOnResume] =
-    useState(false);
-
-  // Track biometric authentication failure attempts
-  // Each session allows ~5 fingerprint attempts + 1 PIN attempt = ~6 total attempts
-  // 2 sessions = ~12 total attempts before forcing master password
-  const [biometricFailCount, setBiometricFailCount] = useState(0);
-  const MAX_BIOMETRIC_ATTEMPTS = 2;
-  const appStateRef = React.useRef(AppState.currentState);
-
-  const [confirmDialog, setConfirmDialog] = useState<{
-    visible: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-    confirmText?: string;
-    confirmStyle?: 'default' | 'destructive';
-  }>({
-    visible: false,
-    title: '',
-    message: '',
-    onConfirm: () => {},
-  });
-
-  // Use refs to track latest values without causing re-renders
   const stateRefs = React.useRef({
     isAuthenticated,
     masterPasswordConfigured,
-    biometricEnabled,
-    biometricAvailable,
     initialAuthComplete,
   });
 
-  // Update refs when values change
   React.useEffect(() => {
     stateRefs.current = {
       isAuthenticated,
       masterPasswordConfigured,
-      biometricEnabled,
-      biometricAvailable,
       initialAuthComplete,
     };
-  }, [
-    isAuthenticated,
-    masterPasswordConfigured,
-    biometricEnabled,
-    biometricAvailable,
-    initialAuthComplete,
-  ]);
+  }, [isAuthenticated, masterPasswordConfigured, initialAuthComplete]);
 
-  // Load initial auto-lock timeout from UserActivityService on first mount
-  // This ensures we preserve any existing user preference before Redux Persist was added
-  React.useEffect(() => {
-    const loadInitialTimeout = async () => {
-      try {
-        const AsyncStorage = (
-          await import('@react-native-async-storage/async-storage')
-        ).default;
-        const configStr = await AsyncStorage.getItem('user_activity_config');
-
-        if (configStr) {
-          const savedConfig = JSON.parse(configStr);
-          const savedTimeout = savedConfig.inactivityTimeout;
-
-          // If saved timeout differs from Redux default, update Redux to match
-          if (savedTimeout && savedTimeout !== security.autoLockTimeout) {
-            // console.log(
-            //   '🎯 Loading existing auto-lock timeout from UserActivityService:',
-            //   savedTimeout,
-            //   'minutes (Redux has:',
-            //   security.autoLockTimeout,
-            //   'minutes)',
-            // );
-
-            // Import updateSecuritySettings dynamically to avoid circular dependency
-            const { updateSecuritySettings } = await import(
-              '../store/slices/settingsSlice'
-            );
-            dispatch(updateSecuritySettings({ autoLockTimeout: savedTimeout }));
-
-            // console.log(
-            //   '🎯 Updated Redux to match UserActivityService:',
-            //   savedTimeout,
-            //   'minutes',
-            // );
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load initial activity timeout:', error);
-      }
-    };
-
-    loadInitialTimeout();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount
-
-  // Sync auto-lock timeout from settings to user activity service
   React.useEffect(() => {
     const syncActivityTimeout = async () => {
       try {
-        // console.log(
-        //   '🎯 Syncing activity timeout from settings:',
-        //   security.autoLockTimeout,
-        //   'minutes',
-        // );
         await updateActivityConfig({
           inactivityTimeout: security.autoLockTimeout,
         });
-        // console.log(
-        //   '🎯 Updated activity timeout to:',
-        //   security.autoLockTimeout,
-        //   'minutes',
-        // );
       } catch (error) {
         console.error('Failed to update activity timeout:', error);
       }
     };
-
     syncActivityTimeout();
   }, [security.autoLockTimeout, updateActivityConfig]);
 
   useEffect(() => {
-    // Listen for authentication state changes
     const unsubscribe = onAuthStateChanged(async user => {
       if (user) {
-        // User is signed in
         dispatch(
           loginSuccess({
             uid: user.uid,
@@ -266,84 +154,67 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
           }),
         );
 
-        // Only reset biometric cancelled flag if this is a fresh login (not auto-restore)
-        // We detect this by checking if the user was previously not authenticated AND initial auth was already complete
-        // This prevents triggering biometric on app restart when Firebase restores the session
-        if (!isAuthenticated && initialAuthComplete) {
-          // console.log(
-          //   '🔐 Fresh login detected - resetting biometric cancelled flag and requiring biometric',
-          // );
-          setBiometricCancelled(false);
-          setHasAuthenticatedInSession(false); // Require biometric authentication after fresh login
-        } else if (!isAuthenticated && !initialAuthComplete) {
-          // On app restart, ALWAYS require biometric authentication
-          // This provides better security and immediate user verification
-          console.log('🔐 App restart: Requiring biometric authentication');
+        if (!initialAuthComplete) {
+          console.log(
+            '🔐 App restart detected (cold start). Requiring authentication.',
+          );
           setHasAuthenticatedInSession(false);
-        } else {
-          // console.log(
-          //   '🔐 Auth state change while already authenticated - keeping biometric state',
-          // );
+          dispatch(setHasCompletedSessionAuth(false));
         }
 
-        // Check master password and biometric status
         try {
           const masterPasswordSet = await isMasterPasswordSet();
-
-          // Check actual biometric status from storage
           const { getBiometricStatus } = await import(
             '../services/secureStorageService'
           );
           const biometricStatus = await getBiometricStatus();
 
+          console.log(
+            `🔐 [AppNavigator] Biometric initialization - stored value: ${biometricStatus}, setting Redux...`,
+          );
+
           dispatch(setMasterPasswordConfigured(masterPasswordSet));
           dispatch(setBiometricEnabled(biometricStatus));
+          setBiometricStatusChecked(true);
 
-          // console.log(
-          //   'Login initialized - biometric status from storage:',
-          //   biometricStatus,
-          // );
+          console.log(
+            `🔐 [AppNavigator] Redux biometric state set to: ${biometricStatus}`,
+          );
 
-          // Start session after successful authentication
           if (masterPasswordSet) {
-            // console.log('🔐 Starting session after login...');
             await startSession();
-            // console.log('🔐 Session started, sessionActive should be set now');
-          } else {
-            // console.log('🔐 Master password not set - skipping session start');
           }
 
-          // Mark initial auth as complete IMMEDIATELY to show biometric prompt
-          // Don't wait for password cache warming
-          // console.log('🔐 Marking initial auth as complete');
+          // 🔒 BEFORE setting initialAuthComplete: if master password is set and this is cold start, require unlock
+          const wasColdStart = !initialAuthComplete;
+
           setInitialAuthComplete(true);
 
-          // Pre-warm static master password cache in background (non-blocking)
-          // This avoids delay when PasswordsScreen loads
+          if (wasColdStart && masterPasswordSet) {
+            console.log(
+              '🔒 [AppNavigator] Cold start detected - will show unlock screen with biometric auto-trigger',
+            );
+            dispatch(setShouldNavigateToUnlock(true));
+            dispatch(setShouldAutoTriggerBiometric(true));
+          }
+
           if (masterPasswordSet) {
             console.log(
               '🔥 [AppNavigator] Pre-warming static master password cache...',
             );
-
-            // Import and generate in background (don't await - let it run async)
             import('../services/staticMasterPasswordService')
-              .then(({ getEffectiveMasterPassword }) => {
-                // Start timing AFTER import completes
-                const startTime = Date.now();
-                return getEffectiveMasterPassword().then(result => ({
-                  result,
-                  startTime,
-                }));
-              })
-              .then(({ result, startTime }) => {
-                const duration = Date.now() - startTime;
+              .then(({ getEffectiveMasterPassword }) =>
+                getEffectiveMasterPassword(),
+              )
+              .then(result => {
                 if (result.success) {
                   console.log(
-                    `✅ [AppNavigator] Static master password cached (${duration}ms)`,
+                    '✅ [AppNavigator] Static master password cached',
                   );
                 } else {
-                  console.warn(
-                    '⚠️ [AppNavigator] Failed to pre-warm cache:',
+                  // This is expected on cold start before PIN unlock - not a warning
+                  console.log(
+                    'ℹ️ [AppNavigator] Pre-warm cache skipped:',
                     result.error,
                   );
                 }
@@ -354,61 +225,60 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
           }
         } catch (error) {
           console.error('Failed to check security settings:', error);
+          setBiometricStatusChecked(true);
           setInitialAuthComplete(true);
         }
       } else {
-        // User is signed out
+        // 🔥 FIX: Don't logout user if this is triggered by app resuming from background
+        // Firebase onAuthStateChanged can temporarily return null when app resumes
+        if (isResumingFromBackgroundRef.current) {
+          console.log(
+            '⚠️ [AppNavigator] onAuthStateChanged(null) detected during app resume - ignoring to prevent logout',
+          );
+          isResumingFromBackgroundRef.current = false; // Reset flag
+          return;
+        }
+
+        console.log(
+          '🔴 [AppNavigator] User logged out - clearing session and navigating to auth',
+        );
         await endSession();
         dispatch(logout());
         setInitialAuthComplete(false);
-        setBiometricCancelled(false);
         setHasAuthenticatedInSession(false);
+        dispatch(setHasCompletedSessionAuth(false));
+        setBiometricStatusChecked(true);
       }
-
       setAppReady(true);
     });
-
-    // Cleanup subscription on unmount
     return unsubscribe;
-  }, [
-    dispatch,
-    startSession,
-    endSession,
-    biometricEnabled,
-    biometricCancelled,
-    isAuthenticated,
-    initialAuthComplete,
-  ]);
+  }, [dispatch, startSession, endSession, initialAuthComplete]);
 
-  // App state tracking - Save navigation when app resigns active
   useEffect(() => {
-    const handleAppStateChange = (nextAppState: any) => {
-      // console.log(
-      //   `🔄 App state changed: ${appStateRef.current} → ${nextAppState}`,
-      // );
+    console.log('🔍 [AppNavigator] ===== REGISTERING AppState listener =====');
+    console.log(`🔍 [AppNavigator] Current AppState: ${appStateRef.current}`);
+    console.log(
+      `🔍 [AppNavigator] biometricAvailable at registration: ${biometricAvailable}`,
+    );
 
-      // IMPROVED: Save navigation state when app goes to background
-      // This ensures we can restore it after biometric unlock
-      // Skip if user is in setup flow (master password or biometric setup)
+    const handleAppStateChange = (nextAppState: any) => {
+      console.log(
+        `🔍 [AppNavigator] ===== AppState CHANGED: ${appStateRef.current} -> ${nextAppState} =====`,
+      );
+      console.log(
+        `🔍 [AppNavigator] State check: authenticated=${stateRefs.current.isAuthenticated}, masterPwdConfig=${stateRefs.current.masterPasswordConfigured}, initialAuthComplete=${stateRefs.current.initialAuthComplete}, isInSetupFlow=${isInSetupFlow}, hasAuthInSession=${hasAuthenticatedInSession}, biometricAvailable=${biometricAvailable}`,
+      );
+
       if (nextAppState === 'background' || nextAppState === 'inactive') {
         if (
           stateRefs.current.isAuthenticated &&
           stateRefs.current.masterPasswordConfigured &&
           stateRefs.current.initialAuthComplete &&
-          !isInSetupFlow // Skip if in setup flow
+          !isInSetupFlow
         ) {
-          // Save navigation state BEFORE app goes background
           try {
             const currentState = navigationRef?.current?.getRootState();
             if (currentState) {
-              console.log(
-                '🗺️ 📱 App resigning active - saving navigation state',
-              );
-              const path = navPersistence.getNavigationPath(currentState);
-              console.log(
-                '🗺️ Saved route:',
-                path?.map(p => p.screenName).join(' -> ') || 'Unknown',
-              );
               navPersistence.saveNavigationState(currentState).catch(error => {
                 console.error(
                   'Failed to save navigation on background:',
@@ -420,215 +290,192 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
             console.error('Error saving navigation on app background:', error);
           }
 
-          setIsCheckingSessionOnResume(true);
+          // 🔒 ALWAYS clear session authentication when app goes to background
+          // This ensures biometric is required every time user returns to the app
+          console.log(
+            '🔒 [AppNavigator] App backgrounded - clearing session auth flag',
+          );
+          setHasAuthenticatedInSession(false);
+          dispatch(setHasCompletedSessionAuth(false));
+        }
+      } else if (nextAppState === 'active') {
+        console.log(
+          '🔍 [AppNavigator] Detected active state - checking conditions...',
+        );
+
+        // 🔍 Check if this is a RESUME (was background before) or COLD START (first time)
+        const isResume =
+          appStateRef.current === 'background' ||
+          appStateRef.current === 'inactive';
+        console.log(`🔍 [AppNavigator] Is resume from background: ${isResume}`);
+
+        // 🔥 FIX: Set flag to prevent onAuthStateChanged from logging out user during resume
+        if (isResume) {
+          isResumingFromBackgroundRef.current = true;
+          // Reset flag after 2 seconds (enough time for Firebase to reconnect)
+          setTimeout(() => {
+            isResumingFromBackgroundRef.current = false;
+          }, 2000);
+        }
+
+        // 🔥 NEW: When app comes to foreground, check if we need to require unlock
+        if (
+          stateRefs.current.isAuthenticated &&
+          stateRefs.current.masterPasswordConfigured &&
+          stateRefs.current.initialAuthComplete &&
+          !isInSetupFlow
+        ) {
+          console.log(
+            '🔍 [AppNavigator] App resumed - checking if unlock is required',
+          );
+          // If user hasn't authenticated in this session, require unlock
+          // IMPORTANT: Only trigger on RESUME, not on cold start
+          if (
+            !hasAuthenticatedInSession &&
+            !isAuthenticatingRef.current &&
+            isResume
+          ) {
+            console.log(
+              '🔍 [AppNavigator] User needs authentication (resume from background)',
+            );
+
+            // 🔥 ALWAYS trigger biometric if hardware available (ignore storage setting)
+            if (biometricAvailable) {
+              console.log(
+                '🔍 [AppNavigator] Biometric hardware available - triggering authentication...',
+              );
+              isAuthenticatingRef.current = true;
+
+              // Small delay to ensure Activity is ready (Android requirement)
+              setTimeout(async () => {
+                try {
+                  const result = await authenticateBiometric(
+                    'Unlock your vault',
+                  );
+                  if (result) {
+                    console.log(
+                      '✅ [AppNavigator] Biometric authentication successful',
+                    );
+
+                    // 🔥 CRITICAL: Update all auth flags FIRST before any async operations
+                    // This ensures navigation stack updates immediately
+                    console.log(
+                      '� [AppNavigator] Updating auth flags to return to Main stack...',
+                    );
+                    setHasAuthenticatedInSession(true);
+                    dispatch(setHasCompletedSessionAuth(true));
+                    dispatch(setShouldNavigateToUnlock(false));
+                    dispatch(setIsInSetupFlow(false));
+
+                    // Start session (async, but auth flags already set)
+                    console.log('🔄 [AppNavigator] Starting session...');
+                    await startSession();
+                    console.log('✅ [AppNavigator] Session started');
+
+                    // Cache encrypted master password for Android Native Autofill
+                    console.log(
+                      '💾 [AppNavigator] Caching encrypted MP for autofill...',
+                    );
+                    const cacheResult =
+                      await cacheEncryptedMasterPasswordToAsyncStorage();
+                    if (cacheResult.success) {
+                      console.log(
+                        '✅ [AppNavigator] Encrypted MP cached successfully',
+                      );
+                    } else {
+                      console.warn(
+                        '⚠️ [AppNavigator] Failed to cache encrypted MP:',
+                        cacheResult.error,
+                      );
+                    }
+                  } else {
+                    console.log(
+                      '❌ [AppNavigator] Biometric authentication failed - navigating to unlock screen',
+                    );
+                    dispatch(setShouldNavigateToUnlock(true));
+                    dispatch(setShouldAutoTriggerBiometric(false));
+                  }
+                } catch (error) {
+                  console.error('❌ [AppNavigator] Biometric error:', error);
+                  dispatch(setShouldNavigateToUnlock(true));
+                  dispatch(setShouldAutoTriggerBiometric(false));
+                } finally {
+                  isAuthenticatingRef.current = false;
+                }
+              }, 300);
+            } else {
+              // No biometric hardware, navigate to unlock screen (PIN/Master Password)
+              console.log(
+                '🔍 [AppNavigator] Biometric hardware not available - setting shouldNavigateToUnlock=true',
+              );
+              dispatch(setShouldNavigateToUnlock(true));
+              dispatch(setShouldAutoTriggerBiometric(false));
+              setHasAuthenticatedInSession(false);
+              dispatch(setHasCompletedSessionAuth(false));
+            }
+          } else if (hasAuthenticatedInSession) {
+            console.log(
+              '🔍 [AppNavigator] User already authenticated in session - no unlock needed',
+            );
+          } else if (isAuthenticatingRef.current) {
+            console.log(
+              '🔍 [AppNavigator] Authentication already in progress - skipping',
+            );
+          }
+        } else {
+          console.log(
+            '🔍 [AppNavigator] Conditions not met for unlock check:',
+            {
+              isAuthenticated: stateRefs.current.isAuthenticated,
+              masterPasswordConfigured:
+                stateRefs.current.masterPasswordConfigured,
+              initialAuthComplete: stateRefs.current.initialAuthComplete,
+              isInSetupFlow,
+            },
+          );
         }
       }
-
-      // Just track app state, actual auto-lock is handled by UserActivityService
-      if (nextAppState === 'active' && appStateRef.current !== 'active') {
-        // console.log(
-        //   '🔄 App became active - user activity will handle auto-lock logic',
-        // );
-        // Don't record interaction here - let UserActivityService handle it
-        // This prevents resetting the timer when app comes from background
-        // The service will check if enough time has passed and trigger lock if needed
-      }
-
-      // Clear checking flag when app becomes active
-      if (nextAppState === 'active' && appStateRef.current !== 'active') {
-        setTimeout(() => {
-          setIsCheckingSessionOnResume(false);
-        }, 500);
-      }
-
       appStateRef.current = nextAppState;
     };
-
     const subscription = AppState.addEventListener(
       'change',
       handleAppStateChange,
     );
     return () => subscription?.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Add delay state to prevent immediate biometric prompt on app resume
-  const [_biometricPromptDelay, _setBiometricPromptDelay] = useState(false);
-
-  // Track if user is in sensitive operations (like adding/editing passwords)
-  const [_isInSensitiveOperation, _setIsInSensitiveOperation] = useState(false);
-
-  // Track when conditions change to trigger biometric authentication
-  const shouldShowBiometric = React.useMemo(() => {
-    const result =
-      isAuthenticated &&
-      masterPasswordConfigured &&
-      biometricEnabled &&
-      biometricAvailable &&
-      !session.expired &&
-      !biometricCancelled &&
-      !hasAuthenticatedInSession &&
-      sessionActive !== undefined &&
-      !sessionTimeoutVisible &&
-      initialAuthComplete &&
-      !isInSetupFlow; // Don't show biometric during setup flow
-
-    console.log('🔐 shouldShowBiometric calculated:', {
-      result,
-      isAuthenticated,
-      masterPasswordConfigured,
-      biometricEnabled,
-      biometricAvailable,
-      sessionExpired: session.expired,
-      biometricCancelled,
-      hasAuthenticatedInSession,
-      sessionActive,
-      sessionTimeoutVisible,
-      initialAuthComplete,
-      isInSetupFlow,
-    });
-
-    return result;
   }, [
-    isAuthenticated,
-    masterPasswordConfigured,
-    biometricEnabled,
-    biometricAvailable,
-    session.expired,
-    biometricCancelled,
-    hasAuthenticatedInSession,
-    sessionActive,
-    sessionTimeoutVisible,
-    initialAuthComplete,
     isInSetupFlow,
-  ]);
-
-  // Handle biometric prompt display
-  useEffect(() => {
-    console.log('🔐 Biometric prompt effect triggered:', {
-      shouldShowBiometric,
-      showBiometricPrompt,
-      timestamp: new Date().toLocaleTimeString(),
-    });
-
-    if (shouldShowBiometric && !showBiometricPrompt) {
-      // Show modal immediately using synchronous state update
-      console.log('🔐 [AppNavigator] Showing biometric prompt immediately');
-
-      // Use requestAnimationFrame to ensure modal shows on next frame (faster than setTimeout)
-      requestAnimationFrame(() => {
-        setShowBiometricPrompt(true);
-      });
-
-      // Move async operations to background (non-blocking)
-      (async () => {
-        try {
-          const currentState = navigationRef?.current?.getRootState();
-          if (currentState) {
-            await navPersistence.saveNavigationState(currentState);
-          }
-        } catch (error) {
-          console.error('Failed to save navigation state:', error);
-        }
-      })();
-    } else if (!shouldShowBiometric && showBiometricPrompt) {
-      // Conditions no longer met but prompt is showing - hide it
-      // console.log('❌ Hiding biometric prompt - conditions no longer met');
-      setShowBiometricPrompt(false);
-    } else if (showBiometricPrompt) {
-      // console.log('Not showing biometric prompt - already showing');
-    } else {
-      // Log why we're not showing the prompt
-      if (!isAuthenticated) {
-        console.log('❌ Not showing biometric prompt - user not authenticated');
-        return;
-      }
-      // if (!masterPasswordConfigured) {
-      //   console.log(
-      //     'Not showing biometric prompt - master password not configured',
-      //   );
-      // } else if (!biometricEnabled) {
-      //   console.log('Not showing biometric prompt - biometric not enabled');
-      // } else if (!biometricAvailable) {
-      //   console.log('Not showing biometric prompt - biometric not available');
-      // } else if (session.expired) {
-      //   console.log('Not showing biometric prompt - session expired');
-      // } else if (biometricCancelled) {
-      //   console.log('Not showing biometric prompt - user cancelled');
-      // } else if (hasAuthenticatedInSession) {
-      //   console.log(
-      //     'Not showing biometric prompt - already authenticated in this session',
-      //   );
-      // } else if (sessionActive === undefined) {
-      //   console.log('Not showing biometric prompt - session not initialized');
-      // } else if (sessionTimeoutVisible) {
-      //   console.log('Not showing biometric prompt - session timeout visible');
-      // } else if (!initialAuthComplete) {
-      //   console.log('Not showing biometric prompt - initial auth not complete');
-      // }
-    }
-  }, [
-    shouldShowBiometric,
-    isAuthenticated,
-    masterPasswordConfigured,
-    biometricEnabled,
-    biometricAvailable,
-    session.expired,
-    biometricCancelled,
-    hasAuthenticatedInSession,
-    sessionActive,
-    sessionTimeoutVisible,
-    showBiometricPrompt,
-    initialAuthComplete,
     navPersistence,
     navigationRef,
-  ]);
-
-  // Reset authentication flag when user logs in (only when transitioning to logged in state)
-  const prevAuthRef = React.useRef(isAuthenticated && masterPasswordConfigured);
-  useEffect(() => {
-    const currentlyLoggedIn = isAuthenticated && masterPasswordConfigured;
-    if (currentlyLoggedIn && !prevAuthRef.current && initialAuthComplete) {
-      // Just became logged in AFTER initial auth - this is a fresh login/setup
-      // Don't trigger on app restart (when initialAuthComplete is still false)
-      console.log(
-        '🔐 User just logged in (fresh) - require biometric authentication',
-      );
-
-      // Reset biometric cancelled flag on fresh login
-      setBiometricCancelled(false);
-      setHasAuthenticatedInSession(false);
-
-      // Start session if not already started
-      if (!sessionActive) {
-        // console.log('🔐 Starting session after master password setup');
-        startSession().catch(error => {
-          console.error('Failed to start session:', error);
-        });
-      }
-    }
-    prevAuthRef.current = currentlyLoggedIn;
-  }, [
-    isAuthenticated,
-    masterPasswordConfigured,
-    sessionActive,
+    hasAuthenticatedInSession,
+    biometricAvailable,
+    authenticateBiometric,
+    dispatch,
     startSession,
-    initialAuthComplete,
   ]);
 
-  // Handle session expiry - Auto logout without warning modal
-  useEffect(() => {
-    if (session.expired && isAuthenticated) {
-      // console.log('🔐 Session expired - Auto logout without warning');
-      // Force logout immediately on session expiry
-      dispatch(logout());
-      setShowBiometricPrompt(false);
-      setSessionTimeoutVisible(false);
-    }
-  }, [session.expired, isAuthenticated, dispatch]);
+  // Calculate needsUnlock BEFORE any early returns
+  // NEW: Only require unlock if user has explicitly chosen to unlock (via CredentialOptionsScreen)
+  // This prevents premature navigation to unlock screen before user makes a choice
+  const needsUnlock =
+    isAuthenticated &&
+    masterPasswordConfigured &&
+    !hasAuthenticatedInSession &&
+    initialAuthComplete &&
+    shouldNavigateToUnlock; // CRITICAL: Only unlock when explicitly requested
 
-  // Loading screen while app initializes
-  if (!appReady) {
+  // Clear navigation state when user needs to unlock (must be before early return)
+  useEffect(() => {
+    if (needsUnlock && appReady && biometricStatusChecked) {
+      console.log(
+        '� [DEBUG_NAV STEP 5] needsUnlock=true detected - clearing saved navigation state',
+      );
+      navPersistence.clearNavigationState().catch(error => {
+        console.error('Failed to clear navigation state:', error);
+      });
+    }
+  }, [needsUnlock, appReady, biometricStatusChecked, navPersistence]);
+
+  if (!appReady || !biometricStatusChecked) {
     return (
       <View
         style={[styles.loadingContainer, { backgroundColor: theme.background }]}
@@ -641,30 +488,73 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
     );
   }
 
-  // Determine if we should block main navigator access
-  // Show overlay immediately when authentication is required, even before prompts are shown
-  // This prevents the flash of content when session expires or app resumes from background
-  // Don't block if user is in setup flow (master password or biometric setup)
-  const shouldBlockMainAccess =
-    isAuthenticated &&
-    masterPasswordConfigured &&
-    !hasAuthenticatedInSession &&
-    initialAuthComplete &&
-    !isInSetupFlow && // Don't block during setup flow
-    (showBiometricPrompt ||
-      showMasterPasswordPrompt ||
-      shouldShowBiometric ||
-      isCheckingSessionOnResume);
+  // CRITICAL: Determine if user should see Auth stack
+  // Show Auth if:
+  // 1. Not authenticated (!isAuthenticated)
+  // 2. Master password not configured (!masterPasswordConfigured)
+  // 3. Needs unlock (needsUnlock = true when shouldNavigateToUnlock = true)
+  // 4. In setup/credential selection flow (isInSetupFlow = true)
+  //    → This handles reinstall case: user logged in, has master password on Firebase,
+  //      LoginScreen sets isInSetupFlow=true and navigates to CredentialOptions
+  const shouldShowAuthStack =
+    !isAuthenticated ||
+    !masterPasswordConfigured ||
+    needsUnlock ||
+    isInSetupFlow; // ✅ FIXED: Use isInSetupFlow instead of complex condition
+
+  // Track previous decision and only log when it changes
+  const currentDecision = shouldShowAuthStack ? 'Auth' : 'Main';
+
+  if (prevDecisionRef.current !== currentDecision) {
+    console.log('🔍 [DEBUG_NAV STEP 1] AppNavigator decision CHANGED:');
+    console.log('  isAuthenticated:', isAuthenticated);
+    console.log('  masterPasswordConfigured:', masterPasswordConfigured);
+    console.log('  hasAuthenticatedInSession:', hasAuthenticatedInSession);
+    console.log('  initialAuthComplete:', initialAuthComplete);
+    console.log('  isInSetupFlow:', isInSetupFlow);
+    console.log('  shouldNavigateToUnlock:', shouldNavigateToUnlock);
+    console.log('  needsUnlock:', needsUnlock);
+    console.log('  shouldShowAuthStack:', shouldShowAuthStack);
+    console.log('  decision:', currentDecision);
+    console.log('  previousDecision:', prevDecisionRef.current || 'none');
+    prevDecisionRef.current = currentDecision;
+  }
 
   return (
     <View style={styles.container} {...panResponder.panHandlers}>
       <Stack.Navigator id={undefined} screenOptions={{ headerShown: false }}>
-        {!isAuthenticated || !masterPasswordConfigured ? (
-          <Stack.Screen
-            name="Auth"
-            component={AuthNavigator}
-            options={{ headerShown: false }}
-          />
+        {shouldShowAuthStack ? (
+          <Stack.Screen name="Auth">
+            {props => {
+              // Only log when needsUnlock actually changes to prevent log spam
+              if (prevNeedsUnlockRef.current !== needsUnlock) {
+                console.log(
+                  '🔍 [DEBUG_NAV STEP 6] Rendering AuthNavigator with needsUnlock CHANGED:',
+                  {
+                    previous: prevNeedsUnlockRef.current,
+                    current: needsUnlock,
+                  },
+                );
+                prevNeedsUnlockRef.current = needsUnlock;
+              }
+              return (
+                <AuthNavigator
+                  {...props}
+                  needsUnlock={needsUnlock}
+                  biometricEnabled={biometricEnabled}
+                  onUnlock={() => {
+                    console.log(
+                      '🔍 [DEBUG_NAV STEP 7] Unlock successful - setting session flags',
+                    );
+                    setHasAuthenticatedInSession(true);
+                    dispatch(setHasCompletedSessionAuth(true));
+                    dispatch(setShouldNavigateToUnlock(false)); // Reset navigation flag
+                    dispatch(setIsInSetupFlow(false)); // Reset setup flow flag
+                  }}
+                />
+              );
+            }}
+          </Stack.Screen>
         ) : (
           <Stack.Screen
             name="Main"
@@ -673,251 +563,6 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
           />
         )}
       </Stack.Navigator>
-
-      {/* Authentication Overlay - Blocks all content behind with opaque overlay */}
-      {shouldBlockMainAccess && (
-        <View style={styles.authOverlay}>
-          <View style={styles.authOverlayContent}>
-            <ActivityIndicator size="large" color={theme.primary} />
-            <Text style={styles.authOverlayText}>Authentication Required</Text>
-          </View>
-        </View>
-      )}
-
-      {/* Biometric Prompt Modal */}
-      <BiometricPrompt
-        visible={showBiometricPrompt}
-        onClose={async () => {
-          console.log('🔐 Biometric cancelled by user');
-
-          // Increment fail count
-          const newFailCount = biometricFailCount + 1;
-          setBiometricFailCount(newFailCount);
-          console.log(
-            `🔐 Biometric fail count: ${newFailCount}/${MAX_BIOMETRIC_ATTEMPTS}`,
-          );
-
-          setShowBiometricPrompt(false);
-          setBiometricCancelled(true);
-          setHasAuthenticatedInSession(false);
-
-          // Check if max attempts reached
-          if (newFailCount >= MAX_BIOMETRIC_ATTEMPTS) {
-            console.log(
-              '🔐 Max biometric attempts reached - forcing master password',
-            );
-            setConfirmDialog({
-              visible: true,
-              title: 'Too Many Failed Attempts',
-              message:
-                'For security reasons, please authenticate using your master password.',
-              confirmText: 'OK',
-              onConfirm: () => {
-                setConfirmDialog(prev => ({ ...prev, visible: false }));
-                setBiometricFailCount(0); // Reset counter
-                setShowMasterPasswordPrompt(true);
-              },
-            });
-          } else {
-            // Show master password prompt as fallback
-            setShowMasterPasswordPrompt(true);
-          }
-        }}
-        onSuccess={async () => {
-          console.log('🔐 Biometric authentication successful');
-
-          // Reset fail counter on success
-          setBiometricFailCount(0);
-
-          setShowBiometricPrompt(false);
-          setBiometricCancelled(false); // Reset flag on success
-          setHasAuthenticatedInSession(true); // Mark as authenticated in this session
-          setIsCheckingSessionOnResume(false); // Clear resume checking flag
-
-          // Update master password last verified timestamp
-          try {
-            const { updateMasterPasswordLastVerified } = await import(
-              '../services/secureStorageService'
-            );
-            await updateMasterPasswordLastVerified();
-          } catch (error) {
-            console.error('Failed to update master password timestamp:', error);
-          }
-
-          // Restart session after successful biometric authentication
-          // This ensures the session timer is reset and synchronized
-          startSession().catch(error => {
-            console.error('Failed to restart session:', error);
-          });
-
-          // Re-sync auto-lock timeout from settings after unlock
-          // This ensures the timer uses the current user setting and restarts the timer
-          try {
-            await updateActivityConfig({
-              inactivityTimeout: security.autoLockTimeout,
-              trackUserInteraction: true, // Ensure tracking is enabled
-            });
-            console.log(
-              '🎯 Re-synced auto-lock timeout after unlock:',
-              security.autoLockTimeout,
-              'minutes',
-            );
-          } catch (error) {
-            console.error(
-              'Failed to re-sync activity timeout after unlock:',
-              error,
-            );
-          }
-
-          // Trigger navigation restoration using the new service
-          // IMPROVED: Restore IMMEDIATELY without delay to prevent navigation reset
-          try {
-            await navPersistence.markForRestore();
-            console.log(
-              '🗺️ 🔓 Biometric success - restoring navigation IMMEDIATELY',
-            );
-
-            // Restore navigation IMMEDIATELY (no delay)
-            if (navigationRef?.current) {
-              await navPersistence.restoreNavigation(navigationRef);
-            } else {
-              console.warn('🗺️ navigationRef not available for restoration');
-            }
-          } catch (error) {
-            console.error('Failed to restore navigation after unlock:', error);
-          }
-        }}
-        onError={async _error => {
-          console.error('🔐 Biometric authentication error:', _error);
-
-          // Increment fail count
-          const newFailCount = biometricFailCount + 1;
-          setBiometricFailCount(newFailCount);
-          console.log(
-            `🔐 Biometric fail count: ${newFailCount}/${MAX_BIOMETRIC_ATTEMPTS}`,
-          );
-
-          setShowBiometricPrompt(false);
-          setBiometricCancelled(true);
-          setHasAuthenticatedInSession(false);
-
-          // Check if max attempts reached
-          if (newFailCount >= MAX_BIOMETRIC_ATTEMPTS) {
-            console.log(
-              '🔐 Max biometric attempts reached - forcing master password',
-            );
-            setConfirmDialog({
-              visible: true,
-              title: 'Too Many Failed Attempts',
-              message:
-                'For security reasons, please authenticate using your master password.',
-              confirmText: 'OK',
-              onConfirm: () => {
-                setConfirmDialog(prev => ({ ...prev, visible: false }));
-                setBiometricFailCount(0); // Reset counter
-                setShowMasterPasswordPrompt(true);
-              },
-            });
-          } else {
-            // Show master password prompt as fallback
-            setShowMasterPasswordPrompt(true);
-          }
-        }}
-        title="Unlock PasswordEpic"
-        subtitle="Use your biometric to unlock the app"
-      />
-
-      {/* Master Password Prompt Modal */}
-      <MasterPasswordPrompt
-        visible={showMasterPasswordPrompt}
-        onSuccess={async () => {
-          console.log('🔐 Master password authentication successful');
-
-          // Reset biometric fail counter on successful master password entry
-          setBiometricFailCount(0);
-
-          setShowMasterPasswordPrompt(false);
-          setBiometricCancelled(false);
-          setHasAuthenticatedInSession(true);
-          setIsCheckingSessionOnResume(false); // Clear resume checking flag
-          // Restart session after successful master password entry
-          startSession().catch(error => {
-            console.error('Failed to restart session:', error);
-          });
-
-          // Re-sync auto-lock timeout from settings after unlock
-          // This ensures the timer uses the current user setting and restarts the timer
-          try {
-            await updateActivityConfig({
-              inactivityTimeout: security.autoLockTimeout,
-              trackUserInteraction: true, // Ensure tracking is enabled
-            });
-            console.log(
-              '🎯 Re-synced auto-lock timeout after unlock:',
-              security.autoLockTimeout,
-              'minutes',
-            );
-          } catch (error) {
-            console.error(
-              'Failed to re-sync activity timeout after unlock:',
-              error,
-            );
-          }
-
-          // Trigger navigation restoration using the new service
-          try {
-            await navPersistence.markForRestore();
-            // console.log('🗺️ Master password success - restoring navigation');
-
-            // Delay restoration to allow navigation tree to stabilize
-            // This prevents conflict with default navigation behavior
-            setTimeout(async () => {
-              try {
-                if (navigationRef?.current) {
-                  // console.log('🗺️ Starting delayed navigation restoration...');
-                  await navPersistence.restoreNavigation(navigationRef);
-                } else {
-                  // console.log(
-                  //   '🗺️ navigationRef not available for delayed restoration',
-                  // );
-                }
-              } catch (error) {
-                console.error('Failed to restore navigation (delayed):', error);
-              }
-            }, 1000); // 1 second delay to allow navigation to settle
-          } catch (error) {
-            console.error('Failed to prepare navigation restoration:', error);
-          }
-        }}
-        onCancel={async () => {
-          // console.log('Master password cancelled - logging out');
-          setShowMasterPasswordPrompt(false);
-
-          try {
-            // Only logout completely if user cancels master password
-            await endSession();
-            dispatch(logout());
-            setBiometricCancelled(false);
-            setHasAuthenticatedInSession(false);
-          } catch (error) {
-            console.error('Error during master password cancel logout:', error);
-            dispatch(logout());
-          }
-        }}
-        title="Authentication Required"
-        subtitle="Enter your master password to continue using the app"
-      />
-
-      {/* Confirm Dialog */}
-      <ConfirmDialog
-        visible={confirmDialog.visible}
-        title={confirmDialog.title}
-        message={confirmDialog.message}
-        confirmText={confirmDialog.confirmText}
-        confirmStyle={confirmDialog.confirmStyle}
-        onConfirm={confirmDialog.onConfirm}
-        onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
-      />
     </View>
   );
 };

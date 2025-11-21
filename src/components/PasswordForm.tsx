@@ -27,7 +27,6 @@ import {
 // import { PasswordValidationService } from '../services/passwordValidationService'; // Unused - real-time validation removed
 import { TrackedTextInput as TextInput } from './TrackedTextInput';
 import CategorySelector from './CategorySelector';
-import { BiometricService } from '../services/biometricService';
 import { QuickPasswordGenerator } from './QuickPasswordGenerator';
 import ConfirmDialog from './ConfirmDialog';
 import { useInstalledApps, AppInfo } from '../hooks/useInstalledApps';
@@ -40,7 +39,7 @@ interface PasswordFormProps {
   onDataChange?: (password: Partial<PasswordEntry>) => void; // Real-time updates for parent
   isEditing?: boolean;
   enableAutoSave?: boolean; // Default true, set to false to disable auto-save
-  onDecryptPassword?: () => Promise<string>; // Callback to decrypt password on-demand
+  onDecryptPassword?: () => Promise<string>; // Called to handle authentication (biometric -> fallback -> PIN)
 }
 
 // Unique ID for empty input accessory view to hide toolbar
@@ -97,7 +96,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
   onSave,
   onCancel: _onCancel, // Marked as unused since we removed Cancel button
   onDataChange,
-  isEditing: _isEditing = false, // Marked as unused since we removed Save button
+  isEditing = false,
   enableAutoSave = true,
   onDecryptPassword,
 }) => {
@@ -198,6 +197,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
       currentPasswordValue: passwordValue ? '[HAS_VALUE]' : '[EMPTY]',
       isInitialized: isInitializedRef.current,
       lastPasswordId: lastPasswordIdRef.current,
+      isPasswordVisible,
     });
 
     // Sync if:
@@ -286,13 +286,18 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
         isFavorite: password.isFavorite || false,
       };
     }
-  }, [password, passwordValue]); // Re-run when password prop or current passwordValue changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [password, passwordValue]); // Re-run when password prop or current passwordValue changes (not visibility - toggling visibility should not reset form)
 
   // Initialize filtered apps when app selector opens
   useEffect(() => {
     if (showAppSelector) {
+      console.log(
+        `📱 [PasswordForm] App selector opened, total apps: ${apps.length}`,
+      );
       setFilteredApps(apps);
       setAppSearchQuery('');
+      console.log(`📱 [PasswordForm] Filtered apps set: ${apps.length} items`);
     }
   }, [showAppSelector, apps]);
 
@@ -664,54 +669,64 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               />
               <TouchableOpacity
                 onPress={async () => {
-                  // If trying to show password, require biometric authentication
+                  console.log(
+                    '👁️ [PasswordForm] Eye icon pressed, isPasswordVisible:',
+                    isPasswordVisible,
+                    'isEditing:',
+                    isEditing,
+                  );
+                  // If trying to show password, require authentication
                   if (!isPasswordVisible) {
-                    const biometricService = BiometricService.getInstance();
-                    const result =
-                      await biometricService.authenticateWithBiometrics(
-                        'Authenticate to view password',
+                    // For new passwords (isEditing=false), no authentication needed
+                    if (!isEditing) {
+                      console.log(
+                        '👁️ [PasswordForm] New password - no authentication needed, showing directly',
                       );
-
-                    if (result.success) {
-                      // If onDecryptPassword callback is provided and password hasn't been decrypted yet
-                      // AND the password is still encrypted, decrypt it first before showing
-                      // (Don't decrypt if user has already entered a new password)
-                      if (
-                        onDecryptPassword &&
-                        !isPasswordDecryptedRef.current &&
-                        !password?.isDecrypted
-                      ) {
-                        console.log(
-                          '🔓 PasswordForm: Requesting password decryption...',
-                        );
-                        const decrypted = await onDecryptPassword();
-                        if (decrypted) {
-                          // Don't set passwordValue here - let useEffect sync from parent's formData update
-                          // This avoids race condition between local state and prop updates
-                          console.log(
-                            '✅ PasswordForm: Password decrypted, waiting for prop update...',
-                          );
-                          // Mark as decrypted so we don't try to decrypt again
-                          isPasswordDecryptedRef.current = true;
-                        }
-                      }
                       setIsPasswordVisible(true);
-                    } else if (
-                      result.error &&
-                      !result.error.includes('cancelled')
+                      return;
+                    }
+
+                    console.log(
+                      '👁️ [PasswordForm] Requesting authentication to view password',
+                    );
+
+                    if (
+                      onDecryptPassword &&
+                      !isPasswordDecryptedRef.current &&
+                      !password?.isDecrypted
                     ) {
-                      setConfirmDialog({
-                        visible: true,
-                        title: 'Authentication Failed',
-                        message:
-                          result.error || 'Could not verify your identity',
-                        confirmText: 'OK',
-                        onConfirm: () =>
-                          setConfirmDialog(prev => ({
-                            ...prev,
-                            visible: false,
-                          })),
-                      });
+                      console.log(
+                        '🔓 PasswordForm: Calling parent onDecryptPassword (biometric + PIN flow)...',
+                      );
+                      try {
+                        const decrypted = await onDecryptPassword();
+                        console.log(
+                          '🔓 PasswordForm: onDecryptPassword returned:',
+                          decrypted ? '[VALUE]' : '[EMPTY]',
+                        );
+                        if (decrypted) {
+                          console.log(
+                            '✅ PasswordForm: Password decrypted after parent authentication',
+                          );
+                          isPasswordDecryptedRef.current = true;
+                          setIsPasswordVisible(true);
+                        } else {
+                          console.log(
+                            '👁️ [PasswordForm] onDecryptPassword returned empty value',
+                          );
+                        }
+                      } catch (error) {
+                        console.log(
+                          '🔐 PasswordForm: Authentication cancelled or failed, keeping password hidden',
+                          error,
+                        );
+                        return;
+                      }
+                    } else {
+                      console.log(
+                        '👁️ [PasswordForm] Password already decrypted, showing directly',
+                      );
+                      setIsPasswordVisible(true);
                     }
                   } else {
                     // Hiding password doesn't require authentication
@@ -1094,44 +1109,60 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               </Text>
             </View>
           ) : filteredApps.length > 0 ? (
-            <FlatList
-              data={filteredApps}
-              keyExtractor={item => item.packageName}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.appListItem,
-                    { backgroundColor: theme.surface },
-                  ]}
-                  onPress={() => handleAppSelect(item)}
-                >
-                  <Ionicons
-                    name="phone-portrait-outline"
-                    size={24}
-                    color={theme.primary}
-                  />
-                  <View style={styles.appListItemContent}>
-                    <Text style={styles.appListItemName}>{item.name}</Text>
-                    <Text
-                      style={[
-                        styles.appListItemPackage,
-                        { color: theme.textSecondary },
-                      ]}
-                    >
-                      {item.packageName}
-                    </Text>
-                  </View>
-                  {selectedApp?.packageName === item.packageName && (
+            <View style={styles.appsListContainer}>
+              <Text
+                style={[styles.appsCountText, { color: theme.textSecondary }]}
+              >
+                {filteredApps.length} apps available
+              </Text>
+              <FlatList
+                data={filteredApps}
+                keyExtractor={item => item.packageName}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.appListItem,
+                      { backgroundColor: theme.surface },
+                    ]}
+                    onPress={() => handleAppSelect(item)}
+                  >
                     <Ionicons
-                      name="checkmark-done-outline"
-                      size={20}
+                      name="phone-portrait-outline"
+                      size={24}
                       color={theme.primary}
                     />
-                  )}
-                </TouchableOpacity>
-              )}
-              scrollEnabled
-            />
+                    <View style={styles.appListItemContent}>
+                      <Text style={styles.appListItemName}>{item.name}</Text>
+                      <Text
+                        style={[
+                          styles.appListItemPackage,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        {item.packageName}
+                      </Text>
+                    </View>
+                    {selectedApp?.packageName === item.packageName && (
+                      <Ionicons
+                        name="checkmark-done-outline"
+                        size={20}
+                        color={theme.primary}
+                      />
+                    )}
+                  </TouchableOpacity>
+                )}
+                style={styles.appsList}
+                contentContainerStyle={styles.appsListContent}
+                scrollEnabled={true}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+                removeClippedSubviews={true}
+                maxToRenderPerBatch={20}
+                updateCellsBatchingPeriod={50}
+                initialNumToRender={20}
+                windowSize={10}
+              />
+            </View>
           ) : (
             <View style={styles.emptyContainer}>
               <Ionicons
@@ -1444,6 +1475,21 @@ const createStyles = (theme: Theme) =>
       flex: 1,
       paddingVertical: 10,
       fontSize: 14,
+    },
+
+    // App List Container
+    appsListContainer: {
+      flex: 1,
+    },
+    appsCountText: {
+      padding: 8,
+      fontSize: 12,
+    },
+    appsList: {
+      flex: 1,
+    },
+    appsListContent: {
+      paddingBottom: 20,
     },
 
     // App List Item

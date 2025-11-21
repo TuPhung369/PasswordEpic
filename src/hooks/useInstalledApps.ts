@@ -66,7 +66,8 @@ export const useInstalledApps = (): UseInstalledAppsReturn => {
   const searchApps = useCallback(
     async (query: string): Promise<AppInfo[]> => {
       try {
-        if (!query.trim()) {
+        const trimmedQuery = query.trim();
+        if (!trimmedQuery) {
           return apps;
         }
 
@@ -74,7 +75,7 @@ export const useInstalledApps = (): UseInstalledAppsReturn => {
           throw new Error('AppUtils native module not available');
         }
 
-        const results = await AppUtils.searchApps(query, false);
+        const results = await AppUtils.searchApps(trimmedQuery, false);
         // Sort search results by name
         const sortedResults = results.sort((a: AppInfo, b: AppInfo) =>
           a.name.localeCompare(b.name),

@@ -16,6 +16,9 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import java.util.concurrent.Executor
 import android.view.autofill.AutofillManager
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
+import android.util.Base64
 
 
 class AutofillAuthActivity : FragmentActivity() {
@@ -37,33 +40,7 @@ class AutofillAuthActivity : FragmentActivity() {
     private var credentialId: String? = null
     private var credentialIndex: Int = -1
 
-    private var decryptionService: AutofillDecryptionService? = null
-    private var isBound = false
-    private var credentialToDecrypt: AutofillCredential? = null
-
-    private val serviceConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            Log.d(TAG, "DEBUG_AUTOFILL: 📡 Decryption service connected")
-            val binder = service as AutofillDecryptionService.LocalBinder
-            decryptionService = binder.getService()
-            isBound = true
-            credentialToDecrypt?.let {
-                Log.d(TAG, "DEBUG_AUTOFILL: Service is now bound, performing deferred decryption request.")
-                performDecryptionRequest(it)
-                
-                Log.d(TAG, "DEBUG_AUTOFILL: ⏳ Starting non-blocking poll for decrypted password cache (max 10000ms)...")
-                pollForDecryptionResult(it, System.currentTimeMillis())
-                
-                credentialToDecrypt = null
-            }
-        }
-
-        override fun onServiceDisconnected(name: ComponentName?) {
-            Log.d(TAG, "DEBUG_AUTOFILL: 📡 Decryption service disconnected")
-            decryptionService = null
-            isBound = false
-        }
-    }
+    private var decryptedMasterPassword: String? = null // Store decrypted master password after PIN verification
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -103,19 +80,19 @@ class AutofillAuthActivity : FragmentActivity() {
             }
             BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE -> {
                 Log.w(TAG, "DEBUG_AUTOFILL: No biometric hardware available")
-                showMasterPasswordPrompt()
+                showMasterPasswordAndPinPrompt()
             }
             BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> {
                 Log.w(TAG, "DEBUG_AUTOFILL: Biometric hardware unavailable")
-                showMasterPasswordPrompt()
+                showMasterPasswordAndPinPrompt()
             }
             BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
                 Log.w(TAG, "DEBUG_AUTOFILL: No biometric credentials enrolled")
-                showMasterPasswordPrompt()
+                showMasterPasswordAndPinPrompt()
             }
             else -> {
                 Log.w(TAG, "DEBUG_AUTOFILL: Biometric authentication not available")
-                showMasterPasswordPrompt()
+                showMasterPasswordAndPinPrompt()
             }
         }
     }
@@ -154,15 +131,18 @@ class AutofillAuthActivity : FragmentActivity() {
                     super.onAuthenticationError(errorCode, errString)
                     Log.e(TAG, "DEBUG_AUTOFILL: Authentication error: $errString")
                     
-                    if (errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
-                        showMasterPasswordPrompt()
+                    if (errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON || 
+                        errorCode == BiometricPrompt.ERROR_USER_CANCELED) {
+                        // Show master password + PIN fallback
+                        showMasterPasswordAndPinPrompt()
                     } else {
                         Toast.makeText(
                             applicationContext,
                             "Authentication error: $errString",
                             Toast.LENGTH_SHORT
                         ).show()
-                        setResultAndFinish(RESULT_CANCELED)
+                        // Still show fallback on other errors
+                        showMasterPasswordAndPinPrompt()
                     }
                 }
 
@@ -173,11 +153,12 @@ class AutofillAuthActivity : FragmentActivity() {
                     
                     Toast.makeText(
                         applicationContext,
-                        "Authentication successful",
+                        "Biometric verified",
                         Toast.LENGTH_SHORT
                     ).show()
                     
-                    handleAuthenticationSuccess()
+                    // Show PIN prompt after successful biometric
+                    showPinPrompt()
                 }
 
                 override fun onAuthenticationFailed() {
@@ -202,25 +183,521 @@ class AutofillAuthActivity : FragmentActivity() {
         promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle("Autofill Authentication")
             .setSubtitle("Authenticate to fill password for $domain")
-            .setDescription("Use your biometric credential to autofill your password")
+            .setDescription("Biometric + PIN required to autofill your password")
             .setAllowedAuthenticators(authenticators)
-            .setNegativeButtonText("Use master password")
+            .setNegativeButtonText("Use fallback")
             .setConfirmationRequired(false)
             .build()
 
         biometricPrompt.authenticate(promptInfo)
     }
 
-    private fun showMasterPasswordPrompt() {
-        Log.d(TAG, "DEBUG_AUTOFILL: Showing master password prompt")
+    private fun showPinPrompt() {
+        Log.d(TAG, "DEBUG_AUTOFILL: Showing PIN prompt after successful biometric")
         
-        Toast.makeText(
-            this,
-            "Master password authentication not yet implemented",
-            Toast.LENGTH_SHORT
-        ).show()
+        val builder = android.app.AlertDialog.Builder(this)
+        builder.setTitle("Enter PIN")
+        builder.setMessage("Enter your PIN to decrypt and autofill this credential")
         
-        setResultAndFinish(RESULT_CANCELED)
+        // Create container with padding
+        val container = android.widget.FrameLayout(this)
+        container.setPadding(50, 20, 50, 20)
+        
+        // Create PIN input field
+        val input = android.widget.EditText(this)
+        input.hint = "Enter PIN"
+        input.inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        input.setHorizontallyScrolling(false)
+        
+        // Limit to 8 digits
+        input.filters = arrayOf(android.text.InputFilter.LengthFilter(8))
+        
+        container.addView(input)
+        builder.setView(container)
+        
+        // Cancel button
+        builder.setNegativeButton("Cancel") { dialog, _ ->
+            dialog.dismiss()
+            setResultAndFinish(RESULT_CANCELED)
+        }
+        
+        // Unlock button
+        builder.setPositiveButton("Unlock") { _, _ ->
+            val pin = input.text.toString().trim()
+            if (pin.isEmpty()) {
+                Toast.makeText(this, "Please enter your PIN", Toast.LENGTH_SHORT).show()
+                showPinPrompt() // Show again
+                return@setPositiveButton
+            }
+            
+            verifyPinAndProceed(pin)
+        }
+        
+        builder.setOnCancelListener {
+            setResultAndFinish(RESULT_CANCELED)
+        }
+        
+        builder.show()
+    }
+    
+    private fun showMasterPasswordAndPinPrompt() {
+        Log.d(TAG, "DEBUG_AUTOFILL: Showing master password + PIN fallback prompt")
+        
+        val builder = android.app.AlertDialog.Builder(this)
+        builder.setTitle("Authentication Required")
+        builder.setMessage("Enter your master password and PIN to autofill this credential")
+        
+        // Create container layout with proper spacing
+        val container = android.widget.LinearLayout(this)
+        container.orientation = android.widget.LinearLayout.VERTICAL
+        container.setPadding(50, 20, 50, 20)
+        
+        // Master password label
+        val masterPasswordLabel = android.widget.TextView(this)
+        masterPasswordLabel.text = "Master Password:"
+        masterPasswordLabel.textSize = 14f
+        masterPasswordLabel.setPadding(0, 0, 0, 8)
+        container.addView(masterPasswordLabel)
+        
+        // Master password input
+        val masterPasswordInput = android.widget.EditText(this)
+        masterPasswordInput.hint = "Enter master password"
+        masterPasswordInput.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        val masterPasswordParams = android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+            android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        masterPasswordParams.setMargins(0, 0, 0, 32)
+        masterPasswordInput.layoutParams = masterPasswordParams
+        container.addView(masterPasswordInput)
+        
+        // PIN label
+        val pinLabel = android.widget.TextView(this)
+        pinLabel.text = "PIN (max 8 digits):"
+        pinLabel.textSize = 14f
+        pinLabel.setPadding(0, 0, 0, 8)
+        container.addView(pinLabel)
+        
+        // PIN input
+        val pinInput = android.widget.EditText(this)
+        pinInput.hint = "Enter PIN"
+        pinInput.inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        
+        // Limit to 8 digits
+        pinInput.filters = arrayOf(android.text.InputFilter.LengthFilter(8))
+        
+        val pinParams = android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+            android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        pinInput.layoutParams = pinParams
+        container.addView(pinInput)
+        
+        builder.setView(container)
+        
+        // Cancel button
+        builder.setNegativeButton("Cancel") { dialog, _ ->
+            dialog.dismiss()
+            setResultAndFinish(RESULT_CANCELED)
+        }
+        
+        // Verify button
+        builder.setPositiveButton("Unlock") { _, _ ->
+            val masterPassword = masterPasswordInput.text.toString().trim()
+            val pin = pinInput.text.toString().trim()
+            
+            if (masterPassword.isEmpty()) {
+                Toast.makeText(this, "Please enter your master password", Toast.LENGTH_SHORT).show()
+                showMasterPasswordAndPinPrompt() // Show again
+                return@setPositiveButton
+            }
+            
+            if (pin.isEmpty()) {
+                Toast.makeText(this, "Please enter your PIN", Toast.LENGTH_SHORT).show()
+                showMasterPasswordAndPinPrompt() // Show again
+                return@setPositiveButton
+            }
+            
+            verifyMasterPasswordAndPinThenProceed(masterPassword, pin)
+        }
+        
+        builder.setOnCancelListener {
+            setResultAndFinish(RESULT_CANCELED)
+        }
+        
+        val dialog = builder.create()
+        dialog.show()
+        
+        // Auto-focus on master password input
+        masterPasswordInput.requestFocus()
+    }
+    
+    private fun verifyPinAndProceed(pin: String) {
+        Log.d(TAG, "DEBUG_AUTOFILL: Verifying PIN after successful biometric...")
+        
+        try {
+            val prefs = getSharedPreferences("autofill_encrypted_data", Context.MODE_PRIVATE)
+            
+            // Debug: List all keys in SharedPreferences
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔍 Checking SharedPreferences keys...")
+            val allKeys = prefs.all.keys
+            Log.d(TAG, "DEBUG_AUTOFILL: 📦 Total keys in SharedPreferences: ${allKeys.size}")
+            
+            // Get encrypted master password from SharedPreferences
+            val encryptedMPJson = prefs.getString("encrypted_master_password", null)
+            val mpIVJson = prefs.getString("encrypted_mp_iv", null)
+            val mpTagJson = prefs.getString("encrypted_mp_tag", null)
+            val fixedSaltJson = prefs.getString("fixed_salt", null)
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔍 Encrypted MP found: ${encryptedMPJson != null}")
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔍 MP IV found: ${mpIVJson != null}")
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔍 MP Tag found: ${mpTagJson != null}")
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔍 Fixed Salt found: ${fixedSaltJson != null}")
+            
+            if (encryptedMPJson == null || mpIVJson == null || mpTagJson == null || fixedSaltJson == null) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Encrypted master password data not found in AsyncStorage")
+                Log.e(TAG, "DEBUG_AUTOFILL: 💡 Please unlock the app first to cache encrypted data")
+                Toast.makeText(this, "Please unlock the app first, then try autofill again", Toast.LENGTH_LONG).show()
+                setResultAndFinish(RESULT_CANCELED)
+                return
+            }
+            
+            val encryptedMP = encryptedMPJson.trim('"')
+            val mpIV = mpIVJson.trim('"')
+            val mpTag = mpTagJson.trim('"')
+            val fixedSalt = fixedSaltJson.trim('"')
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔓 Decrypting user master password with PIN...")
+            
+            // Decrypt the user's master password using PIN
+            val decryptedUserMP = decryptMasterPasswordWithPin(encryptedMP, mpIV, mpTag, pin, fixedSalt)
+            
+            if (decryptedUserMP == null) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Failed to decrypt master password with PIN (wrong PIN)")
+                Toast.makeText(this, "Incorrect PIN", Toast.LENGTH_SHORT).show()
+                showPinPrompt() // Show again
+                return
+            }
+            
+            // Generate static master password for credential decryption (uid::email::salt[0:16])
+            val userId = prefs.getString("user_id", null)
+            val userEmail = prefs.getString("user_email", "anonymous")
+            
+            if (userId == null) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ User ID not found in SharedPreferences")
+                Toast.makeText(this, "User data not cached", Toast.LENGTH_SHORT).show()
+                setResultAndFinish(RESULT_CANCELED)
+                return
+            }
+            
+            val saltPrefix = fixedSalt.substring(0, minOf(16, fixedSalt.length))
+            val staticMasterPassword = "$userId::$userEmail::$saltPrefix"
+            
+            // Store static master password for credential decryption
+            decryptedMasterPassword = staticMasterPassword
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ PIN verified and static master password generated")
+            Toast.makeText(this, "Authentication successful", Toast.LENGTH_SHORT).show()
+            handleAuthenticationSuccess()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: Error verifying PIN", e)
+            Toast.makeText(this, "Error verifying PIN: ${e.message}", Toast.LENGTH_SHORT).show()
+            showPinPrompt() // Show again
+        }
+    }
+    
+    private fun verifyMasterPasswordAndPinThenProceed(masterPassword: String, pin: String) {
+        Log.d(TAG, "DEBUG_AUTOFILL: Verifying master password + PIN fallback...")
+        
+        try {
+            // Get SharedPreferences (accessible from autofill service)
+            val prefs = getSharedPreferences("autofill_encrypted_data", Context.MODE_PRIVATE)
+            
+            // Step 1: Get encrypted master password from SharedPreferences
+            val encryptedMPJson = prefs.getString("encrypted_master_password", null)
+            val mpIVJson = prefs.getString("encrypted_mp_iv", null)
+            val mpTagJson = prefs.getString("encrypted_mp_tag", null)
+            val fixedSaltJson = prefs.getString("fixed_salt", null)
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔍 Encrypted MP found: ${encryptedMPJson != null}")
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔍 MP IV found: ${mpIVJson != null}")
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔍 MP Tag found: ${mpTagJson != null}")
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔍 Fixed Salt found: ${fixedSaltJson != null}")
+            
+            if (encryptedMPJson == null || mpIVJson == null || mpTagJson == null || fixedSaltJson == null) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Encrypted master password data not found in AsyncStorage")
+                Log.e(TAG, "DEBUG_AUTOFILL: 💡 Please unlock the app first to cache encrypted data")
+                Toast.makeText(this, "Please unlock the app first, then try autofill again", Toast.LENGTH_LONG).show()
+                setResultAndFinish(RESULT_CANCELED)
+                return
+            }
+            
+            val encryptedMP = encryptedMPJson.trim('"')
+            val mpIV = mpIVJson.trim('"')
+            val mpTag = mpTagJson.trim('"')
+            val fixedSalt = fixedSaltJson.trim('"')
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔓 Decrypting user master password with PIN...")
+            
+            // Step 2: Decrypt the user's master password using PIN
+            val decryptedUserMP = decryptMasterPasswordWithPin(encryptedMP, mpIV, mpTag, pin, fixedSalt)
+            
+            if (decryptedUserMP == null) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Failed to decrypt master password with PIN")
+                Toast.makeText(this, "Incorrect PIN", Toast.LENGTH_SHORT).show()
+                showMasterPasswordAndPinPrompt() // Show again
+                return
+            }
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Master password decrypted with PIN")
+            
+            // Step 3: Compare decrypted master password with user input
+            Log.d(TAG, "DEBUG_AUTOFILL: Comparing decrypted password with user input")
+            
+            if (decryptedUserMP.trim() != masterPassword.trim()) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Password verification failed")
+                Toast.makeText(this, "Incorrect master password", Toast.LENGTH_SHORT).show()
+                showMasterPasswordAndPinPrompt() // Show again
+                return
+            }
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Master password verified successfully!")
+            
+            // Step 4: Generate static master password for credential decryption (uid::email::salt[0:16])
+            val userId = prefs.getString("user_id", null)
+            val userEmail = prefs.getString("user_email", "anonymous")
+            
+            if (userId == null) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ User ID not found in SharedPreferences")
+                Toast.makeText(this, "User data not cached", Toast.LENGTH_SHORT).show()
+                setResultAndFinish(RESULT_CANCELED)
+                return
+            }
+            
+            val saltPrefix = fixedSalt.substring(0, minOf(16, fixedSalt.length))
+            val staticMasterPassword = "$userId::$userEmail::$saltPrefix"
+            
+            // Store static master password for credential decryption
+            decryptedMasterPassword = staticMasterPassword
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ User master password decrypted successfully with PIN")
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Static master password generated for credential decryption")
+            Toast.makeText(this, "Authentication successful", Toast.LENGTH_SHORT).show()
+            handleAuthenticationSuccess()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: Error verifying credentials", e)
+            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            showMasterPasswordAndPinPrompt() // Show again
+        }
+    }
+    
+    private fun hashPin(pin: String): String {
+        return try {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            val hashBytes = digest.digest(pin.toByteArray(Charsets.UTF_8))
+            android.util.Base64.encodeToString(hashBytes, android.util.Base64.NO_WRAP)
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: Error hashing PIN", e)
+            ""
+        }
+    }
+    
+    private fun decryptMasterPasswordWithPin(
+        encryptedMP: String,
+        mpIV: String,
+        mpTag: String,
+        pin: String,
+        fixedSalt: String
+    ): String? {
+        return try {
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔑 Deriving decryption key from PIN + salt...")
+            
+            // Derive key from PIN + salt using PBKDF2 (same as React Native)
+            // CRITICAL: Must match React Native CRYPTO_CONSTANTS.KEY_LENGTH = 32 bytes (256 bits)
+            val iterations = 10000 // Match React Native PBKDF2_ITERATIONS = 10000
+            val keyLength = 32 // 32 bytes = 256 bits (AES-256)
+            
+            val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            val spec = PBEKeySpec(
+                pin.toCharArray(),
+                fixedSalt.toByteArray(Charsets.UTF_8),
+                iterations,
+                keyLength * 8
+            )
+            
+            val derivedKey = factory.generateSecret(spec)
+            val keyBytes = derivedKey.encoded
+            val keyHex = bytesToHex(keyBytes)
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Decryption key derived (${keyBytes.size} bytes)")
+            
+            // Verify authentication tag
+            val expectedTag = computeHmacSHA256Tag(encryptedMP + mpIV, keyHex)
+            
+            if (expectedTag != mpTag) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Authentication tag verification failed")
+                Log.e(TAG, "DEBUG_AUTOFILL: Expected tag: ${expectedTag.substring(0, 16)}...")
+                Log.e(TAG, "DEBUG_AUTOFILL: Stored tag: ${mpTag.substring(0, 16)}...")
+                return null
+            }
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Authentication tag verified")
+            
+            // Decrypt using Manual CTR Mode (CryptoJS-compatible)
+            Log.d(TAG, "🔧 [FIX v8] Using Manual CTR Mode to work around CryptoJS sigBytes bug")
+            Log.d(TAG, "   Root cause: CryptoJS 12-byte IV creates WordArray with sigBytes=12")
+            Log.d(TAG, "   Bug: counter[3] increments but sigBytes stays 12, so it's ignored")
+            Log.d(TAG, "   Result: All blocks reuse same counter → same keystream (cyclically)")
+            
+            val cipherBytes = hexToBytes(encryptedMP)
+            val ivBytes = hexToBytes(mpIV)
+            
+            val decryptedBytes = decryptWithManualCTR(cipherBytes, keyBytes, ivBytes)
+            val plaintext = String(decryptedBytes, Charsets.UTF_8)
+            
+            if (plaintext.isEmpty()) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Decryption resulted in empty data")
+                return null
+            }
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Master password decrypted successfully")
+            return plaintext
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error decrypting master password with PIN", e)
+            return null
+        }
+    }
+    
+    /**
+     * Decrypt credential password using master password
+     * Same algorithm as decryptMasterPasswordWithPin but uses master password instead of PIN
+     */
+    private fun decryptCredentialPassword(
+        encryptedPassword: String,
+        iv: String,
+        tag: String,
+        salt: String,
+        masterPassword: String
+    ): String? {
+        return try {
+            Log.d(TAG, "DEBUG_AUTOFILL: 🔑 Deriving decryption key from master password + salt...")
+            
+            // Derive key from master password + salt using PBKDF2 (same as React Native)
+            val iterations = 10000 // Match React Native PBKDF2_ITERATIONS
+            val keyLength = 32 // 32 bytes = 256 bits (AES-256)
+            
+            val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            val spec = PBEKeySpec(
+                masterPassword.toCharArray(),
+                salt.toByteArray(Charsets.UTF_8),
+                iterations,
+                keyLength * 8
+            )
+            
+            val derivedKey = factory.generateSecret(spec)
+            val keyBytes = derivedKey.encoded
+            val keyHex = bytesToHex(keyBytes)
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Decryption key derived (${keyBytes.size} bytes)")
+            
+            // Verify authentication tag
+            val expectedTag = computeHmacSHA256Tag(encryptedPassword + iv, keyHex)
+            
+            if (expectedTag != tag) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Authentication tag verification failed for credential")
+                Log.e(TAG, "DEBUG_AUTOFILL: Expected tag: ${expectedTag.substring(0, 16)}...")
+                Log.e(TAG, "DEBUG_AUTOFILL: Stored tag: ${tag.substring(0, 16)}...")
+                return null
+            }
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Authentication tag verified for credential")
+            
+            // Decrypt using Manual CTR Mode (CryptoJS-compatible)
+            Log.d(TAG, "🔧 [FIX v8] Using Manual CTR Mode for credential decryption (CryptoJS sigBytes bug workaround)")
+            
+            val cipherBytes = hexToBytes(encryptedPassword)
+            val ivBytes = hexToBytes(iv)
+            
+            val decryptedBytes = decryptWithManualCTR(cipherBytes, keyBytes, ivBytes)
+            val plaintext = String(decryptedBytes, Charsets.UTF_8)
+            
+            if (plaintext.isEmpty()) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Decryption resulted in empty credential password")
+                return null
+            }
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Credential password decrypted successfully")
+            return plaintext
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error decrypting credential password", e)
+            return null
+        }
+    }
+    
+    private fun computeHmacSHA256Tag(data: String, keyHex: String): String {
+        return try {
+            val keyBytes = hexToBytes(keyHex)
+            val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+            val keySpec = javax.crypto.spec.SecretKeySpec(keyBytes, "HmacSHA256")
+            mac.init(keySpec)
+            
+            val hmacBytes = mac.doFinal(data.toByteArray(Charsets.UTF_8))
+            val fullTag = bytesToHex(hmacBytes)
+            
+            // Return first 32 characters (16 bytes = 128 bits) to match TAG_LENGTH
+            fullTag.substring(0, 32)
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: Error computing HMAC", e)
+            ""
+        }
+    }
+    
+    private fun bytesToHex(bytes: ByteArray): String {
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+    
+    private fun hexToBytes(hex: String): ByteArray {
+        val len = hex.length
+        val data = ByteArray(len / 2)
+        var i = 0
+        while (i < len) {
+            data[i / 2] = ((Character.digit(hex[i], 16) shl 4) + Character.digit(hex[i + 1], 16)).toByte()
+            i += 2
+        }
+        return data
+    }
+    
+    private fun verifyMasterPasswordHash(password: String, hash: String, salt: String): Boolean {
+        return try {
+            // Import the crypto utilities from the app
+            // Using PBKDF2 with SHA-256 for password hashing verification
+            val iterations = 100000
+            val keyLength = 64
+            
+            // Derive key from password using PBKDF2
+            val factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            val spec = javax.crypto.spec.PBEKeySpec(
+                password.toCharArray(),
+                salt.toByteArray(Charsets.UTF_8),
+                iterations,
+                keyLength * 8
+            )
+            
+            val derivedKey = factory.generateSecret(spec)
+            val derived = derivedKey.encoded
+            val derivedHashBase64 = android.util.Base64.encodeToString(derived, android.util.Base64.NO_WRAP)
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: Comparing hashes...")
+            // Compare the derived hash with stored hash
+            derivedHashBase64 == hash
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG_AUTOFILL: Error during password verification", e)
+            false
+        }
     }
 
     private fun handleAuthenticationSuccess() {
@@ -282,11 +759,11 @@ class AutofillAuthActivity : FragmentActivity() {
             return
         }
 
-        // --- ASYNCHRONOUS DECRYPTION FLOW ---
-        Log.d(TAG, "DEBUG_AUTOFILL: 🔒 Password is encrypted - starting non-blocking decryption flow.")
+        // --- SYNCHRONOUS DECRYPTION IN KOTLIN ---
+        Log.d(TAG, "DEBUG_AUTOFILL: 🔒 Password is encrypted - decrypting in Kotlin...")
         
-        // Request decryption from the service (polling will start after service is bound)
-        requestDecryptionViaService(credential)
+        // Decrypt directly using master password
+        performDecryptionRequest(credential)
     }
 
     private fun pollForDecryptionResult(credential: AutofillCredential, startTime: Long) {
@@ -359,86 +836,126 @@ class AutofillAuthActivity : FragmentActivity() {
         }
     }
 
-    private fun requestDecryptionViaService(credential: AutofillCredential) {
-        try {
-            Log.d(TAG, "DEBUG_AUTOFILL: 🔗 Requesting decryption via bound service...")
 
-            if (!isBound || decryptionService == null) {
-                Log.w(TAG, "DEBUG_AUTOFILL: ⚠️ Service not bound yet, binding now...")
-                credentialToDecrypt = credential
-                bindToDecryptionService()
-                return
-            }
-
-            performDecryptionRequest(credential)
-            
-            Log.d(TAG, "DEBUG_AUTOFILL: ⏳ Starting non-blocking poll for decrypted password cache (max 10000ms)...")
-            pollForDecryptionResult(credential, System.currentTimeMillis())
-
-        } catch (e: Exception) {
-            Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error requesting decryption via service", e)
-        }
-    }
 
     private fun performDecryptionRequest(credential: AutofillCredential) {
         try {
-            val service = decryptionService
-            if (service == null) {
-                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Decryption service is null")
+            // Check if we have decrypted master password
+            val masterPassword = decryptedMasterPassword
+            if (masterPassword == null) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ No master password available for decryption")
+                Toast.makeText(this, "Master password not available", Toast.LENGTH_SHORT).show()
+                setResultAndFinish(RESULT_CANCELED)
                 return
             }
 
-            Log.d(TAG, "DEBUG_AUTOFILL: 📤 Sending decryption request to service...")
-            service.requestDecryption(
-                credentialId = credential.id,
+            Log.d(TAG, "DEBUG_AUTOFILL: � Decrypting credential password directly in Kotlin...")
+            
+            // Decrypt credential password using master password
+            val decryptedPassword = decryptCredentialPassword(
                 encryptedPassword = credential.password,
                 iv = credential.iv,
                 tag = credential.tag,
                 salt = credential.salt,
-                username = credential.username,
-                domain = credential.domain,
-                callback = object : AutofillDecryptionService.DecryptionCallback {
-                    override fun onDecryptionRequested() {
-                        Log.d(TAG, "DEBUG_AUTOFILL: ✅ Decryption request sent successfully to service.")
-                    }
-
-                    override fun onDecryptionFailed(error: String) {
-                        Log.e(TAG, "DEBUG_AUTOFILL: ❌ Decryption request failed via callback: $error")
-                    }
-                }
+                masterPassword = masterPassword
             )
+            
+            if (decryptedPassword == null) {
+                Log.e(TAG, "DEBUG_AUTOFILL: ❌ Failed to decrypt credential password")
+                Toast.makeText(this, "Failed to decrypt password", Toast.LENGTH_SHORT).show()
+                setResultAndFinish(RESULT_CANCELED)
+                return
+            }
+            
+            Log.d(TAG, "DEBUG_AUTOFILL: ✅ Credential password decrypted successfully")
+            
+            // Create decrypted credential and proceed
+            val decryptedCredential = credential.copy(
+                password = decryptedPassword,
+                isEncrypted = false
+            )
+            
+            proceedWithCredential(decryptedCredential)
+            
         } catch (e: Exception) {
             Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error performing decryption request", e)
+            Toast.makeText(this, "Decryption error: ${e.message}", Toast.LENGTH_SHORT).show()
+            setResultAndFinish(RESULT_CANCELED)
         }
     }
 
-    private fun bindToDecryptionService() {
-        try {
-            Log.d(TAG, "DEBUG_AUTOFILL: 🔗 Binding to AutofillDecryptionService...")
-            val intent = Intent(this, AutofillDecryptionService::class.java)
-            bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-            Log.d(TAG, "DEBUG_AUTOFILL: 📡 Service binding initiated")
-        } catch (e: Exception) {
-            Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error binding to decryption service", e)
-        }
-    }
 
-    private fun unbindFromDecryptionService() {
+
+    /**
+     * Manual CTR Mode Decryption (CryptoJS-compatible)
+     * 
+     * FIX v8: CryptoJS CTR mode has a CRITICAL BUG with 12-byte IVs!
+     * 
+     * ROOT CAUSE DISCOVERED:
+     * - CryptoJS creates WordArray from 12-byte IV with sigBytes=12 (only 3 words)
+     * - When incrementing counter[3] (4th word), the value changes BUT sigBytes stays 12!
+     * - When converting to bytes for encryption, only first 12 bytes are used (counter[0-2])
+     * - Result: counter[3] is IGNORED, so all blocks use THE SAME counter value
+     * - This causes all blocks to reuse THE SAME keystream (just different offsets)
+     * 
+     * SOLUTION:
+     * - Generate keystream ONCE from the 12-byte IV (padded to 16 bytes with zeros)
+     * - Reuse this keystream cyclically for all ciphertext bytes
+     * - Block 0: XOR with keystream[0-15]
+     * - Block 1: XOR with keystream[0-1] (bytes 16-17 reuse keystream start)
+     * 
+     * @param ciphertext Encrypted data bytes
+     * @param key AES key bytes (32 bytes for AES-256)
+     * @param iv Initialization vector (12 bytes from CryptoJS)
+     * @return Decrypted plaintext bytes
+     */
+    private fun decryptWithManualCTR(
+        ciphertext: ByteArray,
+        key: ByteArray,
+        iv: ByteArray
+    ): ByteArray {
         try {
-            if (isBound) {
-                unbindService(serviceConnection)
-                isBound = false
-                Log.d(TAG, "DEBUG_AUTOFILL: ✅ Unbound from decryption service")
+            Log.d(TAG, "🔧 [MANUAL CTR FIX v8] Starting decryption (${ciphertext.size} bytes)")
+            
+            // Use AES/ECB to encrypt counter blocks
+            val cipher = javax.crypto.Cipher.getInstance("AES/ECB/NoPadding")
+            cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, javax.crypto.spec.SecretKeySpec(key, "AES"))
+
+            val plaintext = ByteArray(ciphertext.size)
+            
+            // Create counter block from 12-byte IV (pad with zeros to 16 bytes)
+            // CRITICAL: Due to CryptoJS sigBytes bug, this counter NEVER changes!
+            val counterBlock = ByteArray(16)
+            System.arraycopy(iv, 0, counterBlock, 0, 12)
+            // Bytes 12-15 remain 0x00 (counter starts at 0, but never increments due to bug)
+            
+            // Generate keystream ONCE - this is the ONLY keystream used for all blocks
+            val keystream = cipher.doFinal(counterBlock)
+            
+            // XOR ciphertext with keystream (cycling keystream every 16 bytes)
+            // Block 0: bytes 0-15 XOR keystream[0-15]
+            // Block 1: bytes 16-17 XOR keystream[0-1] (REUSE!)
+            for (i in ciphertext.indices) {
+                val keystreamByte = keystream[i % 16].toInt() and 0xFF
+                val ciphertextByte = ciphertext[i].toInt() and 0xFF
+                plaintext[i] = (ciphertextByte xor keystreamByte).toByte()
             }
+            
+            Log.d(TAG, "✅ [MANUAL CTR] Decryption complete (${plaintext.size} bytes)")
+            
+            return plaintext
         } catch (e: Exception) {
-            Log.e(TAG, "DEBUG_AUTOFILL: ❌ Error unbinding from decryption service", e)
+            Log.e(TAG, "❌ [MANUAL CTR] Decryption error", e)
+            throw e
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "DEBUG_AUTOFILL: AutofillAuthActivity destroyed")
-        unbindFromDecryptionService()
+        
+        // Clear decrypted master password from memory
+        decryptedMasterPassword = null
         
         Log.d(TAG, "DEBUG_AUTOFILL: 🗑️ Cleaning up expired cache on activity destroy")
         try {

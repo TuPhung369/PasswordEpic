@@ -163,6 +163,14 @@ export const savePassword = createAsyncThunk(
       // Prepare credentials for autofill after saving
       try {
         console.log('🔄 Preparing autofill credentials...');
+        // Clear old autofill cache first to ensure updated password replaces old cached value
+        try {
+          await autofillService.clearCache();
+          console.log('✅ Autofill cache cleared');
+        } catch (clearError) {
+          console.warn('⚠️ Failed to clear autofill cache:', clearError);
+          // Continue anyway - not critical
+        }
         const state = getState() as any;
         const allPasswords = state.passwords.passwords || [];
         // Include the newly saved entry with full IV/TAG context

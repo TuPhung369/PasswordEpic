@@ -107,27 +107,34 @@ export const useBiometric = (): UseBiometricReturn => {
    */
   const setupBiometric = useCallback(async (): Promise<boolean> => {
     try {
+      console.log(
+        '🔐 [useBiometric] setupBiometric called - setting loading to true',
+      );
       setIsLoading(true);
       setError(null);
 
       const biometricService = BiometricService.getInstance();
+      console.log(
+        '🔐 [useBiometric] Calling biometricService.setupBiometricAuth()',
+      );
       const result: BiometricAuthResult =
         await biometricService.setupBiometricAuth();
 
+      console.log('🔐 [useBiometric] setupBiometricAuth result:', result);
+
       if (result.success) {
-        // 🔥 COMMENTED OUT FOR DEBUGGING NAVIGATION
-        // console.log('📱 useBiometric: Setup successful, updating states...');
+        console.log('✅ [useBiometric] Setup successful, updating states...');
         setIsSetup(true);
         dispatch(setBiometricEnabled(true));
-        // console.log('📱 useBiometric: Redux state updated to enabled=true');
+        console.log('✅ [useBiometric] Redux state updated to enabled=true');
         return true;
       } else {
-        // console.error('📱 useBiometric: Setup failed:', result.error);
+        console.error('❌ [useBiometric] Setup failed:', result.error);
         setError(result.error || 'Failed to setup biometric authentication');
         return false;
       }
     } catch (err) {
-      console.error('Error setting up biometric:', err);
+      console.error('❌ [useBiometric] Error setting up biometric:', err);
       setError('Failed to setup biometric authentication');
       return false;
     } finally {
@@ -137,21 +144,31 @@ export const useBiometric = (): UseBiometricReturn => {
 
   /**
    * Authenticate using biometrics
+   * @param message - Custom authentication message (optional)
    */
   const authenticate = useCallback(
     async (message?: string): Promise<boolean> => {
       try {
-        console.log('🔐 [useBiometric] authenticate called with message:', message);
+        console.log(
+          '🔐 [useBiometric] authenticate called with message:',
+          message,
+        );
         console.log('🔐 [useBiometric] biometryType:', biometryType);
-        console.log('🔐 [useBiometric] security.biometricPreference:', security.biometricPreference);
-        
+        console.log(
+          '🔐 [useBiometric] security.biometricPreference:',
+          security.biometricPreference,
+        );
+
         setIsLoading(true);
         setError(null);
 
         const biometricService = BiometricService.getInstance();
         const authMessage = message || `Authenticate with ${biometryType}`;
-        
-        console.log('🔐 [useBiometric] Calling authenticateWithBiometrics with message:', authMessage);
+
+        console.log(
+          '🔐 [useBiometric] Calling authenticateWithBiometrics with message:',
+          authMessage,
+        );
 
         const result: BiometricAuthResult =
           await biometricService.authenticateWithBiometrics(
@@ -159,7 +176,10 @@ export const useBiometric = (): UseBiometricReturn => {
             security.biometricPreference,
           );
 
-        console.log('🔐 [useBiometric] authenticateWithBiometrics result:', result);
+        console.log(
+          '🔐 [useBiometric] authenticateWithBiometrics result:',
+          result,
+        );
 
         if (result.success) {
           console.log('✅ [useBiometric] Authentication successful');
@@ -170,7 +190,10 @@ export const useBiometric = (): UseBiometricReturn => {
           return false;
         }
       } catch (err) {
-        console.error('❌ [useBiometric] Exception during authentication:', err);
+        console.error(
+          '❌ [useBiometric] Exception during authentication:',
+          err,
+        );
         setError('Authentication failed');
         return false;
       } finally {

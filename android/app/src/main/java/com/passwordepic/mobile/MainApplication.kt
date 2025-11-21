@@ -59,6 +59,9 @@ class MainApplication : Application(), ReactApplication {
               
               // Add Biometric Module
               add(BiometricPackage())
+              
+              // Add SharedPreferences Module (for autofill encrypted data)
+              add(PasswordEpicPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

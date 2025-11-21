@@ -30,12 +30,14 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../contexts/ThemeContext';
 import { domainVerificationService } from '../../services/domainVerificationService';
 import navigationPersistenceService from '../../services/navigationPersistenceService';
 import AutofillSettingsPanel from '../../components/AutofillSettingsPanel';
 import { AutofillStatisticsPanel } from '../../components/AutofillStatisticsPanel';
 import { DEFAULT_DOMAINS } from '../../constants/defaultDomains';
+import { SettingsStackParamList } from '../../navigation/SettingsNavigator';
 
 interface TrustedDomain {
   domain: string;
@@ -47,9 +49,11 @@ interface TrustedDomain {
 
 type TabType = 'settings' | 'domains' | 'statistics';
 
+type SettingsNavigation = NativeStackNavigationProp<SettingsStackParamList>;
+
 export const AutofillManagementScreen: React.FC = () => {
   const { theme } = useTheme();
-  const navigation = useNavigation();
+  const navigation = useNavigation<SettingsNavigation>();
   const [activeTab, setActiveTab] = useState<TabType>('settings');
   const [trustedDomains, setTrustedDomains] = useState<TrustedDomain[]>([]);
   const [newDomain, setNewDomain] = useState('');
@@ -58,7 +62,8 @@ export const AutofillManagementScreen: React.FC = () => {
   const [cleanDomain, setCleanDomain] = useState('');
   const [showCleanDomainPreview, setShowCleanDomainPreview] = useState(false);
   const [popularDomainsExpanded, setPopularDomainsExpanded] = useState(false);
-  const [userAddedDomainsExpanded, setUserAddedDomainsExpanded] = useState(true);
+  const [userAddedDomainsExpanded, setUserAddedDomainsExpanded] =
+    useState(true);
 
   const loadTrustedDomains = async () => {
     try {
@@ -213,7 +218,7 @@ export const AutofillManagementScreen: React.FC = () => {
 
   const handleSearchDomain = () => {
     const query = newDomain.trim().toLowerCase();
-    
+
     if (!query) {
       setPopularDomainsExpanded(false);
       setUserAddedDomainsExpanded(true);
@@ -232,8 +237,6 @@ export const AutofillManagementScreen: React.FC = () => {
       setUserAddedDomainsExpanded(filteredUserAdded.length > 0);
     }
   };
-
-
 
   const getPopularDomains = () => {
     return trustedDomains.filter(d => d.autoApproved);
@@ -335,7 +338,9 @@ export const AutofillManagementScreen: React.FC = () => {
         console.log('Settings changed:', settings);
       }}
       onBothServicesEnabled={async () => {
-        console.log('✅ Both services enabled - clearing navigation state and navigating back to SettingsList');
+        console.log(
+          '✅ Both services enabled - clearing navigation state and navigating back to SettingsList',
+        );
         try {
           await navigationPersistenceService.clearNavigationState();
         } catch (error) {
@@ -372,10 +377,7 @@ export const AutofillManagementScreen: React.FC = () => {
 
           {/* Search Button */}
           <TouchableOpacity
-            style={[
-              styles.actionButton,
-              { backgroundColor: theme.primary },
-            ]}
+            style={[styles.actionButton, { backgroundColor: theme.primary }]}
             onPress={handleSearchDomain}
             disabled={!newDomain.trim()}
           >
@@ -384,18 +386,13 @@ export const AutofillManagementScreen: React.FC = () => {
 
           {/* Add Button */}
           <TouchableOpacity
-            style={[
-              styles.actionButton,
-              { backgroundColor: theme.success },
-            ]}
+            style={[styles.actionButton, { backgroundColor: theme.success }]}
             onPress={handleAddDomain}
             disabled={!newDomain.trim()}
           >
             <Ionicons name="add" size={18} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
-
-
 
         {/* Preview of clean domain */}
         {showCleanDomainPreview && cleanDomain && (
@@ -411,20 +408,23 @@ export const AutofillManagementScreen: React.FC = () => {
               color={theme.success}
             />
             <Text style={[styles.previewDomain, { color: theme.text }]}>
-              Will save as: <Text style={styles.previewDomainBold}>{cleanDomain}</Text>
+              Will save as:{' '}
+              <Text style={styles.previewDomainBold}>{cleanDomain}</Text>
             </Text>
           </View>
         )}
       </View>
-
-
 
       {/* Trusted Domains */}
       <View style={[styles.section, { backgroundColor: theme.surface }]}>
         <View style={styles.sectionHeader}>
           <Ionicons name="list-outline" size={24} color={theme.primary} />
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Trusted Domains ({newDomain.trim() ? getFilteredDomains(trustedDomains).length : trustedDomains.length})
+            Trusted Domains (
+            {newDomain.trim()
+              ? getFilteredDomains(trustedDomains).length
+              : trustedDomains.length}
+            )
           </Text>
         </View>
 
@@ -448,15 +448,23 @@ export const AutofillManagementScreen: React.FC = () => {
               <View style={styles.domainsSectionGroup}>
                 <TouchableOpacity
                   style={styles.domainSectionHeader}
-                  onPress={() => setPopularDomainsExpanded(!popularDomainsExpanded)}
+                  onPress={() =>
+                    setPopularDomainsExpanded(!popularDomainsExpanded)
+                  }
                 >
                   <Ionicons
                     name="star-outline"
                     size={18}
                     color={theme.primary}
                   />
-                  <Text style={[styles.domainSectionTitle, { color: theme.text }]}>
-                    Popular ({newDomain.trim() ? getFilteredDomains(getPopularDomains()).length : getPopularDomains().length})
+                  <Text
+                    style={[styles.domainSectionTitle, { color: theme.text }]}
+                  >
+                    Popular (
+                    {newDomain.trim()
+                      ? getFilteredDomains(getPopularDomains()).length
+                      : getPopularDomains().length}
+                    )
                   </Text>
                   <Ionicons
                     name={
@@ -472,7 +480,12 @@ export const AutofillManagementScreen: React.FC = () => {
 
                 {popularDomainsExpanded && (
                   <View>
-                    <Text style={[styles.subsectionHint, { color: theme.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.subsectionHint,
+                        { color: theme.textSecondary },
+                      ]}
+                    >
                       Pre-approved domains (already verified as safe)
                     </Text>
                     <FlatList
@@ -491,15 +504,23 @@ export const AutofillManagementScreen: React.FC = () => {
               <View style={styles.domainsSectionGroup}>
                 <TouchableOpacity
                   style={styles.domainSectionHeader}
-                  onPress={() => setUserAddedDomainsExpanded(!userAddedDomainsExpanded)}
+                  onPress={() =>
+                    setUserAddedDomainsExpanded(!userAddedDomainsExpanded)
+                  }
                 >
                   <Ionicons
                     name="add-circle-outline"
                     size={18}
                     color={theme.primary}
                   />
-                  <Text style={[styles.domainSectionTitle, { color: theme.text }]}>
-                    User Added ({newDomain.trim() ? getFilteredDomains(getUserAddedDomains()).length : getUserAddedDomains().length})
+                  <Text
+                    style={[styles.domainSectionTitle, { color: theme.text }]}
+                  >
+                    User Added (
+                    {newDomain.trim()
+                      ? getFilteredDomains(getUserAddedDomains()).length
+                      : getUserAddedDomains().length}
+                    )
                   </Text>
                   <Ionicons
                     name={
@@ -515,7 +536,12 @@ export const AutofillManagementScreen: React.FC = () => {
 
                 {userAddedDomainsExpanded && (
                   <View>
-                    <Text style={[styles.subsectionHint, { color: theme.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.subsectionHint,
+                        { color: theme.textSecondary },
+                      ]}
+                    >
                       Domains you manually added
                     </Text>
                     <FlatList
@@ -562,7 +588,6 @@ export const AutofillManagementScreen: React.FC = () => {
             <Text style={[styles.headerTitle, { color: theme.text }]}>
               Autofill Management
             </Text>
-
           </View>
         </View>
       </View>

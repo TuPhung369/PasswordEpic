@@ -305,10 +305,13 @@ export class SessionService {
       });
 
       // Check background lock policy FIRST
-      // If lockOnBackground is enabled and app was in background > 30 seconds, require re-authentication
-      if (this.config.lockOnBackground && timeInBackground > 30000) {
+      // If lockOnBackground is enabled and app was in background, ALWAYS require re-authentication
+      // Changed from 30s to 0s - require biometric every time app goes to background
+      if (this.config.lockOnBackground && timeInBackground > 0) {
         console.log(
-          '🔐 SessionService: Background time exceeded 30s, requiring re-authentication',
+          `🔐 SessionService: App was backgrounded for ${Math.round(
+            timeInBackground / 1000,
+          )}s, requiring re-authentication`,
         );
         // Don't call handleSessionExpiry here - just return false to trigger biometric
         // This preserves the session but requires re-authentication

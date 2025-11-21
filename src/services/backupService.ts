@@ -6,14 +6,21 @@ import {
   decryptData,
   deriveKeyFromPassword,
   generateSecureRandom,
+  CRYPTO_CONSTANTS,
 } from './cryptoService';
 import DeviceInfo from 'react-native-device-info';
 import { Buffer } from 'buffer';
 import { gzip, ungzip } from 'pako';
+import CryptoJS from 'crypto-js';
 
-// UNIQUE constant string for backup encryption - MUST BE DIFFERENT from EXPORT_KEY_CONSTANT
-// This ensures Backup/Restore flow is completely separate from Import/Export flow
-const BACKUP_ENCRYPTION_CONSTANT = 'backup_encryption_v1_key_2024_#!@$%^&*()_backup_flow_only';
+// UNIQUE constant string for backup encryption - Fixed key for backup/restore
+// This ensures backup encryption is independent of master password
+const BACKUP_ENCRYPTION_KEY =
+  'backup_encryption_v1_key_2024_fixed_constant_#!@$%^&*()_backup_flow_only';
+
+// File-level backup wrapper encryption using different algorithm (AES-256-CBC instead of CTR)
+const BACKUP_FILE_WRAPPER_KEY =
+  'backup_file_level_wrapper_v2_aes256cbc_#@$%^&*()_2024_wrapper_constant';
 
 export interface BackupPasswordEntry extends PasswordEntry {
   isPasswordEncrypted?: boolean;
@@ -57,6 +64,7 @@ export interface BackupOptions {
   encryptionPassword?: string;
   customPath?: string;
   filename?: string;
+  onRequireAuthentication?: () => Promise<string>;
 }
 
 export interface RestoreOptions {
@@ -67,6 +75,7 @@ export interface RestoreOptions {
   restoreDomains: boolean;
   overwriteDuplicates: boolean;
   categoryMapping?: { [oldId: string]: string };
+  onRequireAuthentication?: () => Promise<string>;
 }
 
 export interface BackupResult {
@@ -121,9 +130,9 @@ class BackupService {
       ? `${RNFS.ExternalDirectoryPath}/Backups`
       : `${RNFS.DocumentDirectoryPath}/Backups`;
 
-  // Generate backup encryption key from plain text master password + fixed constant
-  private generateBackupEncryptionKey(masterPassword: string): string {
-    return `${masterPassword}::${BACKUP_ENCRYPTION_CONSTANT}`;
+  // Get fixed backup encryption key (independent of master password)
+  private getBackupEncryptionKey(): string {
+    return BACKUP_ENCRYPTION_KEY;
   }
 
   // Create backup
@@ -143,6 +152,9 @@ class BackupService {
     console.log('🟣 [BackupService] Options:', options);
 
     try {
+      // 🔐 Backup encryption uses a fixed key (independent of master password)
+      // No authentication needed for backup creation
+
       // Prepare backup data
       console.log('🟣 [BackupService] Preparing backup data...');
       const backupData = await this.prepareBackupData(
@@ -170,9 +182,11 @@ class BackupService {
       console.log('🟣 [BackupService] JSON size:', content.length, 'bytes');
 
       // Extract metadata for unencrypted prefix (allows reading metadata without password)
-      const metadataPrefix = backupData.metadata ? 
-        `METADATA_V1:${Buffer.from(JSON.stringify(backupData.metadata)).toString('base64')}|||` : 
-        '';
+      const metadataPrefix = backupData.metadata
+        ? `METADATA_V1:${Buffer.from(
+            JSON.stringify(backupData.metadata),
+          ).toString('base64')}|||`
+        : '';
 
       // Compress if enabled
       if (options.compressBackup) {
@@ -186,12 +200,11 @@ class BackupService {
       }
 
       // Encrypt if enabled
-      if (options.encryptBackup && options.encryptionPassword) {
-        console.log('🟣 [BackupService] Encrypting data...');
-        // Use combined encryption key: masterPassword::fixedConstant
-        const backupEncryptionKey = this.generateBackupEncryptionKey(
-          options.encryptionPassword,
+      if (options.encryptBackup) {
+        console.log(
+          '🟣 [BackupService] Encrypting data with fixed backup key...',
         );
+        const backupEncryptionKey = this.getBackupEncryptionKey();
         content = await this.encryptData(content, backupEncryptionKey);
         console.log(
           '🟣 [BackupService] Encrypted size:',
@@ -201,7 +214,23 @@ class BackupService {
       }
 
       // Prepend metadata prefix to the backup file
-      const finalContent = metadataPrefix + content;
+      let finalContent = metadataPrefix + content;
+
+      // Apply file-level wrapper encryption if backup is encrypted
+      if (options.encryptBackup) {
+        console.log(
+          '🟣 [BackupService] Applying file-level wrapper encryption with AES-256-CBC...',
+        );
+        finalContent = await this.encryptBackupFileWrapper(
+          finalContent,
+          BACKUP_FILE_WRAPPER_KEY,
+        );
+        console.log(
+          '🟣 [BackupService] File wrapper encrypted size:',
+          finalContent.length,
+          'bytes',
+        );
+      }
 
       // Write to file
       console.log('🟣 [BackupService] Writing to file:', fullPath);
@@ -242,79 +271,98 @@ class BackupService {
       // Read backup file
       let content: string = await RNFS.readFile(filePath, 'utf8');
 
-      console.log('🔵 [BackupService] Read backup file, length:', content.length);
-      console.log('🔵 [BackupService] First 100 chars:', content.substring(0, 100));
+      console.log(
+        '🔵 [BackupService] Read backup file, length:',
+        content.length,
+      );
+      console.log(
+        '🔵 [BackupService] First 100 chars:',
+        content.substring(0, 100),
+      );
 
       // Check if content is base64-encoded (e.g., from Google Drive download)
       const base64Pattern = /^[A-Za-z0-9+/=\s\r\n]*$/;
       const trimmedContent = content.trim();
-      
+
       if (base64Pattern.test(trimmedContent)) {
         try {
           // Remove all whitespace before decoding
           const cleanBase64 = trimmedContent.replace(/\s/g, '');
-          
+
           // Try to decode - valid base64 should decode without errors
           const decoded = Buffer.from(cleanBase64, 'base64').toString('utf8');
-          
+
           // Verify it's valid JSON by checking for common JSON markers
-          if ((decoded.includes('{') || decoded.includes('[')) && 
-              !content.includes('ENCRYPTED_V1:') && // Only decode if not already an encrypted backup marker
-              content.length !== decoded.length) { // Only decode if size changed significantly
+          if (
+            (decoded.includes('{') || decoded.includes('[')) &&
+            !content.includes('ENCRYPTED_V1:') && // Only decode if not already an encrypted backup marker
+            content.length !== decoded.length
+          ) {
+            // Only decode if size changed significantly
             content = decoded;
-            console.log('🔵 [BackupService] Decoded base64 content, new length:', content.length);
-            console.log('🔵 [BackupService] First 100 chars after decode:', content.substring(0, 100));
+            console.log(
+              '🔵 [BackupService] Decoded base64 content, new length:',
+              content.length,
+            );
+            console.log(
+              '🔵 [BackupService] First 100 chars after decode:',
+              content.substring(0, 100),
+            );
           }
         } catch (decodeError) {
-          console.warn('⚠️ [BackupService] Failed to decode base64, proceeding with original content:', decodeError);
+          console.warn(
+            '⚠️ [BackupService] Failed to decode base64, proceeding with original content:',
+            decodeError,
+          );
         }
       } else {
-        console.log('🔵 [BackupService] Content does not appear to be base64 encoded');
+        console.log(
+          '🔵 [BackupService] Content does not appear to be base64 encoded',
+        );
       }
 
-      let backupFixedSalt: string | null = null;
-      let decryptionPasswordToUse = options.decryptionPassword;
+      // Unwrap file-level encryption if present (must be done BEFORE metadata extraction)
+      if (this.isFileEncrypted(content)) {
+        try {
+          console.log(
+            '🔓 [BackupService] Detected file-level encryption wrapper, unwrapping...',
+          );
+          content = await this.decryptBackupFileWrapper(
+            content,
+            BACKUP_FILE_WRAPPER_KEY,
+          );
+          console.log(
+            '✅ [BackupService] File-level wrapper decrypted successfully',
+          );
+        } catch (error) {
+          console.error(
+            '❌ [BackupService] File-level unwrapping failed:',
+            error,
+          );
+          return {
+            result: {
+              success: false,
+              restoredEntries: 0,
+              skippedEntries: 0,
+              errorEntries: 0,
+              restoredCategories: 0,
+              restoredDomains: 0,
+              errors: ['Failed to unwrap backup file encryption'] as string[],
+              warnings: [],
+            },
+          };
+        }
+      }
 
-      // Extract metadata from unencrypted prefix if present
+      // Extract metadata from unencrypted prefix if present (for logging purposes)
       if (content.startsWith('METADATA_V1:')) {
         try {
           const separatorIndex = content.indexOf('|||');
           if (separatorIndex !== -1) {
-            const metadataBase64 = content.substring(12, separatorIndex);
-            const metadataJson = Buffer.from(metadataBase64, 'base64').toString('utf8');
-            const metadata: BackupMetadata = JSON.parse(metadataJson);
-            
-            if (metadata.fixedSalt) {
-              backupFixedSalt = metadata.fixedSalt;
-              console.log('🔐 [BackupService] Found fixedSalt in backup metadata:', backupFixedSalt.substring(0, 16) + '...');
-              
-              // If decryption password is provided, regenerate it using the backup's fixed salt
-              if (decryptionPasswordToUse) {
-                try {
-                  const { generateStaticMasterPasswordWithSalt } = await import(
-                    './staticMasterPasswordService'
-                  );
-                  const result = await generateStaticMasterPasswordWithSalt(
-                    decryptionPasswordToUse,
-                    backupFixedSalt,
-                  );
-                  if (result.success && result.password) {
-                    decryptionPasswordToUse = result.password;
-                    console.log('🔐 [BackupService] Using master password derived from backup fixedSalt');
-                  } else {
-                    console.error('❌ [BackupService] Failed to generate password with backup fixedSalt:', result.error);
-                  }
-                } catch (error) {
-                  console.error('❌ [BackupService] Exception regenerating password with backup fixedSalt:', error);
-                  // Continue with original password - it might still work if local salt matches
-                }
-              }
-            } else {
-              console.log('ℹ️ [BackupService] No fixedSalt in backup metadata - will use current system salt');
-            }
+            console.log('🔐 [BackupService] Backup metadata extracted');
           }
         } catch (error) {
-          console.warn('⚠️ [BackupService] Failed to extract fixedSalt from metadata:', error);
+          console.warn('⚠️ [BackupService] Failed to extract metadata:', error);
         }
       }
 
@@ -327,14 +375,23 @@ class BackupService {
         }
       }
 
-      // Decrypt if needed
-      if (decryptionPasswordToUse) {
+      // 🔐 Decrypt if backup is encrypted (uses fixed backup key)
+      if (
+        content.startsWith('ENCRYPTED_V1:') ||
+        content.startsWith('ENCRYPTED_V2:') ||
+        content.startsWith('BACKUP_ENCRYPTED_V2:')
+      ) {
         try {
-          console.log('🔓 [BackupService] Decrypting backup with password...');
-          // Use combined decryption key: masterPassword::fixedConstant
-          const backupDecryptionKey = this.generateBackupEncryptionKey(
-            decryptionPasswordToUse,
+          console.log(
+            '🔓 [BackupService] Decrypting backup with fixed backup key...',
           );
+
+          // Handle BACKUP_ENCRYPTED_V2 by converting to ENCRYPTED_V2 format
+          if (content.startsWith('BACKUP_ENCRYPTED_V2:')) {
+            content = content.replace(/^BACKUP_ENCRYPTED_V2:/, 'ENCRYPTED_V2:');
+          }
+
+          const backupDecryptionKey = this.getBackupEncryptionKey();
           const beforeDecrypt = content.substring(0, 100);
           content = (await this.decryptData(
             content,
@@ -356,7 +413,7 @@ class BackupService {
               errorEntries: 0,
               restoredCategories: 0,
               restoredDomains: 0,
-              errors: ['Invalid decryption password'] as string[],
+              errors: ['Failed to decrypt backup with fixed key'] as string[],
               warnings: [],
             },
           };
@@ -368,8 +425,28 @@ class BackupService {
         content = (await this.decompressData(content)) as string;
       }
 
-      // Parse backup data
-      const backupData: BackupData = JSON.parse(content);
+      // Parse backup data with error handling
+      let backupData: BackupData;
+      try {
+        backupData = JSON.parse(content);
+      } catch (parseError) {
+        console.error(
+          '❌ [BackupService] Failed to parse backup data as JSON:',
+          parseError,
+        );
+        return {
+          result: {
+            success: false,
+            restoredEntries: 0,
+            skippedEntries: 0,
+            errorEntries: 0,
+            restoredCategories: 0,
+            restoredDomains: 0,
+            errors: ['Failed to parse backup data: Invalid format'] as string[],
+            warnings: [],
+          },
+        };
+      }
 
       // Validate backup
       const validationResult = this.validateBackup(backupData);
@@ -388,51 +465,11 @@ class BackupService {
         };
       }
 
-      // If the backup was encrypted, the entries within it were also re-encrypted with the backup key.
-      // We must decrypt them here before returning them to the caller.
-      if (options.decryptionPassword) {
-        console.log('🔵 [BackupService] Decrypting entries within the backup...');
-        const backupDecryptionKey = this.generateBackupEncryptionKey(
-          options.decryptionPassword,
-        );
-
-        const decryptedEntries = await Promise.all(
-          backupData.entries.map(async (entry: BackupPasswordEntry) => {
-            if (entry.isPasswordEncrypted && entry.password && entry.salt && entry.iv && entry.authTag) {
-              try {
-                const derivedKey = deriveKeyFromPassword(
-                  backupDecryptionKey,
-                  entry.salt,
-                );
-                const decryptedPassword = decryptData(
-                  entry.password,
-                  derivedKey,
-                  entry.iv,
-                  entry.authTag,
-                );
-                console.log(`✅ [BackupService] Decrypted entry: ${entry.title}`);
-                const decrypted: BackupPasswordEntry = {
-                  ...entry,
-                  password: decryptedPassword,
-                  isPasswordEncrypted: false,
-                  salt: undefined,
-                  iv: undefined,
-                  authTag: undefined,
-                };
-                return decrypted;
-              } catch (error) {
-                console.error(
-                  `❌ [BackupService] Failed to decrypt entry "${entry.title}" during restore. It will be skipped.`,
-                  error,
-                );
-                return { ...entry, password: '', _corruptedDuringRestore: true } as BackupPasswordEntry;
-              }
-            }
-            return entry;
-          }),
-        );
-        backupData.entries = decryptedEntries.filter((e: BackupPasswordEntry) => !e._corruptedDuringRestore);
-      }
+      // OPTIMIZED FLOW: Entries in backup are already encrypted with their original salt/iv/authTag
+      // No need to decrypt/re-encrypt - they'll be restored as-is to the database
+      console.log(
+        '✅ [BackupService] Backup entries loaded (already encrypted, will restore as-is)',
+      );
 
       // Process restored entries
       const processedEntries = this.processRestoredEntries(
@@ -535,17 +572,65 @@ class BackupService {
     try {
       let content: string = await RNFS.readFile(filePath, 'utf8');
       const stats = await RNFS.stat(filePath);
+      const filename = filePath.split('/').pop() || '';
 
-      // Try to read just the metadata
-      if (this.isEncrypted(content)) {
-        // For encrypted backups, we can't read metadata without password
-        const filename = filePath.split('/').pop() || '';
+      // Try to extract metadata from prefix first (works for both encrypted and unencrypted)
+      let extractedMetadata: BackupMetadata | null = null;
+      if (content.startsWith('METADATA_V1:')) {
+        try {
+          const metadataEndIndex = content.indexOf('|||');
+          if (metadataEndIndex !== -1) {
+            const metadataBase64 = content.substring(12, metadataEndIndex);
+            const metadataJson = Buffer.from(metadataBase64, 'base64').toString(
+              'utf8',
+            );
+            extractedMetadata = JSON.parse(metadataJson);
+            console.log(
+              '✅ [getBackupInfo] Successfully extracted metadata from prefix',
+            );
+          }
+        } catch (error) {
+          console.warn(
+            '⚠️ [getBackupInfo] Failed to extract metadata from prefix:',
+            error,
+          );
+        }
+      }
+
+      // If we have extracted metadata, use it regardless of encryption
+      if (extractedMetadata) {
         const timestampMatch = filename.match(
           /(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/,
         );
         const timestamp = timestampMatch
           ? new Date(timestampMatch[1].replace(/_/, 'T').replace(/-/g, ':'))
-          : stats.mtime;
+          : new Date(stats.mtime);
+
+        return {
+          id: this.generateId(),
+          filename,
+          filePath,
+          timestamp,
+          size: stats.size,
+          entryCount: extractedMetadata.entryCount,
+          categoryCount: extractedMetadata.categoryCount,
+          version: 'unknown',
+          platform: extractedMetadata.platform,
+          isEncrypted:
+            this.isEncrypted(content) || this.isFileEncrypted(content),
+          isCompressed: extractedMetadata.compressionMethod !== 'none',
+        };
+      }
+
+      // Try to read just the metadata (for files without metadata prefix)
+      if (this.isEncrypted(content) || this.isFileEncrypted(content)) {
+        // For encrypted backups without metadata prefix, we can't read metadata without password
+        const timestampMatch = filename.match(
+          /(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/,
+        );
+        const timestamp = timestampMatch
+          ? new Date(timestampMatch[1].replace(/_/, 'T').replace(/-/g, ':'))
+          : new Date(stats.mtime);
 
         return {
           id: this.generateId(),
@@ -570,7 +655,7 @@ class BackupService {
 
       return {
         id: this.generateId(),
-        filename: filePath.split('/').pop() || '',
+        filename,
         filePath,
         timestamp: new Date(backupData.timestamp),
         size: stats.size,
@@ -578,7 +663,7 @@ class BackupService {
         categoryCount: backupData.metadata.categoryCount,
         version: backupData.version,
         platform: backupData.metadata.platform,
-        isEncrypted: this.isEncrypted(await RNFS.readFile(filePath, 'utf8')),
+        isEncrypted: this.isEncrypted(content) || this.isFileEncrypted(content),
         isCompressed: backupData.metadata.compressionMethod !== 'none',
       };
     } catch (error) {
@@ -660,7 +745,6 @@ class BackupService {
       includeAttachments: false,
       encryptBackup: autoSettings.encryptBackups,
       compressBackup: true,
-      encryptionPassword: autoSettings.encryptionPassword,
       customPath: autoSettings.backupPath,
       filename: this.generateAutoBackupFilename(),
     };
@@ -694,63 +778,57 @@ class BackupService {
 
     // Process entries based on options
     if (options.includePasswords) {
-      if (options.encryptBackup && !options.encryptionPassword) {
-        throw new Error(
-          'Backup encryption is enabled, but no password was provided to re-encrypt entries.',
+      // OPTIMIZED FLOW: Get encrypted entries directly from database
+      // Backup encrypted entries as-is without re-encryption
+      try {
+        const { EncryptedDatabaseService } = await import(
+          './encryptedDatabaseService'
         );
+        const dbService = EncryptedDatabaseService.getInstance();
+        const encryptedEntries = await dbService.getAllEncryptedEntries();
+        console.log(
+          `🔐 [BackupService] Loaded ${encryptedEntries.length} encrypted entries from database`,
+        );
+
+        // Map encrypted entries for backup
+        processedEntries = entries.map(entry => {
+          // Find the encrypted data for this entry
+          const encryptedEntry = encryptedEntries.find(e => e.id === entry.id);
+
+          if (encryptedEntry) {
+            // Use encrypted data as-is
+            const backupEntry: BackupPasswordEntry = {
+              ...entry,
+              password: encryptedEntry.encryptedData, // Already encrypted ciphertext
+              salt: encryptedEntry.salt,
+              iv: encryptedEntry.iv,
+              authTag: encryptedEntry.authTag,
+              isPasswordEncrypted: true,
+            };
+
+            console.log(
+              `✅ [BackupService] Using encrypted entry as-is for backup: "${entry.title}"`,
+            );
+
+            return backupEntry;
+          } else {
+            console.warn(
+              `⚠️ [BackupService] Could not find encrypted data for: "${entry.title}"`,
+            );
+            return {
+              ...entry,
+              password: '',
+              isPasswordEncrypted: false,
+            } as BackupPasswordEntry;
+          }
+        });
+      } catch (error) {
+        console.error(
+          '❌ [BackupService] Failed to load encrypted entries:',
+          error,
+        );
+        throw new Error(`Failed to prepare backup: ${error}`);
       }
-
-      // Use a consistent key for re-encrypting all entries within this backup.
-      // This key is derived from the master password provided for the backup operation.
-      const backupEntryEncryptionKey = this.generateBackupEncryptionKey(
-        options.encryptionPassword!,
-      );
-
-      processedEntries = entries.map(entry => {
-        try {
-          // The `entry.password` from PasswordsScreen is the decrypted plaintext password.
-          // We re-encrypt it here for the backup to ensure all entries use the same key.
-          const plainPassword = entry.password || '';
-
-          const salt = generateSecureRandom(32); // 32 bytes for salt
-          const iv = generateSecureRandom(12); // 12 bytes for GCM IV
-
-          // Derive a key for this specific entry using the consistent backup key and a new salt.
-          const derivedKey = deriveKeyFromPassword(
-            backupEntryEncryptionKey,
-            salt,
-          );
-
-          // Encrypt the plaintext password.
-          const { ciphertext, tag } = encryptData(plainPassword, derivedKey, iv);
-
-          const backupEntry: BackupPasswordEntry = {
-            ...entry,
-            password: ciphertext, // This is the new ciphertext for the backup
-            salt: salt,
-            iv: iv,
-            authTag: tag,
-            isPasswordEncrypted: true,
-          };
-
-          console.log(
-            `🔐 [BackupService] Re-encrypted entry "${entry.title}" for backup.`,
-          );
-
-          return backupEntry;
-        } catch (error) {
-          console.error(
-            `❌ [BackupService] Failed to re-encrypt entry "${entry.title}" for backup. It will be excluded.`,
-            error,
-          );
-          return {
-            ...entry,
-            password: '',
-            isPasswordEncrypted: false,
-            _corruptedDuringBackup: true, // Mark for skipping during restore
-          } as BackupPasswordEntry;
-        }
-      });
     } else {
       processedEntries = entries.map(entry => ({
         ...entry,
@@ -779,17 +857,6 @@ class BackupService {
     const deviceBrand = await DeviceInfo.getBrand();
     const systemVersion = await DeviceInfo.getSystemVersion();
 
-    let fixedSalt: string | null = null;
-    try {
-      const { getFixedSalt } = await import('./staticMasterPasswordService');
-      fixedSalt = await getFixedSalt(options.encryptionPassword);
-      if (fixedSalt) {
-        console.log('🔐 [BackupService] Fixed salt included in backup metadata (from Firebase)');
-      }
-    } catch (error) {
-      console.warn('⚠️ [BackupService] Failed to get fixed salt for backup:', error);
-    }
-
     const metadata: BackupMetadata = {
       appVersion,
       platform: `${Platform.OS} ${systemVersion}`,
@@ -800,7 +867,6 @@ class BackupService {
       encryptionMethod: options.encryptBackup ? 'AES-256-GCM' : 'none',
       compressionMethod: options.compressBackup ? 'gzip' : 'none',
       backupSize: 0,
-      fixedSalt: fixedSalt || undefined,
     };
 
     // Prepare settings with device info if needed
@@ -986,7 +1052,10 @@ class BackupService {
 
   private async decryptData(data: string, password: string): Promise<string> {
     try {
-      if (!data.startsWith('ENCRYPTED_V1:')) {
+      if (
+        !data.startsWith('ENCRYPTED_V1:') &&
+        !data.startsWith('ENCRYPTED_V2:')
+      ) {
         throw new Error('Invalid encrypted data format');
       }
 
@@ -998,39 +1067,9 @@ class BackupService {
 
       const [_, salt, iv, ciphertext, tag] = parts;
 
-      // Try decryption with the provided password
-      try {
-        const derivedKey = deriveKeyFromPassword(password, salt);
-        return decryptData(ciphertext, derivedKey, iv, tag);
-      } catch (initialError) {
-        // If decryption fails, try alternative password formats
-        console.warn(
-          '🔄 [BackupService] Initial decryption failed, trying alternative password formats...',
-        );
-
-        const alternativePasswords = this.generateAlternativePasswordFormats(
-          password,
-        );
-
-        for (const altPassword of alternativePasswords) {
-          try {
-            console.log(
-              '🔄 [BackupService] Trying alternative password format...',
-            );
-            const derivedKey = deriveKeyFromPassword(altPassword, salt);
-            const result = decryptData(ciphertext, derivedKey, iv, tag);
-            console.log(
-              '✅ [BackupService] Decryption successful with alternative password format!',
-            );
-            return result;
-          } catch (altError) {
-            // Continue to next alternative
-          }
-        }
-
-        // If all alternatives failed, throw the original error
-        throw initialError;
-      }
+      // Decrypt with the provided password (fixed backup key)
+      const derivedKey = deriveKeyFromPassword(password, salt);
+      return decryptData(ciphertext, derivedKey, iv, tag);
     } catch (error) {
       console.error('Decryption error:', error);
       throw new Error(
@@ -1040,56 +1079,136 @@ class BackupService {
     }
   }
 
-  /**
-   * Generate alternative password format combinations for backward compatibility
-   * Handles changes in how the dynamic master password is composed
-   */
-  private generateAlternativePasswordFormats(password: string): string[] {
-    const alternatives: string[] = [];
+  private async encryptBackupFileWrapper(
+    data: string,
+    password: string,
+  ): Promise<string> {
+    try {
+      console.log(
+        '🔐 [BackupService] Encrypting backup file wrapper with AES-256-CBC...',
+      );
 
-    // Split the password by :: to work with components
-    const components = password.split('::');
+      // Generate salt for key derivation
+      const salt = generateSecureRandom(32);
 
-    // If password has 4+ components and ends with our fixed constant, try without it
-    if (
-      components.length >= 4 &&
-      components[components.length - 1] === BACKUP_ENCRYPTION_CONSTANT
-    ) {
-      // Try removing the fixed constant (backward compatibility for old backups)
-      const passwordWithoutConstant = components.slice(0, -1).join('::');
-      alternatives.push(passwordWithoutConstant);
+      // Derive encryption key from password using PBKDF2-SHA512
+      const derivedKey = deriveKeyFromPassword(
+        password,
+        salt,
+        CRYPTO_CONSTANTS.PBKDF2_ITERATIONS,
+      );
 
-      // Also try the 4-component format variations
-      if (components.length === 4) {
-        const [uuid, timestamp, email] = components;
-        alternatives.push([uuid, email, timestamp].join('::'));
+      // Generate IV for CBC mode (16 bytes for AES)
+      const iv = generateSecureRandom(16);
+
+      // Encrypt using AES-256-CBC (different mode from entry-level CTR)
+      const keyWordArray = CryptoJS.enc.Hex.parse(derivedKey);
+      const ivWordArray = CryptoJS.enc.Hex.parse(iv);
+
+      const encrypted = CryptoJS.AES.encrypt(data, keyWordArray, {
+        iv: ivWordArray,
+        mode: CryptoJS.mode.CBC,
+        padding: CryptoJS.pad.Pkcs7,
+      });
+
+      const ciphertextHex = encrypted.ciphertext.toString(CryptoJS.enc.Hex);
+
+      // Generate authentication tag using HMAC-SHA512 (different from entry-level SHA256)
+      const tag = CryptoJS.HmacSHA512(ciphertextHex + iv, keyWordArray)
+        .toString(CryptoJS.enc.Hex)
+        .substring(0, 32);
+
+      console.log('✅ [BackupService] Backup file encrypted with CBC mode');
+
+      // Format: BACKUP_ENCRYPTED_V2:{hex_salt}:{hex_iv}:{hex_ciphertext}:{hex_tag}
+      return `BACKUP_ENCRYPTED_V2:${salt}:${iv}:${ciphertextHex}:${tag}`;
+    } catch (error) {
+      console.error('❌ [BackupService] File-level encryption error:', error);
+      throw new Error('Failed to encrypt backup file wrapper');
+    }
+  }
+
+  private async decryptBackupFileWrapper(
+    data: string,
+    password: string,
+  ): Promise<string> {
+    try {
+      console.log('🔓 [BackupService] Decrypting backup file wrapper...');
+
+      if (!data.startsWith('BACKUP_ENCRYPTED_V2:')) {
+        throw new Error('Invalid backup encryption format');
       }
-    }
 
-    // If password has 4 components (UUID::TIMESTAMP::EMAIL::SALT or similar)
-    // Try 3-component format variations
-    if (components.length === 4) {
-      const [uuid, timestamp, email, salt] = components;
-      alternatives.push([uuid, email, timestamp].join('::'));
-      alternatives.push([uuid, email, salt].join('::'));
-      alternatives.push([uuid, timestamp, email].join('::'));
-    }
+      // Parse the encrypted data: BACKUP_ENCRYPTED_V2:{salt}:{iv}:{ciphertext}:{tag}
+      const parts = data.split(':');
+      if (parts.length !== 5) {
+        throw new Error('Invalid backup encryption format');
+      }
 
-    // If password has 3 components, try different orderings
-    if (components.length === 3) {
-      const [comp1, comp2, comp3] = components;
-      alternatives.push([comp1, comp3, comp2].join('::'));
-      alternatives.push([comp2, comp1, comp3].join('::'));
-      alternatives.push([comp2, comp3, comp1].join('::'));
-      alternatives.push([comp3, comp1, comp2].join('::'));
-      alternatives.push([comp3, comp2, comp1].join('::'));
-    }
+      const [_, salt, iv, ciphertext, tag] = parts;
 
-    return alternatives;
+      // Derive decryption key using same parameters as encryption
+      const derivedKey = deriveKeyFromPassword(
+        password,
+        salt,
+        CRYPTO_CONSTANTS.PBKDF2_ITERATIONS,
+      );
+
+      // Verify authentication tag using HMAC-SHA512
+      const keyWordArray = CryptoJS.enc.Hex.parse(derivedKey);
+      const tagInput = ciphertext + iv;
+      const expectedTag = CryptoJS.HmacSHA512(tagInput, keyWordArray)
+        .toString(CryptoJS.enc.Hex)
+        .substring(0, 32);
+
+      if (expectedTag !== tag) {
+        console.error(
+          '❌ [BackupService] File-level authentication tag verification FAILED!',
+        );
+        throw new Error('Backup file authentication verification failed');
+      }
+
+      console.log('✅ [BackupService] File-level tag verified');
+
+      // Decrypt using AES-256-CBC
+      const ivWordArray = CryptoJS.enc.Hex.parse(iv);
+      const ciphertextWordArray = CryptoJS.enc.Hex.parse(ciphertext);
+
+      const decrypted = CryptoJS.AES.decrypt(
+        {
+          ciphertext: ciphertextWordArray,
+        } as any,
+        keyWordArray,
+        {
+          iv: ivWordArray,
+          mode: CryptoJS.mode.CBC,
+          padding: CryptoJS.pad.Pkcs7,
+        },
+      );
+
+      const plaintext = decrypted.toString(CryptoJS.enc.Utf8);
+
+      if (!plaintext) {
+        throw new Error('Backup file decryption resulted in empty data');
+      }
+
+      console.log('✅ [BackupService] Backup file decrypted successfully');
+      return plaintext;
+    } catch (error) {
+      console.error('❌ [BackupService] File-level decryption error:', error);
+      throw new Error(
+        'Failed to decrypt backup file: ' +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    }
   }
 
   private isEncrypted(data: string): boolean {
     return data.startsWith('ENCRYPTED_V1:');
+  }
+
+  private isFileEncrypted(data: string): boolean {
+    return data.startsWith('BACKUP_ENCRYPTED_V2:');
   }
 
   private validateBackup(backup: BackupData): {
@@ -1129,8 +1248,15 @@ class BackupService {
     _options: RestoreOptions,
   ): PasswordEntry[] {
     return entries.map(entry => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { _corruptedDuringBackup, _corruptedDuringRestore, isPasswordEncrypted, salt, iv, authTag, ...cleanEntry } = entry;
+      // Remove backup-specific metadata fields from entry
+      const cleanEntry = { ...entry };
+      delete cleanEntry._corruptedDuringBackup;
+      delete cleanEntry._corruptedDuringRestore;
+      delete cleanEntry.isPasswordEncrypted;
+      delete cleanEntry.salt;
+      delete cleanEntry.iv;
+      delete cleanEntry.authTag;
+
       return {
         ...cleanEntry,
         id: this.generateId(),
@@ -1294,19 +1420,49 @@ class BackupService {
     try {
       let content = fileContent.trim();
 
-      // Check for unencrypted metadata prefix first (new format)
+      // 🔐 CRITICAL FIX: Decrypt file-level wrapper FIRST before trying to extract metadata
+      // The metadata prefix is INSIDE the file wrapper encryption, not outside!
+      if (this.isFileEncrypted(content)) {
+        try {
+          console.log(
+            '🔓 [extractBackupMetadata] Detected file-level encryption, decrypting wrapper first...',
+          );
+          content = await this.decryptBackupFileWrapper(
+            content,
+            BACKUP_FILE_WRAPPER_KEY,
+          );
+          console.log(
+            '✅ [extractBackupMetadata] File-level wrapper decrypted successfully',
+          );
+        } catch (error) {
+          console.error(
+            '❌ [extractBackupMetadata] Failed to decrypt file wrapper:',
+            error,
+          );
+          return null;
+        }
+      }
+
+      // NOW try to extract unencrypted metadata prefix (after wrapper decryption)
       if (content.startsWith('METADATA_V1:')) {
         try {
           const metadataEndIndex = content.indexOf('|||');
           if (metadataEndIndex !== -1) {
             const metadataBase64 = content.substring(12, metadataEndIndex); // Remove 'METADATA_V1:' prefix
-            const metadataJson = Buffer.from(metadataBase64, 'base64').toString('utf8');
+            const metadataJson = Buffer.from(metadataBase64, 'base64').toString(
+              'utf8',
+            );
             const metadata: BackupMetadata = JSON.parse(metadataJson);
-            console.log('✅ [extractBackupMetadata] Successfully extracted metadata from prefix');
+            console.log(
+              '✅ [extractBackupMetadata] Successfully extracted metadata from prefix',
+            );
             return metadata;
           }
         } catch (error) {
-          console.warn('⚠️ [extractBackupMetadata] Failed to extract metadata from prefix:', error);
+          console.warn(
+            '⚠️ [extractBackupMetadata] Failed to extract metadata from prefix:',
+            error,
+          );
           // Fall through to try decrypting the rest
         }
       }
@@ -1318,21 +1474,33 @@ class BackupService {
       }
 
       // If content is encrypted and no password provided, cannot extract metadata
-      if (content.startsWith('ENCRYPTED_V1:') || content.startsWith('ENCRYPTED_V2:')) {
+      if (
+        content.startsWith('ENCRYPTED_V1:') ||
+        content.startsWith('ENCRYPTED_V2:') ||
+        content.startsWith('BACKUP_ENCRYPTED_V2:')
+      ) {
         if (!decryptionPassword) {
-          console.warn('⚠️ [extractBackupMetadata] Backup is encrypted but no password provided');
+          console.warn(
+            '⚠️ [extractBackupMetadata] Backup is encrypted but no password provided',
+          );
           return null;
         }
         try {
-          const backupDecryptionKey = this.generateBackupEncryptionKey(
-            decryptionPassword,
-          );
+          // Handle BACKUP_ENCRYPTED_V2 by converting to ENCRYPTED_V2 format
+          if (content.startsWith('BACKUP_ENCRYPTED_V2:')) {
+            content = content.replace(/^BACKUP_ENCRYPTED_V2:/, 'ENCRYPTED_V2:');
+          }
+
+          const backupDecryptionKey = this.getBackupEncryptionKey();
           content = (await this.decryptData(
             content,
             backupDecryptionKey,
           )) as string;
         } catch (error) {
-          console.error('Failed to decrypt backup for metadata extraction:', error);
+          console.error(
+            'Failed to decrypt backup for metadata extraction:',
+            error,
+          );
           return null;
         }
       }
@@ -1341,8 +1509,14 @@ class BackupService {
         content = (await this.decompressData(content)) as string;
       }
 
-      const backupData: BackupData = JSON.parse(content);
-      return backupData.metadata || null;
+      // Try to parse as JSON, handling cases where content might not be valid JSON
+      try {
+        const backupData: BackupData = JSON.parse(content);
+        return backupData.metadata || null;
+      } catch (parseError) {
+        console.error('Failed to parse backup data as JSON:', parseError);
+        return null;
+      }
     } catch (error) {
       console.error('Failed to extract backup metadata:', error);
       return null;

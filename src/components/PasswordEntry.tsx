@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,12 +16,14 @@ import {
   CATEGORY_ICONS,
 } from '../constants/categories';
 import { BiometricPrompt } from './BiometricPrompt';
-import { MasterPasswordPrompt } from './MasterPasswordPrompt';
+import { BiometricFallbackPrompt } from './BiometricFallbackPrompt';
+import { PinPromptModal } from './PinPromptModal';
 import { useBiometric } from '../hooks/useBiometric';
 import Toast from './Toast';
 import { useAppDispatch } from '../hooks/redux';
 import { decryptPasswordField } from '../store/slices/passwordsSlice';
-import { getEffectiveMasterPassword } from '../services/staticMasterPasswordService';
+import { AuditHistoryService } from '../services/auditHistoryService';
+import { AuditHistoryEntry } from '../types/password';
 
 interface PasswordEntryComponentProps {
   password: PasswordEntry;
@@ -150,11 +152,13 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   const { isAvailable: isBiometricAvailable } = useBiometric();
   const [isPasswordVisible, setIsPasswordVisible] = useState(showPassword);
   const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
+  const [showFallbackModal, setShowFallbackModal] = useState(false);
   const [showPinPrompt, setShowPinPrompt] = useState(false);
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [decryptedPassword, setDecryptedPassword] = useState<string | null>(
     null,
   );
+  const [latestAudit, setLatestAudit] = useState<AuditHistoryEntry | null>(null);
   const [toast, setToast] = useState({
     visible: false,
     message: '',
@@ -163,8 +167,21 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
 
   const styles = createStyles(theme);
 
+  useEffect(() => {
+    const fetchLatestAudit = async () => {
+      try {
+        const audit = await AuditHistoryService.getLatestAudit(password.id);
+        setLatestAudit(audit);
+        console.log('✅ [PasswordEntry] Latest audit loaded for:', password.id, 'Score:', audit?.score);
+      } catch (error) {
+        console.error('Error fetching latest audit:', error);
+      }
+    };
+
+    fetchLatestAudit();
+  }, [password.id, password.updatedAt]);
+
   // Check if password is encrypted (lazy loaded)
-  const isPasswordEncrypted = !password.isDecrypted;
 
   const handleCopyUsername = async () => {
     if (password.username) {
@@ -242,8 +259,8 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       if (isBiometricAvailable) {
         setShowBiometricPrompt(true);
       } else {
-        // Fallback to PIN/Master Password
-        setShowPinPrompt(true);
+        // Fallback to Master Password + PIN
+        setShowFallbackModal(true);
       }
     } else {
       // Hide password - no authentication needed
@@ -254,17 +271,15 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   const handleBiometricSuccess = async () => {
     setShowBiometricPrompt(false);
 
-    // If password is encrypted, decrypt it first
-    if (isPasswordEncrypted && !decryptedPassword) {
-      await decryptPassword();
-    }
-
-    setIsPasswordVisible(true);
     setToast({
       visible: true,
-      message: 'Authentication successful',
+      message: 'Biometric verified',
       type: 'success',
     });
+
+    setTimeout(() => {
+      setShowPinPrompt(true);
+    }, 500);
   };
 
   const handleBiometricError = (error: string) => {
@@ -275,69 +290,123 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       type: 'error',
     });
 
-    // Fallback to PIN if biometric fails
     setTimeout(() => {
-      setShowPinPrompt(true);
+      setShowFallbackModal(true);
     }, 500);
   };
 
   const handleBiometricClose = () => {
     setShowBiometricPrompt(false);
+    setTimeout(() => {
+      setShowFallbackModal(true);
+    }, 500);
   };
 
-  const handlePinSuccess = async () => {
-    setShowPinPrompt(false);
+  const handleFallbackSuccess = async (masterPassword: string) => {
+    setShowFallbackModal(false);
 
-    // If password is encrypted, decrypt it first
-    if (isPasswordEncrypted && !decryptedPassword) {
-      await decryptPassword();
-    }
-
-    setIsPasswordVisible(true);
-    setToast({
-      visible: true,
-      message: 'Authentication successful',
-      type: 'success',
-    });
-  };
-
-  const handlePinCancel = () => {
-    setShowPinPrompt(false);
-  };
-
-  // Decrypt password on-demand
-  const decryptPassword = async () => {
     try {
       setIsDecrypting(true);
 
-      // Get master password
-      const result = await getEffectiveMasterPassword();
-      if (!result.success || !result.password) {
-        throw new Error('Failed to get master password');
+      console.log('🔓 [PasswordEntry] Fallback verified - decrypting password');
+
+      if (!decryptedPassword) {
+        const decryptResult = await dispatch(
+          decryptPasswordField({
+            id: password.id,
+            masterPassword: masterPassword,
+          }),
+        ).unwrap();
+
+        console.log('✅ [PasswordEntry] Decrypt result:', {
+          passwordExists: !!decryptResult.password,
+          passwordLength: decryptResult.password?.length,
+        });
+
+        if (decryptResult.password) {
+          setDecryptedPassword(decryptResult.password);
+        } else {
+          throw new Error('Decryption returned empty password');
+        }
       }
 
-      // Decrypt password field
-      const decryptResult = await dispatch(
-        decryptPasswordField({
-          id: password.id,
-          masterPassword: result.password,
-        }),
-      ).unwrap();
-
-      if (decryptResult.password) {
-        setDecryptedPassword(decryptResult.password);
-      }
+      setIsPasswordVisible(true);
+      setToast({
+        visible: true,
+        message: 'Authentication successful',
+        type: 'success',
+      });
     } catch (error) {
-      console.error('Failed to decrypt password:', error);
+      console.error('❌ [PasswordEntry] Failed to decrypt password:', error);
       setToast({
         visible: true,
         message: 'Failed to decrypt password',
         type: 'error',
       });
+      setIsPasswordVisible(false);
     } finally {
       setIsDecrypting(false);
     }
   };
+
+  const handleFallbackCancel = () => {
+    setShowFallbackModal(false);
+  };
+
+  const handlePinPromptCancel = () => {
+    setShowPinPrompt(false);
+  };
+
+  const handlePinSuccess = async (masterPassword: string) => {
+    setShowPinPrompt(false);
+
+    try {
+      setIsDecrypting(true);
+
+      console.log('🔓 [PasswordEntry] PIN Success - decrypting password');
+
+      if (!decryptedPassword) {
+        const decryptResult = await dispatch(
+          decryptPasswordField({
+            id: password.id,
+            masterPassword: masterPassword,
+          }),
+        ).unwrap();
+
+        console.log('✅ [PasswordEntry] Decrypt result:', {
+          passwordExists: !!decryptResult.password,
+          passwordLength: decryptResult.password?.length,
+        });
+
+        if (decryptResult.password) {
+          setDecryptedPassword(decryptResult.password);
+        } else {
+          throw new Error('Decryption returned empty password');
+        }
+      }
+
+      setIsPasswordVisible(true);
+      setToast({
+        visible: true,
+        message: 'Authentication successful',
+        type: 'success',
+      });
+    } catch (error) {
+      console.error('❌ [PasswordEntry] Failed to decrypt password:', error);
+      setToast({
+        visible: true,
+        message: 'Failed to decrypt password',
+        type: 'error',
+      });
+      setIsPasswordVisible(false);
+    } finally {
+      setIsDecrypting(false);
+    }
+  };
+
+
+
+
 
   const getCategoryData = () => {
     // console.log('🔍 Password category debug:', {
@@ -581,9 +650,29 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
             </View>
           )}
 
-          {/* Footer Row - Last Used + Action Icons */}
+          {/* Footer Row - Last Used + Audit Score + Action Icons */}
           <View style={styles.footerRow}>
-            <Text style={styles.lastUsedText}>{getLastUsedText()}</Text>
+            <View style={styles.footerLeftContent}>
+              <Text style={styles.lastUsedText}>{getLastUsedText()}</Text>
+              {latestAudit && (
+                <View style={styles.auditScoreContainer}>
+                  <Icon
+                    name="checkmark-circle"
+                    size={14}
+                    color={latestAudit.passwordStrength.color}
+                    style={styles.auditScoreIcon}
+                  />
+                  <Text
+                    style={[
+                      styles.auditScoreText,
+                      { color: latestAudit.passwordStrength.color },
+                    ]}
+                  >
+                    {latestAudit.score}
+                  </Text>
+                </View>
+              )}
+            </View>
             <View style={styles.actionIconsRow}>
               {onEdit && (
                 <TouchableOpacity
@@ -616,13 +705,20 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
         subtitle="Use biometric authentication to reveal password"
       />
 
-      {/* Master Password Prompt (Fallback) */}
-      <MasterPasswordPrompt
+      {/* Biometric Fallback Prompt (Master Password + PIN when biometric fails) */}
+      <BiometricFallbackPrompt
+        visible={showFallbackModal}
+        onSuccess={handleFallbackSuccess}
+        onCancel={handleFallbackCancel}
+      />
+
+      {/* PIN Prompt Modal */}
+      <PinPromptModal
         visible={showPinPrompt}
         onSuccess={handlePinSuccess}
-        onCancel={handlePinCancel}
-        title="Master Password Required"
-        subtitle="Enter your master password to reveal password"
+        onCancel={handlePinPromptCancel}
+        title="Enter PIN"
+        subtitle="Enter your PIN to decrypt password"
       />
 
       {/* Toast Notification */}
@@ -720,9 +816,31 @@ const createStyles = (theme: Theme) =>
       alignItems: 'center',
       marginTop: 4,
     },
+    footerLeftContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      flex: 1,
+    },
     lastUsedText: {
       fontSize: 12,
       color: theme.textSecondary,
+    },
+    auditScoreContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 4,
+      backgroundColor: theme.background + '40',
+    },
+    auditScoreIcon: {
+      marginRight: 2,
+    },
+    auditScoreText: {
+      fontSize: 11,
+      fontWeight: '600',
     },
     categoryText: {
       fontSize: 12,

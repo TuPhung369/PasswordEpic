@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -16,13 +17,14 @@ import {
   loginStart,
   loginSuccess,
   loginFailure,
+  setShouldNavigateToUnlock,
+  setIsInSetupFlow,
 } from '../../store/slices/authSlice';
 import { useTheme } from '../../contexts/ThemeContext';
 import { signInWithGoogle } from '../../services/authService';
 import { isGoogleSignInModuleAvailable } from '../../services/googleSignIn';
 import { isGoogleSignInReady } from '../../services/googleAuthNative';
 import { isMasterPasswordSet } from '../../services/secureStorageService';
-import { BiometricService } from '../../services/biometricService';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 
 type LoginScreenNavigationProp = NativeStackNavigationProp<
@@ -61,73 +63,151 @@ export const LoginScreen: React.FC = () => {
     onConfirm: () => {},
   });
 
-  // Check for existing valid session on mount
-  React.useEffect(() => {
-    const checkExistingSession = async () => {
-      // Only attempt auto-login once
-      if (autoLoginAttemptedRef.current) {
-        console.log('✓ Auto-login already attempted, skipping');
-        return;
+  const checkFirebaseCredentials = useCallback(async (): Promise<boolean> => {
+    try {
+      const { getCurrentUser, getFirebaseFirestore } = await import(
+        '../../services/firebase'
+      );
+      const { doc, getDoc } = await import('firebase/firestore');
+
+      const currentUser = getCurrentUser();
+      if (!currentUser?.uid) {
+        return false;
       }
 
-      autoLoginAttemptedRef.current = true;
+      const firestore = getFirebaseFirestore();
+      if (!firestore) {
+        return false;
+      }
 
-      // If user is already logged in, start navigation flow
-      if (authState.user) {
-        console.log(
-          `✅ [LoginScreen] User already logged in: ${authState.user.email}`,
-        );
-        setCachedUsername(
-          authState.user.displayName || authState.user.email || 'User',
-        );
+      const userDocRef = doc(firestore, 'users', currentUser.uid);
+      const userDoc = await getDoc(userDocRef);
 
-        setIsAutoLoggingIn(true);
-        isLoadingRef.current = true;
+      if (!userDoc.exists()) {
+        return false;
+      }
 
-        try {
-          const masterPasswordSet = await isMasterPasswordSet();
+      const data = userDoc.data();
+      return !!data?.encryptedMasterPassword;
+    } catch (error) {
+      console.error('Error checking Firebase credentials:', error);
+      return false;
+    }
+  }, []);
 
-          // Check if biometric is enabled for unlock
-          const biometricService = BiometricService.getInstance();
-          const biometricCapability =
-            await biometricService.checkBiometricCapability();
+  const checkExistingSession = useCallback(async () => {
+    // Only attempt auto-login once per mount or focus
+    if (autoLoginAttemptedRef.current) {
+      console.log('✓ Auto-login already attempted, skipping');
+      return;
+    }
+    autoLoginAttemptedRef.current = true;
 
-          if (!masterPasswordSet) {
-            // First time - need to set master password
+    // If user is already logged in, start navigation flow
+    if (authState.user) {
+      console.log(
+        `✅ [LoginScreen] User already logged in: ${authState.user.email}`,
+      );
+      setCachedUsername(
+        authState.user.displayName || authState.user.email || 'User',
+      );
+
+      setIsAutoLoggingIn(true);
+      isLoadingRef.current = true;
+
+      try {
+        const masterPasswordSet = await isMasterPasswordSet();
+        if (!masterPasswordSet) {
+          console.log(
+            '🔐 [LoginScreen] Master password not set - navigating to MasterPassword',
+          );
+          navigation.navigate('MasterPassword', { mode: 'setup' });
+        } else {
+          console.log(
+            '✓ [LoginScreen] Master password set - checking if update needed',
+          );
+          // Master password is set, check if credentials exist in Firebase
+          // If they do, show credential options (keep or update)
+          const hasFirebaseCredentials = await checkFirebaseCredentials();
+          if (hasFirebaseCredentials) {
             console.log(
-              '🔐 [LoginScreen] Master password not set - navigating to MasterPassword',
+              '🔐 [LoginScreen] Existing credentials found - showing options',
             );
-            navigation.navigate('MasterPassword');
-          } else if (biometricCapability.available) {
-            // Master password set & biometric available - go to biometric unlock
+            
+            // CRITICAL: Check if already on CredentialOptions to prevent navigation loop
+            const currentRoute = navigation.getState()?.routes[navigation.getState()?.index || 0];
+            if (currentRoute?.name === 'CredentialOptions') {
+              console.log('🔍 [LoginScreen] Already on CredentialOptions - skipping navigation');
+              setIsAutoLoggingIn(false);
+              return;
+            }
+            
+            // Set isInSetupFlow=true to keep Auth stack visible
+            // and reset shouldNavigateToUnlock to prevent auto-navigation to unlock
             console.log(
-              '🔓 [LoginScreen] Biometric available - navigating to BiometricSetup for unlock',
+              '🔍 [DEBUG_NAV PRE-STEP 2] LoginScreen setting isInSetupFlow=true, shouldNavigateToUnlock=false',
             );
-            navigation.navigate('BiometricSetup');
+            dispatch(setIsInSetupFlow(true)); // Keep Auth stack visible
+            dispatch(setShouldNavigateToUnlock(false)); // Don't auto-navigate to unlock
+            navigation.navigate('CredentialOptions');
           } else {
-            // Master password set but no biometric - AppNavigator will handle navigation
             console.log(
-              '✓ [LoginScreen] Master password set, no biometric - AppNavigator will handle',
+              '✓ [LoginScreen] No Firebase credentials - AppNavigator will handle',
             );
+            setIsAutoLoggingIn(false);
           }
-        } catch (error) {
-          console.error('Failed to check master password status:', error);
-          navigation.navigate('MasterPassword');
         }
-
-        return;
+      } catch (error) {
+        console.error('Failed to check master password status:', error);
+        navigation.navigate('MasterPassword', { mode: 'setup' });
       }
-
+    } else {
       console.log(
         '📋 [LoginScreen] No existing session found - showing login UI',
       );
+      // Reset auto-login state if there's no user
+      setIsAutoLoggingIn(false);
+    }
+  }, [authState.user, navigation, checkFirebaseCredentials, dispatch]);
+
+  // This effect runs when the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log('LoginScreen focused');
+      autoLoginAttemptedRef.current = false; // Reset on focus
+      checkExistingSession();
+
+      return () => {
+        console.log('LoginScreen unfocused');
+        // Optional: Cleanup when the screen is unfocused
+        // Resetting refs here might be too aggressive if navigation is pending
+      };
+    }, [checkExistingSession]),
+  );
+
+  // This effect handles AppState changes (background/foreground)
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'active') {
+        console.log('App has come to the foreground!');
+        // Reset and re-check, as user might need to unlock again
+        autoLoginAttemptedRef.current = false;
+        checkExistingSession();
+      }
     };
 
-    checkExistingSession();
-  }, [authState.user, navigation]);
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [checkExistingSession]);
 
   // Cleanup on unmount
-  React.useEffect(() => {
+  useEffect(() => {
     return () => {
       // Reset all refs when component unmounts
       isLoadingRef.current = false;
@@ -237,7 +317,9 @@ export const LoginScreen: React.FC = () => {
         setButtonPressed(false);
         isLoadingRef.current = false;
         setIsLoading(false);
-        console.log('🔄 Google Sign-In cancelled or failed - button re-enabled');
+        console.log(
+          '🔄 Google Sign-In cancelled or failed - button re-enabled',
+        );
       }
     } catch (error: any) {
       const errorMessage = error.message || 'An unexpected error occurred';

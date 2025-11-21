@@ -287,6 +287,18 @@ Set-Location "e:\IT\Mobile\PasswordEpic\android"
 
 ---
 
-## 📞 Need Help?
+## Release the App Debug Office for Testing
 
-Check the relevant troubleshooting section or review Step 1-4 for any missed configuration.
+### uninstall app.
+
+adb uninstall com.passwordepic
+
+adb shell pm list packages | Select-String "password"
+
+adb uninstall com.passwordepic.mobile
+
+### Build the new one
+.\gradlew clean assembleDebug (if something wrong use .\gradlew assembleDebug)
+
+### Install the apk.
+adb install -r "e:\IT\Mobile\PasswordEpic\android\app\build\outputs\apk\debug\app-debug.apk"

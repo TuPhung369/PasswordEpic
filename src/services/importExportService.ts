@@ -572,6 +572,7 @@ export interface ImportOptions {
   categoryMapping?: { [key: string]: string };
   defaultCategory?: string;
   encryptionPassword?: string;
+  onRequireAuthentication?: () => Promise<string>;
 }
 
 export interface ExportOptions {
@@ -584,6 +585,7 @@ export interface ExportOptions {
   encryptionPassword?: string;
   fileName?: string;
   destinationFolder?: string;
+  onRequireAuthentication?: () => Promise<string>;
 }
 
 export interface ImportResult {
@@ -641,56 +643,56 @@ class ImportExportService {
         hasEncryptionPassword: !!options.encryptionPassword,
       });
 
-      // Get plain text master password for decryption
-      const masterPasswordResult = await getEffectiveMasterPassword();
-      const masterPassword = masterPasswordResult.success
+      // For encrypted entries: just restore as-is, no decryption needed
+      // For plaintext entries: need encryption key to encrypt them on import
+      let masterPasswordResult = await getEffectiveMasterPassword();
+      let masterPassword = masterPasswordResult.success
         ? masterPasswordResult.password
         : null;
 
-      // Reconstruct the EXACT export key that was used during export (masterPassword::fixedConstant)
-      const reconstructedExportKey = generateSecureExportKey(masterPassword);
+      // 🔐 If master password not in cache, try options.encryptionPassword first
+      if (!masterPassword && options.encryptionPassword) {
+        console.log(
+          '🔐 [Import] Using encryptionPassword from import options',
+        );
+        masterPassword = options.encryptionPassword;
+      }
 
-      // Log key reconstruction
-      console.log('🔐 [Import] Reconstructed secure import key:', {
-        pattern: 'masterPassword::fixedConstant',
-        keyLength: reconstructedExportKey.length,
-        keyHash: CryptoJS.SHA256(reconstructedExportKey)
-          .toString()
-          .substring(0, 16),
+      // 🔐 If still no master password and callback provided, trigger authentication
+      // This is needed for plaintext entries that need encryption on import
+      if (!masterPassword && options.onRequireAuthentication) {
+        console.log(
+          '🔐 [Import] Master password not available, triggering authentication callback...',
+        );
+        try {
+          masterPassword = await options.onRequireAuthentication();
+          console.log('✅ [Import] Authentication successful');
+        } catch (authError) {
+          console.error('❌ [Import] Authentication failed or cancelled');
+          throw new Error('Authentication required to import passwords');
+        }
+      }
+
+      console.log('✅ [Import] Ready to import entries', {
+        hasEncryptedEntries: true,
+        masterPasswordAvailable: !!masterPassword,
       });
 
-      // Set up encryption password for import
-      if (!(options as any)._alternativeKeys) {
-        (options as any)._alternativeKeys = [];
-      }
-
-      // PRIMARY KEY: Use the reconstructed export key (masterPassword::fixedConstant)
-      options.encryptionPassword = reconstructedExportKey;
-
-      // Add user-provided encryption password as fallback (if different)
-      if (
-        options.encryptionPassword &&
-        options.encryptionPassword !== reconstructedExportKey
-      ) {
-        (options as any)._alternativeKeys.push(options.encryptionPassword);
-        console.log(
-          '🔄 [Import] Added user-provided key as fallback',
-        );
-      }
-
-      // Validate encryption key
-      const isKeyValid = validateEncryptionKey(masterPassword || '');
-      if (!isKeyValid) {
-        console.warn(
-          '⚠️ [Import] Master password validation failed - decryption may encounter issues',
-        );
-      }
-
-      const fileContent = await RNFS.readFile(filePath, 'utf8');
+      let fileContent = await RNFS.readFile(filePath, 'utf8');
       console.log(
         '📁 [Import] File read successfully, size:',
         fileContent.length,
       );
+
+      // Decrypt file-level encryption if present
+      if (masterPassword) {
+        try {
+          fileContent = this.decryptExportFile(fileContent, masterPassword);
+          console.log('✅ [Import] File decrypted if necessary');
+        } catch (decryptError) {
+          console.warn('⚠️ [Import] File decryption attempt failed, proceeding with original content:', decryptError);
+        }
+      }
 
       const parsedData = await this.parseImportData(
         fileContent,
@@ -804,7 +806,7 @@ class ImportExportService {
       }
 
       // Save processed entries to database
-      if (processedEntries.length > 0 && options.encryptionPassword) {
+      if (processedEntries.length > 0) {
         console.log(
           '💾 [Import] Saving entries to database...',
           processedEntries.length,
@@ -824,154 +826,49 @@ class ImportExportService {
               rawEntry.authTag &&
               rawEntry.password
             ) {
-              // This is an encrypted entry from our export format
-              // We need to decrypt it first, then re-encrypt with current format
+              // OPTIMIZED FLOW: Encrypted entry from export
+              // Entries are already encrypted in database format
+              // Just restore directly without decrypt/re-encrypt cycle
               console.log(
-                `🔓 [Import] Decrypting exported entry: ${entry.title}`,
+                `✅ [Import] Restoring encrypted entry as-is: ${entry.title}`,
               );
 
               try {
-                // CRITICAL: The exported entry was encrypted with the MASTER PASSWORD
-                // NOT with options.encryptionPassword. Use master password to decrypt.
-                if (!masterPassword) {
-                  throw new Error(
-                    'Cannot decrypt exported entries: Master password not available',
-                  );
-                }
-
-                let decryptedPassword: string | null = null;
-                let keysToTry = [masterPassword];
-
-                // Add alternative keys if primary key failed
-                if ((options as any)._alternativeKeys) {
-                  keysToTry = keysToTry.concat(
-                    (options as any)._alternativeKeys,
-                  );
-                }
-
-                console.log(
-                  `🔑 [Import] Attempting decryption with ${keysToTry.length} key(s) for: ${entry.title}`,
-                );
-
-                // Debug: Log all keys being tried
-                keysToTry.forEach((key, idx) => {
-                  const keyPreview = key
-                    ? key.substring(0, 50) + (key.length > 50 ? '...' : '')
-                    : 'null';
-                  const keyLength = key?.length || 0;
-                  console.log(
-                    `  └─ Key ${idx + 1}/${
-                      keysToTry.length
-                    }: length=${keyLength}, preview="${keyPreview}"`,
-                  );
-                });
-
-                // Try each key until one works
-                for (
-                  let keyIndex = 0;
-                  keyIndex < keysToTry.length;
-                  keyIndex++
-                ) {
-                  try {
-                    const keyToTry = keysToTry[keyIndex];
-                    
-                    // Try with standard PBKDF2 derivation
-                    try {
-                      const derivedKey = deriveKeyFromPassword(
-                        keyToTry,
-                        rawEntry.salt,
-                      );
-                      const attemptedDecryption = decryptData(
-                        rawEntry.password,
-                        derivedKey,
-                        rawEntry.iv,
-                        rawEntry.authTag,
-                      );
-
-                      // Success!
-                      decryptedPassword = attemptedDecryption;
-                      const successfulKey = keysToTry[keyIndex];
-                      const successfulKeyPreview = successfulKey
-                        ? successfulKey.substring(0, 60) +
-                          (successfulKey.length > 60 ? '...' : '')
-                        : 'null';
-                      console.log(
-                        `✅ [Import] Successfully decrypted with key ${
-                          keyIndex + 1
-                        }: ${entry.title}`,
-                      );
-                      console.log(
-                        `   🔑 Key content: "${successfulKeyPreview}" (length: ${successfulKey?.length})`,
-                      );
-                      break;
-                    } catch (derivationError) {
-                      // Try as a raw hex key (for cases where pre-derived keys are used)
-                      try {
-                        const attemptedDecryption = decryptData(
-                          rawEntry.password,
-                          keyToTry, // Use as-is, assuming it's already derived
-                          rawEntry.iv,
-                          rawEntry.authTag,
-                        );
-                        
-                        decryptedPassword = attemptedDecryption;
-                        console.log(
-                          `✅ [Import] Successfully decrypted with raw key ${
-                            keyIndex + 1
-                          }: ${entry.title}`,
-                        );
-                        break;
-                      } catch (rawKeyError) {
-                        // Both attempts failed, continue to next key
-                        throw derivationError; // Throw original error for consistency
-                      }
-                    }
-                  } catch (keyError) {
-                    console.log(
-                      `⚠️ [Import] Key ${keyIndex + 1} failed for ${
-                        entry.title
-                      }`,
-                    );
-                    if (keyIndex === keysToTry.length - 1) {
-                      // Last key failed
-                      throw keyError;
-                    }
-                  }
-                }
-
-                if (!decryptedPassword) {
-                  throw new Error('All decryption attempts failed');
-                }
-
-                // Update entry with decrypted password
-                const entryWithPassword = {
-                  ...entry,
-                  password: decryptedPassword,
-                };
-
-                // Re-encrypt and save using current storage format
-                await encryptedDatabase.savePasswordEntry(
-                  entryWithPassword,
-                  options.encryptionPassword,
+                // Save encrypted entry directly to database
+                // The password field contains the encrypted ciphertext
+                // Database will use stored salt/IV/authTag for on-demand decryption
+                await encryptedDatabase.savePasswordEntryWithEncryptedData(
+                  entry,
+                  {
+                    ciphertext: rawEntry.password,
+                    salt: rawEntry.salt,
+                    iv: rawEntry.iv,
+                    tag: rawEntry.authTag,
+                  },
                 );
                 console.log(
-                  `💾 [Import] Re-encrypted and saved: ${entry.title}`,
+                  `💾 [Import] Saved encrypted entry directly: ${entry.title}`,
                 );
-              } catch (decryptError) {
+              } catch (saveError) {
                 console.error(
-                  `❌ [Import] Failed to decrypt entry ${entry.title}:`,
-                  decryptError,
+                  `❌ [Import] Failed to save encrypted entry ${entry.title}:`,
+                  saveError,
                 );
                 throw new Error(
-                  `Failed to decrypt imported entry: ${decryptError.message}`,
+                  `Failed to save encrypted entry: ${saveError.message}`,
                 );
               }
             } else {
               // This is a plaintext entry or from another format
-              // Encrypt and save
+              // Encrypt and save using master password
+              if (!masterPassword) {
+                throw new Error(
+                  `Cannot encrypt plaintext entry "${entry.title}" without master password`,
+                );
+              }
               await encryptedDatabase.savePasswordEntry(
                 entry,
-                options.encryptionPassword,
+                masterPassword,
               );
               console.log(`💾 [Import] Encrypted and saved: ${entry.title}`);
             }
@@ -1048,10 +945,24 @@ class ImportExportService {
       }
 
       // Get master password for secure export key generation
-      const masterPasswordResult = await getEffectiveMasterPassword();
-      const masterPassword = masterPasswordResult.success
+      let masterPasswordResult = await getEffectiveMasterPassword();
+      let masterPassword = masterPasswordResult.success
         ? masterPasswordResult.password
         : null;
+
+      // 🔐 If master password not cached and callback provided, trigger authentication
+      if (!masterPassword && options.onRequireAuthentication) {
+        console.log(
+          '🔐 [Export] Master password not cached, triggering authentication callback...',
+        );
+        try {
+          masterPassword = await options.onRequireAuthentication();
+          console.log('✅ [Export] Authentication successful');
+        } catch (authError) {
+          console.error('❌ [Export] Authentication failed or cancelled');
+          throw new Error('Authentication required to export passwords');
+        }
+      }
 
       // Generate secure export key (plain text master password only - FIXED, no email/uid)
       const exportKey = generateSecureExportKey(masterPassword);
@@ -1100,9 +1011,20 @@ class ImportExportService {
   async previewImport(
     filePath: string,
     format: string,
+    masterPassword?: string,
   ): Promise<ImportPreview> {
     try {
-      const fileContent = await RNFS.readFile(filePath, 'utf8');
+      let fileContent = await RNFS.readFile(filePath, 'utf8');
+      
+      // Decrypt file-level encryption if present and master password provided
+      if (masterPassword) {
+        try {
+          fileContent = this.decryptExportFile(fileContent, masterPassword);
+        } catch (decryptError) {
+          console.warn('⚠️ [Preview] File decryption attempt failed, proceeding with original content');
+        }
+      }
+      
       const parsedData = await this.parseImportData(fileContent, format as any);
 
       const preview: ImportPreview = {
@@ -1639,6 +1561,65 @@ class ImportExportService {
     };
   }
 
+  // Encrypt entire export file with master password (file-level encryption)
+  private encryptExportFile(jsonContent: string, masterPassword: string): string {
+    try {
+      console.log('🔐 [FileEncryption] Encrypting entire export file with master password...');
+      
+      // Generate file encryption key from master password
+      const fileEncryptionKey = `${masterPassword}::FILE_EXPORT_${EXPORT_KEY_CONSTANT}`;
+      
+      // Encrypt the JSON content
+      const encrypted = CryptoJS.AES.encrypt(jsonContent, fileEncryptionKey).toString();
+      
+      // Create encrypted export wrapper with minimal metadata
+      const wrapper = {
+        _fileEncryption: true,
+        _version: '3.0',
+        _encryptionMethod: 'AES-256-CBC',
+        _data: encrypted,
+      };
+      
+      console.log('✅ [FileEncryption] Export file encrypted successfully');
+      return JSON.stringify(wrapper);
+    } catch (error) {
+      console.error('❌ [FileEncryption] Failed to encrypt export file:', error);
+      throw new Error(`Failed to encrypt export file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Decrypt file-level encryption if present
+  private decryptExportFile(fileContent: string, masterPassword: string): string {
+    try {
+      const wrapper = JSON.parse(fileContent);
+      
+      // Check if file is encrypted at the file level
+      if (!wrapper._fileEncryption || !wrapper._data) {
+        console.log('ℹ️ [FileDecryption] File is not encrypted at file level, parsing as-is');
+        return fileContent;
+      }
+      
+      console.log('🔐 [FileDecryption] Decrypting file-level encryption with master password...');
+      
+      // Generate file encryption key from master password
+      const fileEncryptionKey = `${masterPassword}::FILE_EXPORT_${EXPORT_KEY_CONSTANT}`;
+      
+      // Decrypt the content
+      const decrypted = CryptoJS.AES.decrypt(wrapper._data, fileEncryptionKey);
+      const decryptedContent = decrypted.toString(CryptoJS.enc.Utf8);
+      
+      if (!decryptedContent || decryptedContent.trim().length === 0) {
+        throw new Error('Decryption returned empty content - wrong master password or corrupted file');
+      }
+      
+      console.log('✅ [FileDecryption] Export file decrypted successfully');
+      return decryptedContent;
+    } catch (error) {
+      console.error('❌ [FileDecryption] Failed to decrypt export file:', error);
+      throw new Error(`Failed to decrypt export file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   // Prepare data for export
   private async prepareExportData(
     entries: PasswordEntry[],
@@ -1717,7 +1698,7 @@ class ImportExportService {
     data: any[],
     options: ExportOptions,
     masterPassword: string | null,
-    exportKey?: string, // For validation only, NOT stored in metadata
+    _exportKey?: string, // For validation only, NOT stored in metadata
   ): Promise<string> {
     switch (options.format) {
       case 'json':
@@ -1726,13 +1707,12 @@ class ImportExportService {
           entry => entry.isPasswordEncrypted === true,
         );
 
-        // Add metadata for JSON exports
-        // SECURITY: Export key is NOT stored in metadata - it's reconstructed on import
+        // Add metadata for JSON exports - MINIMAL metadata for security
         const jsonData = {
           exportInfo: {
             exportDate: new Date().toISOString(),
             format: 'PasswordEpic JSON Export',
-            version: '2.1', // Version bump for salt tracking
+            version: '3.0', // Version bump - file-level encryption added
             isEncrypted: hasEncryptedPasswords,
             encryptionMethod: hasEncryptedPasswords
               ? 'Master Password + AES-256'
@@ -1741,23 +1721,18 @@ class ImportExportService {
             warning: hasEncryptedPasswords
               ? '🔐 Passwords are encrypted with your Master Password using AES-256'
               : '⚠️ WARNING: Passwords are stored in PLAINTEXT format!',
-            // Export key validation hashes (for debugging, not decryption)
-            exportKeyHash: exportKey
-              ? CryptoJS.SHA256(exportKey).toString().substring(0, 16)
-              : CryptoJS.SHA256(masterPassword || '')
-                  .toString()
-                  .substring(0, 16),
-            exportKeyLength: exportKey?.length || masterPassword?.length || 0,
-            // Store salt hash for recovery (used to detect if device salt changed)
-            fixedSaltHash: hasEncryptedPasswords
-              ? await this.getFixedSaltHash()
-              : undefined,
-            securityNote:
-              'Export key is not stored - it is reconstructed on import using your plain text Master Password combined with a fixed constant',
           },
           entries: data,
         };
-        return JSON.stringify(jsonData, null, 2);
+        
+        const jsonContent = JSON.stringify(jsonData, null, 2);
+        
+        // Apply file-level encryption if master password is available
+        if (masterPassword) {
+          return this.encryptExportFile(jsonContent, masterPassword);
+        }
+        
+        return jsonContent;
 
       case 'csv':
         return this.generateCSV(data);

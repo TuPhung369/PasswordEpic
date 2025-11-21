@@ -125,6 +125,23 @@ export interface AuditData {
   lastPasswordChange: Date;
   recommendedAction?: 'none' | 'change_password' | 'enable_2fa' | 'update_info';
   securityScore: number; // 0-100
+  auditHistory?: AuditHistoryEntry[];
+  lastAuditDate?: Date;
+}
+
+export interface AuditHistoryEntry {
+  id: string;
+  date: Date;
+  score: number;
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  vulnerabilityCount: number;
+  vulnerabilities: {
+    type: string;
+    severity: 'low' | 'medium' | 'high' | 'critical';
+    title: string;
+  }[];
+  passwordStrength: PasswordStrengthResult;
+  changes: string[];
 }
 
 export interface PasswordHistoryEntry {

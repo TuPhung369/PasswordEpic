@@ -15,7 +15,6 @@ import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
 import {
   encryptData,
   decryptData,
-  decryptDataWithRetry,
   deriveKeyFromPassword,
   CRYPTO_CONSTANTS,
   generateSecureRandom,
@@ -134,8 +133,7 @@ const AutofillBridge: AutofillBridgeModule = (() => {
         console.warn('⚠️ [Mock] recordUsage called');
         return true;
       },
-      decryptAutofillPassword: async (
-      ) => {
+      decryptAutofillPassword: async () => {
         console.warn(
           '⚠️ [Mock] AutofillBridge.decryptAutofillPassword called - returning mock response',
         );
@@ -277,32 +275,18 @@ class AutofillService {
             }
 
             // Extract encrypted password data from native side event
-            const {
+            const { credentialId, encryptedPassword, salt, iv, tag } =
+              eventData;
+
+            console.log('🔍 [DEBUG] Extracted values:', {
               credentialId,
-              encryptedPassword,
-              salt,
-              iv,
-              tag,
-            } = eventData;
+              hasEncryptedPassword: !!encryptedPassword,
+              hasSalt: !!salt,
+              hasIv: !!iv,
+              hasTag: !!tag,
+            });
 
-            console.log(
-              '🔍 [DEBUG] Extracted values:',
-              {
-                credentialId,
-                hasEncryptedPassword: !!encryptedPassword,
-                hasSalt: !!salt,
-                hasIv: !!iv,
-                hasTag: !!tag,
-              },
-            );
-
-            if (
-              !credentialId ||
-              !encryptedPassword ||
-              !salt ||
-              !iv ||
-              !tag
-            ) {
+            if (!credentialId || !encryptedPassword || !salt || !iv || !tag) {
               console.error(
                 '❌ [AutofillService] Missing encryption components:',
                 {
@@ -372,7 +356,12 @@ class AutofillService {
             );
 
             // Cache plaintext password and send result to native code
-            await this.sendDecryptResultToNative(credentialId, plainTextPassword, true, '');
+            await this.sendDecryptResultToNative(
+              credentialId,
+              plainTextPassword,
+              true,
+              '',
+            );
           } catch (error) {
             console.error(
               '❌ [AutofillService] Error processing decrypt request:',
@@ -463,22 +452,25 @@ class AutofillService {
       // If decryption was successful, cache plaintext password for autofill
       if (success && plainTextPassword && credentialId) {
         try {
-          console.log(`💾 [AutofillService] Caching plaintext password for credential: ${credentialId}`);
-          
+          console.log(
+            `💾 [AutofillService] Caching password for credential: ${credentialId}`,
+          );
+
           if (!AutofillBridge.storeDecryptedPasswordForAutofill) {
             console.warn(
               '⚠️ [AutofillService] storeDecryptedPasswordForAutofill not available in AutofillBridge',
             );
           } else {
-            const cacheSuccess = await AutofillBridge.storeDecryptedPasswordForAutofill(
-              credentialId,
-              plainTextPassword,
-            );
-            
+            const cacheSuccess =
+              await AutofillBridge.storeDecryptedPasswordForAutofill(
+                credentialId,
+                plainTextPassword,
+              );
+
             if (cacheSuccess) {
-              console.log(`✅ [AutofillService] Plaintext password cached successfully`);
+              console.log(`✅ [AutofillService] Password cached successfully`);
             } else {
-              console.warn(`⚠️ [AutofillService] Failed to cache plaintext password`);
+              console.warn(`⚠️ [AutofillService] Failed to cache password`);
             }
           }
         } catch (cacheError) {
@@ -589,12 +581,14 @@ class AutofillService {
         '✅ [AutofillService] requestEnableAutofill returned:',
         result,
       );
-      
+
       if (result) {
-        console.log('🔑 [CRITICAL] Autofill enable succeeded - initializing default settings...');
+        console.log(
+          '🔑 [CRITICAL] Autofill enable succeeded - initializing default settings...',
+        );
         await this.ensureDefaultSettingsAreSaved();
       }
-      
+
       return result;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -617,9 +611,11 @@ class AutofillService {
    */
   private async ensureDefaultSettingsAreSaved(): Promise<void> {
     try {
-      console.log('🔑 Ensuring autofill settings are initialized with defaults...');
+      console.log(
+        '🔑 Ensuring autofill settings are initialized with defaults...',
+      );
       const currentSettings = await this.getSettings();
-      
+
       // If settings don't exist or are incomplete, save defaults
       if (!currentSettings || !currentSettings.requireBiometric === undefined) {
         const defaultSettings: AutofillSettings = {
@@ -628,12 +624,18 @@ class AutofillService {
           allowSubdomains: true,
           trustedDomains: [],
         };
-        
-        console.log('💾 Saving default settings to ensure biometric is REQUIRED:', defaultSettings);
+
+        console.log(
+          '💾 Saving default settings to ensure biometric is REQUIRED:',
+          defaultSettings,
+        );
         await this.updateSettings(defaultSettings);
         console.log('✅ Default settings saved - biometric WILL be required');
       } else {
-        console.log('✅ Settings already exist - no action needed', currentSettings);
+        console.log(
+          '✅ Settings already exist - no action needed',
+          currentSettings,
+        );
       }
     } catch (error) {
       console.error('⚠️ Error ensuring default settings:', error);
@@ -842,7 +844,9 @@ class AutofillService {
         );
       }
 
-      console.log('🔑 [CRITICAL] Before preparing credentials, ensure default settings are saved to native...');
+      console.log(
+        '🔑 [CRITICAL] Before preparing credentials, ensure default settings are saved to native...',
+      );
       await this.ensureDefaultSettingsAreSaved();
 
       // 🔑 CRITICAL FIX: Get autofill settings to determine if we should encrypt or send plaintext
@@ -877,7 +881,11 @@ class AutofillService {
         // 🔴 CRITICAL: Check for corrupted encrypted data before processing
         if (!password.isDecrypted && password.password) {
           // Check if all encryption metadata is present
-          if (!password.passwordSalt || !password.passwordIv || !password.passwordTag) {
+          if (
+            !password.passwordSalt ||
+            !password.passwordIv ||
+            !password.passwordTag
+          ) {
             console.warn(
               `⚠️ Skipping credential - missing encryption metadata for "${password.title}". Entry needs to be re-created.`,
             );
@@ -1100,7 +1108,7 @@ class AutofillService {
                       password.id,
                       plaintextToCache,
                     );
-                    console.log(`✅ Cached plaintext for: ${password.id}`);
+                    console.log(`✅ Cached password for: ${password.id}`);
                   }
                 } else {
                   // If password is not decrypted, we skip caching it.

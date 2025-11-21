@@ -136,33 +136,33 @@ export const decryptData = (
   tag: string,
 ): string => {
   try {
+    console.log(
+      '� [RN] Starting decryption (',
+      ciphertext.length / 2,
+      'bytes)',
+    );
+
     // Convert hex strings to WordArrays
     const keyWordArray = CryptoJS.enc.Hex.parse(key);
     const ivWordArray = CryptoJS.enc.Hex.parse(iv);
     const ciphertextWordArray = CryptoJS.enc.Hex.parse(ciphertext);
 
     // Verify authentication tag
-    const expectedTag = CryptoJS.HmacSHA256(ciphertext + iv, keyWordArray)
+    const tagInput = ciphertext + iv;
+    const expectedTag = CryptoJS.HmacSHA256(tagInput, keyWordArray)
       .toString(CryptoJS.enc.Hex)
       .substring(0, CRYPTO_CONSTANTS.TAG_LENGTH * 2);
 
     if (expectedTag !== tag) {
-      console.error('🔍 [CryptoService] Tag verification failed:', {
-        ciphertextLength: ciphertext.length,
-        ivLength: iv.length,
-        keyLength: key.length,
-        tagLength: tag.length,
-        expectedTagLength: expectedTag.length,
-        storedTag: tag.substring(0, 16) + '...',
-        expectedTag: expectedTag.substring(0, 16) + '...',
-        ciphertextPreview: ciphertext.substring(0, 20),
-        ivPreview: iv.substring(0, 20),
-        tagMatch: expectedTag === tag,
-      });
+      console.error('❌ [RN] Tag verification FAILED!');
       throw new Error('Authentication tag verification failed');
     }
 
+    console.log('✅ [RN] Tag verified successfully');
+
     // Decrypt using AES-CTR
+    console.log('� [RN] Starting AES-CTR decryption...');
+
     const decrypted = CryptoJS.AES.decrypt(
       {
         ciphertext: ciphertextWordArray,
@@ -178,8 +178,11 @@ export const decryptData = (
     const plaintext = decrypted.toString(CryptoJS.enc.Utf8);
 
     if (!plaintext) {
+      console.error('❌ [RN] Decryption resulted in empty data');
       throw new Error('Decryption resulted in empty data');
     }
+
+    console.log('✅ [RN] Decryption completed successfully');
 
     return plaintext;
   } catch (error) {

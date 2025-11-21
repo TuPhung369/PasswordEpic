@@ -340,14 +340,13 @@ export const useSession = (): UseSessionReturn => {
           const sessionService = SessionService.getInstance();
           const isValid = await sessionService.checkSessionOnResume();
           if (!isValid) {
-            dispatchRef.current(logout());
-            dispatchRef.current(
-              setSessionExpired({
-                expired: true,
-                warning: false,
-                timeRemaining: 0,
-              }),
+            // 🔥 FIX: Don't logout user - just require re-authentication
+            // Session is still active, but needs unlock (biometric/PIN)
+            console.log(
+              '🔒 [useSession] Session requires re-authentication - handled by AppNavigator biometric flow',
             );
+            // AppNavigator already handles unlock requirement via AppState listener
+            // No need to logout or dispatch anything here
           } else {
             // Session is valid, update activity
             await updateActivityRef.current();

@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import PasswordValidationService from '../services/passwordValidationService';
+import { AuditHistoryService } from '../services/auditHistoryService';
 import {
   View,
   Text,
@@ -11,7 +12,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { PasswordEntry } from '../types/password';
 import ConfirmDialog from './ConfirmDialog';
-import { BiometricService } from '../services/biometricService';
+import AuditHistoryViewer from './AuditHistoryViewer';
 
 interface SecurityAuditData {
   id: string;
@@ -123,16 +124,15 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
     string | null
   >(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
+  const [showHistoryViewer, setShowHistoryViewer] = useState(false);
 
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const [shouldSaveAudit, setShouldSaveAudit] = useState(false);
 
   // Sample audit data if none provided
   // Tính auditData thực tế từ passwordEntry
   const currentAuditData: SecurityAuditData | null = useMemo(() => {
     if (!passwordEntry) return null;
-
-    // Check if password is still encrypted (lazy loaded)
-    const isPasswordEncrypted = !passwordEntry.isDecrypted;
 
     // Use decrypted password if available, otherwise use the password from entry
     const passwordToAnalyze =
@@ -290,7 +290,16 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
   }, [passwordEntry, decryptedPasswordForAudit]);
 
   // Nếu có auditData prop thì ưu tiên, còn không lấy từ tính toán
-  const auditDataToShow = auditData || currentAuditData;
+  const auditDataToShow = auditData && currentAuditData
+    ? {
+        ...currentAuditData,
+        securityScore: (auditData as any).score || currentAuditData.securityScore,
+        riskLevel: (auditData as any).riskLevel || currentAuditData.riskLevel,
+        vulnerabilities: (auditData as any).vulnerabilities || currentAuditData.vulnerabilities,
+        lastAuditDate: (auditData as any).date || currentAuditData.lastAuditDate,
+        auditHistory: (auditData as any).auditHistory || [],
+      }
+    : currentAuditData;
 
   const getScoreColor = useCallback((score: number): string => {
     if (score >= 90) return '#00C851'; // Excellent - Green
@@ -344,6 +353,57 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
     }
   }, []);
 
+  const saveAuditResult = useCallback(async () => {
+    if (!passwordEntry || !currentAuditData) return;
+
+    try {
+      const vulnerabilities = currentAuditData.vulnerabilities.map(v => ({
+        type: v.type,
+        severity: v.severity,
+        title: v.title,
+      }));
+
+      const scoreColor = currentAuditData.securityScore >= 90
+        ? '#00C851'
+        : currentAuditData.securityScore >= 75
+          ? '#4CAF50'
+          : currentAuditData.securityScore >= 60
+            ? '#8BC34A'
+            : currentAuditData.securityScore >= 40
+              ? '#FFC107'
+              : currentAuditData.securityScore >= 20
+                ? '#FF9800'
+                : '#F44336';
+
+      await AuditHistoryService.saveAuditResult(passwordEntry.id, {
+        date: new Date(),
+        score: currentAuditData.securityScore,
+        riskLevel: currentAuditData.riskLevel,
+        vulnerabilityCount: vulnerabilities.length,
+        vulnerabilities,
+        passwordStrength: {
+          score: currentAuditData.passwordAnalysis.strength.score,
+          label: currentAuditData.passwordAnalysis.strength.label,
+          color: scoreColor,
+          feedback: [],
+          crackTime: currentAuditData.passwordAnalysis.crackTime,
+        },
+        changes: [],
+      });
+
+      console.log('✅ SecurityAuditPanel: Audit result saved');
+    } catch (error) {
+      console.error('❌ SecurityAuditPanel: Failed to save audit result:', error);
+    }
+  }, [passwordEntry, currentAuditData]);
+
+  useEffect(() => {
+    if (shouldSaveAudit && currentAuditData && currentAuditData.securityScore > 0) {
+      saveAuditResult();
+      setShouldSaveAudit(false);
+    }
+  }, [shouldSaveAudit, currentAuditData, saveAuditResult]);
+
   const handleRunAudit = useCallback(async () => {
     // Check if password needs to be decrypted for audit
     const isPasswordEncrypted = !passwordEntry?.isDecrypted;
@@ -357,35 +417,15 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
       setIsDecrypting(true);
 
       try {
-        // Require biometric authentication before decrypting
-        const biometricService = BiometricService.getInstance();
-        const authResult = await biometricService.authenticateWithBiometrics(
-          'Authenticate to run security audit',
-        );
-
-        if (!authResult.success) {
-          if (authResult.error && !authResult.error.includes('cancelled')) {
-            setConfirmDialog({
-              visible: true,
-              title: 'Authentication Failed',
-              message: authResult.error || 'Could not verify your identity',
-              confirmText: 'OK',
-              onConfirm: () =>
-                setConfirmDialog(prev => ({ ...prev, visible: false })),
-            });
-          }
-          setIsDecrypting(false);
-          return;
-        }
-
-        // Decrypt password
+        // Decrypt password - onDecryptPassword handles authentication internally
         console.log('🔓 SecurityAuditPanel: Decrypting password for audit...');
         const decrypted = await onDecryptPassword();
 
         if (decrypted) {
           setDecryptedPasswordForAudit(decrypted);
+          setShouldSaveAudit(true);
           console.log(
-            '✅ SecurityAuditPanel: Password decrypted, audit will update automatically',
+            '✅ SecurityAuditPanel: Password decrypted, audit will save automatically',
           );
 
           // Show success message
@@ -421,7 +461,8 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
       // Custom audit handler provided
       onRunAudit();
     } else {
-      // Password already decrypted or not encrypted, just show confirmation
+      // Password already decrypted or not encrypted, save audit result
+      saveAuditResult();
       setConfirmDialog({
         visible: true,
         title: 'Security Audit',
@@ -431,7 +472,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
     }
-  }, [onRunAudit, passwordEntry, decryptedPasswordForAudit, onDecryptPassword]);
+  }, [onRunAudit, passwordEntry, decryptedPasswordForAudit, onDecryptPassword, saveAuditResult]);
 
   const handleFixVulnerability = useCallback(
     (vulnerabilityId: string) => {
@@ -455,14 +496,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
     if (onViewHistory) {
       onViewHistory();
     } else {
-      setConfirmDialog({
-        visible: true,
-        title: 'Audit History',
-        message: 'View your complete security audit history and trends.',
-        confirmText: 'OK',
-        onConfirm: () =>
-          setConfirmDialog(prev => ({ ...prev, visible: false })),
-      });
+      setShowHistoryViewer(true);
     }
   }, [onViewHistory]);
 
@@ -480,9 +514,9 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
     return `${Math.floor(diffInHours / 720)}mo ago`;
   }, []);
 
-  const scoreColor = getScoreColor(currentAuditData.securityScore);
-  const hasVulnerabilities = currentAuditData.vulnerabilities.length > 0;
-  const criticalVulnerabilities = currentAuditData.vulnerabilities.filter(
+  const scoreColor = getScoreColor(auditDataToShow?.securityScore || 0);
+  const hasVulnerabilities = (auditDataToShow?.vulnerabilities.length || 0) > 0;
+  const criticalVulnerabilities = (auditDataToShow?.vulnerabilities || []).filter(
     v => v.severity === 'critical',
   );
 
@@ -524,39 +558,20 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
         onPress={() => setExpanded(!expanded)}
         activeOpacity={0.7}
       >
-        <View style={styles.headerLeft}>
-          <Ionicons
-            name="shield-checkmark-outline"
-            size={24}
-            color={scoreColor}
-            style={styles.headerIcon}
-          />
-          <View>
-            <Text style={styles.headerTitle}>Security Audit</Text>
-            <Text style={styles.headerSubtitle}>
-              Score: {auditDataToShow?.securityScore}/100 •
-              {auditDataToShow?.vulnerabilities?.length
-                ? ` ${auditDataToShow.vulnerabilities.length} issue${
-                    auditDataToShow.vulnerabilities.length > 1 ? 's' : ''
-                  }`
-                : ' All clear'}{' '}
-              • Last:{' '}
-              {formatTimestamp(auditDataToShow?.lastAuditDate || new Date())}
-            </Text>
-          </View>
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>Security Audit</Text>
+          <Text style={styles.headerSubtitle}>
+            Score: {auditDataToShow?.securityScore}/100 •
+            {auditDataToShow?.vulnerabilities?.length
+              ? ` ${auditDataToShow.vulnerabilities.length} issue${
+                  auditDataToShow.vulnerabilities.length > 1 ? 's' : ''
+                }`
+              : ' All clear'}{' '}
+            • Last:{' '}
+            {formatTimestamp(auditDataToShow?.lastAuditDate || new Date())}
+          </Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.auditButton}
-            onPress={handleRunAudit}
-            disabled={isDecrypting}
-          >
-            <Ionicons
-              name={isDecrypting ? 'hourglass-outline' : 'refresh'}
-              size={18}
-              color={isDecrypting ? theme.textSecondary : theme.primary}
-            />
-          </TouchableOpacity>
           <TouchableOpacity
             style={styles.expandButton}
             onPress={() => setExpanded(!expanded)}
@@ -571,63 +586,15 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
       </TouchableOpacity>
 
       {expanded && (
-        <ScrollView
-          style={styles.content}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Password Encrypted Alert - Show when password needs decryption */}
-          {!passwordEntry?.isDecrypted && !decryptedPasswordForAudit && (
-            <View
-              style={[
-                styles.alertCard,
-                {
-                  backgroundColor: theme.surface,
-                  borderColor: theme.primary,
-                  borderWidth: 1,
-                },
-              ]}
-            >
-              <View style={styles.alertHeader}>
-                <Ionicons name="lock-closed" size={20} color={theme.primary} />
-                <Text style={[styles.alertTitle, { color: theme.text }]}>
-                  Password Analysis Required
-                </Text>
-              </View>
-              <Text
-                style={[
-                  styles.alertDescription,
-                  { color: theme.textSecondary },
-                ]}
-              >
-                To perform a comprehensive security audit, the password needs to
-                be decrypted. Click the refresh button above to authenticate and
-                analyze password security.
-              </Text>
-              <TouchableOpacity
-                style={[styles.alertAction, { backgroundColor: theme.primary }]}
-                onPress={handleRunAudit}
-                disabled={isDecrypting}
-              >
-                <Ionicons
-                  name={isDecrypting ? 'hourglass-outline' : 'shield-checkmark'}
-                  size={16}
-                  color="#FFFFFF"
-                  style={{ marginRight: 8 }}
-                />
-                <Text style={styles.alertActionText}>
-                  {isDecrypting ? 'Analyzing...' : 'Run Security Audit'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
+        <View style={styles.content}>
+
 
           {/* Security Score Card */}
           <View style={styles.scoreCard}>
             <View style={styles.scoreRow}>
               <View style={styles.scoreMain}>
                 <Text style={[styles.scoreValue, { color: scoreColor }]}>
-                  {currentAuditData.securityScore}
+                  {auditDataToShow?.securityScore || 0}
                 </Text>
                 <Text style={styles.scoreLabel}>Security Score</Text>
               </View>
@@ -639,18 +606,18 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                   ]}
                 >
                   <Text style={styles.riskText}>
-                    {currentAuditData.riskLevel.toUpperCase()}
+                    {(auditDataToShow?.riskLevel || 'low').toUpperCase()}
                   </Text>
                 </View>
               </View>
             </View>
             <Text style={styles.scoreDescription}>
-              {getScoreDescription(currentAuditData.securityScore)}
+              {getScoreDescription(auditDataToShow?.securityScore || 0)}
             </Text>
           </View>
 
           {/* Breach Detection */}
-          {currentAuditData.breachDetection.isBreached && (
+          {auditDataToShow?.breachDetection.isBreached && (
             <View style={[styles.alertCard, styles.alertCardCritical]}>
               <View style={styles.alertHeader}>
                 <Ionicons name="warning" size={20} color="#F44336" />
@@ -658,13 +625,13 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
               </View>
               <Text style={styles.alertDescription}>
                 This password has been found in{' '}
-                {currentAuditData.breachDetection.breachCount} known data breach
-                {currentAuditData.breachDetection.breachCount > 1 ? 'es' : ''}.
+                {auditDataToShow?.breachDetection.breachCount} known data breach
+                {(auditDataToShow?.breachDetection.breachCount || 0) > 1 ? 'es' : ''}.
                 Change it immediately.
               </Text>
-              {currentAuditData.breachDetection.sources.length > 0 && (
+              {(auditDataToShow?.breachDetection.sources.length || 0) > 0 && (
                 <Text style={styles.alertSources}>
-                  Sources: {currentAuditData.breachDetection.sources.join(', ')}
+                  Sources: {auditDataToShow?.breachDetection.sources.join(', ')}
                 </Text>
               )}
               <TouchableOpacity
@@ -690,7 +657,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>
-                  Security Issues ({currentAuditData.vulnerabilities.length})
+                  Security Issues ({auditDataToShow?.vulnerabilities.length || 0})
                 </Text>
                 {criticalVulnerabilities.length > 0 && (
                   <View style={styles.criticalBadge}>
@@ -701,7 +668,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                 )}
               </View>
 
-              {currentAuditData.vulnerabilities.map(vulnerability => (
+              {(auditDataToShow?.vulnerabilities || []).map(vulnerability => (
                 <View
                   key={vulnerability.id}
                   style={[
@@ -767,7 +734,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                   name="shield-outline"
                   size={20}
                   color={getScoreColor(
-                    currentAuditData.passwordAnalysis.strength.score,
+                    auditDataToShow?.passwordAnalysis.strength.score || 0,
                   )}
                 />
                 <Text style={styles.analysisTitle}>Strength Assessment</Text>
@@ -778,22 +745,22 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                     styles.strengthBadge,
                     {
                       backgroundColor: getScoreColor(
-                        currentAuditData.passwordAnalysis.strength.score,
+                        auditDataToShow?.passwordAnalysis.strength.score || 0,
                       ),
                     },
                   ]}
                 >
                   <Text style={styles.strengthText}>
-                    {currentAuditData.passwordAnalysis.strength.label}
+                    {auditDataToShow?.passwordAnalysis.strength.label || 'Not analyzed'}
                   </Text>
                 </View>
                 <Text style={styles.strengthScore}>
-                  {currentAuditData.passwordAnalysis.strength.score}/100
+                  {auditDataToShow?.passwordAnalysis.strength.score || 0}/100
                 </Text>
               </View>
               <View style={styles.factorsGrid}>
                 {Object.entries(
-                  currentAuditData.passwordAnalysis.strength.factors,
+                  auditDataToShow?.passwordAnalysis.strength.factors || {},
                 ).map(([key, value]) => (
                   <View key={key} style={styles.factorItem}>
                     <Ionicons
@@ -813,13 +780,13 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                 <View style={styles.metric}>
                   <Text style={styles.metricLabel}>Entropy</Text>
                   <Text style={styles.metricValue}>
-                    {currentAuditData.passwordAnalysis.entropy} bits
+                    {auditDataToShow?.passwordAnalysis.entropy || 0} bits
                   </Text>
                 </View>
                 <View style={styles.metric}>
                   <Text style={styles.metricLabel}>Crack Time</Text>
                   <Text style={styles.metricValue}>
-                    {currentAuditData.passwordAnalysis.crackTime}
+                    {auditDataToShow?.passwordAnalysis.crackTime || 'Unknown'}
                   </Text>
                 </View>
               </View>
@@ -834,19 +801,19 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                 <View style={styles.domainStatus}>
                   <Ionicons
                     name={
-                      currentAuditData.domainAnalysis.isKnownPhishing
+                      auditDataToShow?.domainAnalysis.isKnownPhishing
                         ? 'alert-circle'
                         : 'checkmark-circle'
                     }
                     size={20}
                     color={
-                      currentAuditData.domainAnalysis.isKnownPhishing
+                      auditDataToShow?.domainAnalysis.isKnownPhishing
                         ? '#F44336'
                         : '#4CAF50'
                     }
                   />
                   <Text style={styles.domainLabel}>
-                    {currentAuditData.domainAnalysis.isKnownPhishing
+                    {auditDataToShow?.domainAnalysis.isKnownPhishing
                       ? 'Phishing Risk'
                       : 'Safe Domain'}
                   </Text>
@@ -856,7 +823,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                     styles.reputationBadge,
                     {
                       backgroundColor: getSeverityColor(
-                        currentAuditData.domainAnalysis.reputation === 'trusted'
+                        (auditDataToShow?.domainAnalysis.reputation === 'trusted')
                           ? 'low'
                           : 'high',
                       ),
@@ -864,26 +831,26 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                   ]}
                 >
                   <Text style={styles.reputationText}>
-                    {currentAuditData.domainAnalysis.reputation.toUpperCase()}
+                    {(auditDataToShow?.domainAnalysis.reputation || 'unknown').toUpperCase()}
                   </Text>
                 </View>
               </View>
               <View style={styles.sslRow}>
                 <Ionicons
                   name={
-                    currentAuditData.domainAnalysis.sslStatus === 'valid'
+                    (auditDataToShow?.domainAnalysis.sslStatus === 'valid')
                       ? 'lock-closed'
                       : 'lock-open'
                   }
                   size={16}
                   color={
-                    currentAuditData.domainAnalysis.sslStatus === 'valid'
+                    (auditDataToShow?.domainAnalysis.sslStatus === 'valid')
                       ? '#4CAF50'
                       : '#F44336'
                   }
                 />
                 <Text style={styles.sslText}>
-                  SSL: {currentAuditData.domainAnalysis.sslStatus}
+                  SSL: {auditDataToShow?.domainAnalysis.sslStatus || 'unknown'}
                 </Text>
               </View>
             </View>
@@ -896,30 +863,30 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
               <View style={styles.usageGrid}>
                 <View style={styles.usageItem}>
                   <Text style={styles.usageValue}>
-                    {currentAuditData.usagePatterns.loginFrequency}
+                    {auditDataToShow?.usagePatterns.loginFrequency || 0}
                   </Text>
                   <Text style={styles.usageLabel}>Logins/Month</Text>
                 </View>
                 <View style={styles.usageItem}>
                   <Text style={styles.usageValue}>
-                    {formatTimestamp(currentAuditData.usagePatterns.lastUsed)}
+                    {formatTimestamp(auditDataToShow?.usagePatterns.lastUsed || new Date())}
                   </Text>
                   <Text style={styles.usageLabel}>Last Used</Text>
                 </View>
                 <View style={styles.usageItem}>
                   <Text style={styles.usageValue}>
-                    {currentAuditData.usagePatterns.averageSessionDuration}m
+                    {auditDataToShow?.usagePatterns.averageSessionDuration || 0}m
                   </Text>
                   <Text style={styles.usageLabel}>Avg Session</Text>
                 </View>
               </View>
-              {currentAuditData.usagePatterns.suspiciousLocations.length >
+              {(auditDataToShow?.usagePatterns.suspiciousLocations.length || 0) >
                 0 && (
                 <View style={styles.suspiciousLocations}>
                   <Ionicons name="location" size={16} color="#FF9800" />
                   <Text style={styles.suspiciousText}>
                     Suspicious locations:{' '}
-                    {currentAuditData.usagePatterns.suspiciousLocations.join(
+                    {(auditDataToShow?.usagePatterns.suspiciousLocations || []).join(
                       ', ',
                     )}
                   </Text>
@@ -936,7 +903,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                 styles.recommendationCard,
                 {
                   borderLeftColor: getSeverityColor(
-                    currentAuditData.recommendations.priority,
+                    auditDataToShow?.recommendations.priority || 'low',
                   ),
                 },
               ]}
@@ -946,22 +913,22 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                   name="bulb-outline"
                   size={20}
                   color={getSeverityColor(
-                    currentAuditData.recommendations.priority,
+                    auditDataToShow?.recommendations.priority || 'low',
                   )}
                 />
                 <Text style={styles.recommendationTitle}>
-                  {currentAuditData.recommendations.priority.toUpperCase()}{' '}
+                  {(auditDataToShow?.recommendations.priority || 'low').toUpperCase()}{' '}
                   Priority Actions
                 </Text>
               </View>
-              {currentAuditData.recommendations.actions.map((action, index) => (
+              {(auditDataToShow?.recommendations.actions || []).map((action, index) => (
                 <View key={index} style={styles.actionItem}>
                   <Text style={styles.actionText}>• {action}</Text>
                 </View>
               ))}
               <Text style={styles.impactText}>
                 Expected Impact:{' '}
-                {currentAuditData.recommendations.estimatedImpact}
+                {auditDataToShow?.recommendations.estimatedImpact || 'Analysis not available'}
               </Text>
             </View>
           </View>
@@ -983,7 +950,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
               </TouchableOpacity>
             </View>
 
-            {currentAuditData.auditHistory.slice(0, 3).map((audit, index) => (
+            {(auditDataToShow?.auditHistory || []).slice(0, 3).map((audit, index) => (
               <View key={index} style={styles.historyItem}>
                 <View style={styles.historyDate}>
                   <Text style={styles.historyDateText}>
@@ -999,7 +966,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                   </Text>
                 </View>
                 <View style={styles.historyChanges}>
-                  {audit.changes.map((change, changeIndex) => (
+                  {(audit.changes || []).map((change, changeIndex) => (
                     <Text key={changeIndex} style={styles.historyChangeText}>
                       • {change}
                     </Text>
@@ -1008,27 +975,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
               </View>
             ))}
           </View>
-
-          {/* Next Audit */}
-          <View style={[styles.section, styles.sectionLast]}>
-            <View style={styles.nextAuditCard}>
-              <Ionicons name="time-outline" size={20} color={theme.primary} />
-              <View style={styles.nextAuditInfo}>
-                <Text style={styles.nextAuditTitle}>Next Scheduled Audit</Text>
-                <Text style={styles.nextAuditDate}>
-                  {formatTimestamp(currentAuditData.nextScheduledAudit)}(
-                  {currentAuditData.nextScheduledAudit.toLocaleDateString()})
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.nextAuditButton}
-                onPress={handleRunAudit}
-              >
-                <Text style={styles.nextAuditButtonText}>Run Now</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ScrollView>
+        </View>
       )}
 
       <ConfirmDialog
@@ -1040,6 +987,14 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
       />
+
+      {passwordEntry && (
+        <AuditHistoryViewer
+          visible={showHistoryViewer}
+          onClose={() => setShowHistoryViewer(false)}
+          passwordEntryId={passwordEntry.id}
+        />
+      )}
     </View>
   );
 };
@@ -1058,9 +1013,10 @@ const createStyles = (theme: any) =>
     },
     header: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'flex-start',
       justifyContent: 'space-between',
       padding: 16,
+      gap: 12,
     },
     headerLeft: {
       flexDirection: 'row',
@@ -1079,6 +1035,9 @@ const createStyles = (theme: any) =>
       fontSize: 12,
       color: theme.textSecondary,
       marginTop: 2,
+    },
+    headerContent: {
+      flex: 1,
     },
     headerActions: {
       flexDirection: 'row',
@@ -1184,6 +1143,9 @@ const createStyles = (theme: any) =>
       backgroundColor: '#FFEBEE',
       borderLeftColor: '#F44336',
     },
+    alertCardPrimary: {
+      borderWidth: 1,
+    },
     alertHeader: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1220,6 +1182,9 @@ const createStyles = (theme: any) =>
       fontSize: 14,
       fontWeight: '600',
       color: 'white',
+    },
+    alertActionIcon: {
+      marginRight: 8,
     },
     vulnerabilityCard: {
       backgroundColor: theme.background,

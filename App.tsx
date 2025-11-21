@@ -17,6 +17,7 @@ import { NavigationPersistenceService } from './src/services/navigationPersisten
 import { sessionManager } from './src/utils/sessionManager';
 import { UserActivityService } from './src/services/userActivityService';
 import { useAutofillDecryption } from './src/hooks/useAutofillDecryption';
+import { setShouldNavigateToUnlock } from './src/store/slices/authSlice';
 
 // Import polyfills for crypto and URL
 import 'react-native-get-random-values';
@@ -39,9 +40,11 @@ const App: React.FC = () => {
   const navigationPersistence = NavigationPersistenceService.getInstance();
   const userActivityService = UserActivityService.getInstance();
 
-  const isCurrentScreenAutofillManagement = (state: NavigationState | undefined): boolean => {
+  const isCurrentScreenAutofillManagement = (
+    state: NavigationState | undefined,
+  ): boolean => {
     if (!state) return false;
-    
+
     let currentState: any = state;
     while (currentState.routes && currentState.index !== undefined) {
       const activeRoute = currentState.routes[currentState.index];
@@ -76,7 +79,9 @@ const App: React.FC = () => {
       // Check if we're on AutofillManagement - if so, don't persist the state
       // This prevents getting stuck on AutofillManagement when tapping Settings tab
       if (isCurrentScreenAutofillManagement(state)) {
-        console.log('🗺️ ⚠️ Currently on AutofillManagement - skipping navigation state persistence to prevent tab navigation issues');
+        console.log(
+          '🗺️ ⚠️ Currently on AutofillManagement - skipping navigation state persistence to prevent tab navigation issues',
+        );
         // Clear any pending save
         if (saveTimeoutRef.current) {
           clearTimeout(saveTimeoutRef.current);
@@ -97,7 +102,15 @@ const App: React.FC = () => {
 
   // Also save when app goes to background
   useEffect(() => {
-    const handleAppStateChange = (nextAppState: any) => {
+    console.log(
+      '🔍 [App.tsx] ===== REGISTERING AppState listener (MAIN) =====',
+    );
+
+    const handleAppStateChange = async (nextAppState: any) => {
+      console.log(
+        `🔍 [App.tsx] ===== AppState CHANGED: ${appStateRef.current} -> ${nextAppState} =====`,
+      );
+
       if (
         appStateRef.current === 'active' &&
         (nextAppState === 'background' || nextAppState === 'inactive')
@@ -134,6 +147,10 @@ const App: React.FC = () => {
           navigationPersistence.saveNavigationState(currentState);
         }
       }
+      // 🔥 NEW: Handle app resume - trigger biometric
+      // ✅ REMOVED: Biometric on app resume
+      // AppNavigator now handles biometric authentication via AppState listener
+      // This prevents duplicate biometric prompts
 
       appStateRef.current = nextAppState;
     };
@@ -148,6 +165,23 @@ const App: React.FC = () => {
   useEffect(() => {
     const initializeServices = async () => {
       try {
+        // 🔥 CRITICAL: Set unlock flag immediately on cold start to prevent showing Main stack
+        // This ensures Auth stack (with Master Password or Biometric) is shown first
+        console.log(
+          '🔍 [App.tsx] Checking if app needs unlock on cold start...',
+        );
+        const auth = store.getState().auth;
+        if (
+          auth.isAuthenticated &&
+          auth.masterPasswordConfigured &&
+          !auth.hasCompletedSessionAuth
+        ) {
+          console.log(
+            '🔐 [App.tsx] Cold start detected - setting shouldNavigateToUnlock=true',
+          );
+          store.dispatch(setShouldNavigateToUnlock(true));
+        }
+
         // Add a small delay to ensure React Native environment is fully ready
         await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -203,6 +237,76 @@ const App: React.FC = () => {
         }, 3000); // Wait 3 seconds for activity to be ready
 
         console.log('✅ Service initialization completed');
+
+        // 🔥 Trigger biometric on cold start (app first launch)
+        // AppNavigator handles biometric on app RESUME (background → active)
+        // This handles biometric on COLD START (app fully closed → opened)
+        setTimeout(async () => {
+          console.log(
+            '🔍 [App.tsx] Checking if biometric needed on cold start...',
+          );
+
+          const authState = store.getState().auth;
+          if (
+            authState.isAuthenticated &&
+            authState.masterPasswordConfigured &&
+            !authState.hasCompletedSessionAuth
+          ) {
+            try {
+              const { default: BiometricService } = await import(
+                './src/services/biometricService'
+              );
+              const biometricService = BiometricService.getInstance();
+              const capability =
+                await biometricService.checkBiometricCapability();
+
+              if (capability.available) {
+                console.log(
+                  '🔍 [App.tsx] Biometric available - triggering authentication...',
+                );
+
+                const result =
+                  await biometricService.authenticateWithBiometrics(
+                    'Unlock your vault',
+                  );
+
+                if (result.success) {
+                  console.log(
+                    '✅ [App.tsx] Biometric authentication successful!',
+                  );
+
+                  // Cache encrypted master password asynchronously (non-blocking)
+                  // This prevents the UI from freezing while waiting for Firebase operations
+                  const { cacheEncryptedMasterPasswordToAsyncStorage } =
+                    await import('./src/services/staticMasterPasswordService');
+                  
+                  // Fire and forget - don't await this operation
+                  cacheEncryptedMasterPasswordToAsyncStorage()
+                    .then(() => {
+                      console.log(
+                        '✅ [App.tsx] Encrypted MP cached successfully (background)',
+                      );
+                    })
+                    .catch((err) => {
+                      console.warn(
+                        '⚠️ [App.tsx] Failed to cache encrypted MP in background:',
+                        err,
+                      );
+                    });
+
+                  // Don't set any flags here - let AppNavigator handle it
+                  // This prevents navigation conflicts
+                } else {
+                  console.log(
+                    '❌ [App.tsx] Biometric failed - will show unlock screen',
+                  );
+                }
+              }
+            } catch (error) {
+              console.error('❌ [App.tsx] Error triggering biometric:', error);
+            }
+          }
+        }, 2000); // Wait 2 seconds to ensure app is fully ready
       } catch (error) {
         console.error('❌ Service initialization error:', error);
       }

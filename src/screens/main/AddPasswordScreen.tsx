@@ -5,6 +5,10 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -17,11 +21,23 @@ import PasswordForm from '../../components/PasswordForm';
 import ErrorBoundary from '../../components/ErrorBoundary';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { PinPromptModal } from '../../components/PinPromptModal';
+import { BiometricPrompt } from '../../components/BiometricPrompt';
+import { BiometricFallbackPrompt } from '../../components/BiometricFallbackPrompt';
 import { PasswordEntry } from '../../types/password';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
 import { PasswordValidationService } from '../../services/passwordValidationService';
+import { AuditHistoryService } from '../../services/auditHistoryService';
 import { NavigationPersistenceService } from '../../services/navigationPersistenceService';
-import { calculateSecurityScore, isValidDomain } from '../../utils/passwordUtils';
+import {
+  calculateSecurityScore,
+  isValidDomain,
+} from '../../utils/passwordUtils';
+import {
+  unlockMasterPasswordWithPin,
+  getEffectiveMasterPassword,
+  clearStaticMasterPasswordData,
+} from '../../services/staticMasterPasswordService';
 
 type AddPasswordScreenNavigationProp = NativeStackNavigationProp<
   PasswordsStackParamList,
@@ -54,6 +70,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     tags: [],
     customFields: [],
     isFavorite: false,
+    isDecrypted: true, // New passwords are always decrypted (plaintext)
   });
 
   const navigationPersistence = NavigationPersistenceService.getInstance();
@@ -111,6 +128,24 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     message: '',
     onConfirm: () => {},
   });
+
+  // PIN unlock dialog state
+  const [showPinDialog, setShowPinDialog] = useState(false);
+  const [pin, setPin] = useState('');
+  const [pinLoading, setPinLoading] = useState(false);
+  const [pendingSaveData, setPendingSaveData] = useState<Omit<
+    PasswordEntry,
+    'id' | 'createdAt' | 'updatedAt'
+  > | null>(null);
+
+  // Biometric authentication flow states
+  const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
+  const [showFallbackModal, setShowFallbackModal] = useState(false);
+  const [showPinPrompt, setShowPinPrompt] = useState(false);
+  const [pinPromptResolver, setPinPromptResolver] = useState<{
+    resolve: (value: string) => void;
+    reject: () => void;
+  } | null>(null);
 
   // Use ref to track latest formData without causing re-renders
   const formDataRef = React.useRef(formData);
@@ -359,6 +394,79 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     [saveFormDataToStorage],
   );
 
+  const handlePinUnlock = async () => {
+    if (!pin.trim() || !pendingSaveData) {
+      setToastType('error');
+      setToastMessage('Please enter your PIN');
+      setShowToast(true);
+      return;
+    }
+
+    setPinLoading(true);
+    try {
+      // Unlock with PIN
+      const unlockResult = await unlockMasterPasswordWithPin(pin.trim());
+
+      if (!unlockResult.success || !unlockResult.password) {
+        throw new Error(unlockResult.error || 'Failed to unlock with PIN');
+      }
+
+      console.log('✅ PIN unlock successful, creating password...');
+
+      // Close PIN dialog
+      setShowPinDialog(false);
+      setPin('');
+
+      // Now try to save the password with the unlocked master password
+      await createPassword(
+        pendingSaveData,
+        unlockResult.password,
+      );
+
+      // 🔒 SECURITY: Clear master password cache immediately after use
+      await clearStaticMasterPasswordData();
+      console.log('🔒 Master password cache cleared for security');
+
+      // Clear temporary data after successful save
+      try {
+        await navigationPersistence.clearScreenData('AddPassword');
+      } catch (error) {
+        console.error('Failed to clear temp form data:', error);
+      }
+
+      // Reset navigation stack to PasswordsList with success message
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: 'PasswordsList',
+            params: { successMessage: 'Password created successfully!' },
+          },
+        ],
+      });
+    } catch (error: any) {
+      console.error('PIN unlock failed:', error);
+      const errorMessage = error?.message || String(error);
+
+      setToastType('error');
+      setToastMessage(
+        errorMessage.includes('locked')
+          ? errorMessage
+          : 'Incorrect PIN. Please try again.',
+      );
+      setShowToast(true);
+    } finally {
+      setPinLoading(false);
+    }
+  };
+
+  const handlePinCancel = () => {
+    setShowPinDialog(false);
+    setPin('');
+    setPendingSaveData(null);
+    setIsSaving(false);
+  };
+
   const handleCancel = async () => {
     if (hasUnsavedChanges()) {
       setConfirmDialog({
@@ -395,7 +503,9 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   // Memoize form validation to prevent excessive re-renders
   const isFormValid = useCallback((): boolean => {
     const hasTitle = !!(formData?.title && formData.title.trim().length > 0);
-    const hasPassword = !!(formData?.password && formData.password.trim().length > 0);
+    const hasPassword = !!(
+      formData?.password && formData.password.trim().length > 0
+    );
     const hasUsernameOrEmail = !!(
       (formData?.username && formData.username.trim().length > 0) ||
       (formData?.website && formData.website.trim().length > 0)
@@ -408,7 +518,9 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   const handleSave = async () => {
     if (!isFormValid()) {
       const hasTitle = !!(formData?.title && formData.title.trim().length > 0);
-      const hasPassword = !!(formData?.password && formData.password.trim().length > 0);
+      const hasPassword = !!(
+        formData?.password && formData.password.trim().length > 0
+      );
       const hasUsernameOrEmail = !!(
         (formData?.username && formData.username.trim().length > 0) ||
         (formData?.website && formData.website.trim().length > 0)
@@ -436,6 +548,46 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     setIsSaving(true);
 
     try {
+      // 🔐 PROACTIVE PIN CHECK: Verify authentication BEFORE creating password
+      console.log(
+        '🔐 AddPasswordScreen: Checking authentication before creating password...',
+      );
+      const authCheck = await getEffectiveMasterPassword();
+
+      if (!authCheck.success || !authCheck.password) {
+        console.log(
+          '🔐 AddPasswordScreen: Authentication required - showing PIN dialog',
+        );
+
+        // Prepare password entry data for retry after PIN unlock
+        const newPasswordEntry: Omit<
+          PasswordEntry,
+          'id' | 'createdAt' | 'updatedAt'
+        > = {
+          title: formData.title!.trim(),
+          username: formData.username || '',
+          password: formData.password || '',
+          website: formData.website || '',
+          notes: formData.notes || '',
+          category: formData.category || '',
+          tags: formData.tags || [],
+          customFields: formData.customFields || [],
+          isFavorite: formData.isFavorite || false,
+          accessCount: 0,
+          frequencyScore: 0,
+          passwordHistory: [],
+        };
+
+        setPendingSaveData(newPasswordEntry);
+        setIsSaving(false);
+        setShowPinDialog(true);
+        return; // Stop here and wait for PIN
+      }
+
+      console.log(
+        '✅ AddPasswordScreen: Authentication verified - proceeding with creation',
+      );
+
       // Create temporary password entry for security score calculation
       const tempPasswordEntry: PasswordEntry = {
         id: 'temp',
@@ -495,7 +647,40 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
           : undefined,
       };
 
-      await createPassword(newPasswordEntry);
+      const createdPassword = await createPassword(newPasswordEntry);
+
+      // 🔍 Run security audit and save audit result after password is created
+      try {
+        console.log('🔍 AddPasswordScreen: Running security audit for new password...');
+        
+        const securityScore = createdPassword.auditData?.securityScore || 0;
+        let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
+        if (securityScore < 40) riskLevel = 'critical';
+        else if (securityScore < 60) riskLevel = 'high';
+        else if (securityScore < 75) riskLevel = 'medium';
+        
+        const auditData = {
+          date: new Date(),
+          score: securityScore,
+          riskLevel,
+          vulnerabilityCount: 0,
+          vulnerabilities: [],
+          passwordStrength: {
+            score: createdPassword.auditData?.passwordStrength?.score || 0,
+            label: createdPassword.auditData?.passwordStrength?.label || 'Unknown',
+            color: '#9E9E9E',
+            feedback: createdPassword.auditData?.passwordStrength?.feedback || [],
+            crackTime: createdPassword.auditData?.passwordStrength?.crackTime || 'Unknown',
+          },
+          changes: ['Password created'],
+        };
+
+        await AuditHistoryService.saveAuditResult(createdPassword.id, auditData);
+        console.log('✅ AddPasswordScreen: Audit result saved for new password');
+      } catch (auditError) {
+        console.warn('⚠️ AddPasswordScreen: Failed to save audit result:', auditError);
+        // Don't throw - audit is a secondary feature
+      }
 
       // Clear temporary data after successful save
       try {
@@ -515,12 +700,157 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
           },
         ],
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating password:', error);
-      setToastType('error');
-      setToastMessage('Failed to create password entry. Please try again.');
-      setShowToast(true);
-      setIsSaving(false); // Only reset loading state on error
+
+      // Check if error is due to missing master password
+      const errorMessage = error?.message || String(error);
+      console.log(
+        '🔍 AddPasswordScreen: Checking error message:',
+        errorMessage,
+      );
+      console.log(
+        '🔍 AddPasswordScreen: Error includes "Master password":',
+        errorMessage.includes('Master password required'),
+      );
+      console.log(
+        '🔍 AddPasswordScreen: Error includes "PIN unlock":',
+        errorMessage.includes('PIN unlock required'),
+      );
+      console.log(
+        '🔍 AddPasswordScreen: Error includes "not cached":',
+        errorMessage.includes('not cached'),
+      );
+
+      if (
+        errorMessage.includes('Master password required') ||
+        errorMessage.includes('PIN unlock required') ||
+        errorMessage.includes('not cached')
+      ) {
+        console.log(
+          '✅ AddPasswordScreen: Authentication error detected - showing PIN dialog',
+        );
+        console.log('✅ AddPasswordScreen: Setting showPinDialog to true');
+        // Store the password data and show PIN dialog
+        const newPasswordEntry: Omit<
+          PasswordEntry,
+          'id' | 'createdAt' | 'updatedAt'
+        > = {
+          title: formData.title!.trim(),
+          username: formData.username || '',
+          password: formData.password || '',
+          website: formData.website || '',
+          notes: formData.notes || '',
+          category: formData.category || '',
+          tags: formData.tags || [],
+          customFields: formData.customFields || [],
+          isFavorite: formData.isFavorite || false,
+          accessCount: 0,
+          frequencyScore: 0,
+          passwordHistory: [],
+          auditData: formData.password
+            ? {
+                passwordStrength:
+                  PasswordValidationService.analyzePasswordStrength(
+                    formData.password,
+                  ),
+                duplicateCount: 0,
+                compromisedCount: 0,
+                lastPasswordChange: new Date(),
+                securityScore: 0,
+                recommendedAction:
+                  PasswordValidationService.analyzePasswordStrength(
+                    formData.password,
+                  ).score < 2
+                    ? 'change_password'
+                    : 'none',
+              }
+            : undefined,
+        };
+
+        setPendingSaveData(newPasswordEntry);
+        setIsSaving(false);
+        setShowPinDialog(true);
+      } else {
+        setToastType('error');
+        setToastMessage('Failed to create password entry. Please try again.');
+        setShowToast(true);
+        setIsSaving(false);
+      }
+    }
+  };
+
+  // Authentication flow for eye icon - decrypt password
+  const handleDecryptPassword = useCallback(async () => {
+    console.log('🔐 AddPasswordScreen: Starting biometric authentication flow...');
+    
+    return new Promise<string>((resolve, reject) => {
+      setPinPromptResolver({ resolve, reject });
+      // Trigger biometric flow - will lead to PinPrompt or FallbackModal
+      setShowBiometricPrompt(true);
+    });
+  }, []);
+
+  // Biometric authentication success - proceed to PIN verification
+  const handleBiometricSuccess = async () => {
+    setShowBiometricPrompt(false);
+    setToastMessage('Biometric verified');
+    setToastType('success');
+    setShowToast(true);
+
+    setTimeout(() => {
+      setShowPinPrompt(true);
+    }, 500);
+  };
+
+  // Biometric authentication error - fallback to master password + PIN
+  const handleBiometricError = (error: string) => {
+    setShowBiometricPrompt(false);
+    setToastMessage(error || 'Authentication failed');
+    setToastType('error');
+    setShowToast(true);
+
+    setTimeout(() => {
+      setShowFallbackModal(true);
+    }, 500);
+  };
+
+  // Biometric prompt closed by user
+  const handleBiometricClose = () => {
+    setShowBiometricPrompt(false);
+  };
+
+  // Biometric fallback (Master Password + PIN) success
+  const handleFallbackSuccess = async (masterPassword: string) => {
+    setShowFallbackModal(false);
+    
+    if (pinPromptResolver) {
+      pinPromptResolver.resolve(masterPassword);
+      setPinPromptResolver(null);
+    }
+  };
+
+  // Biometric fallback cancelled
+  const handleFallbackCancel = () => {
+    setShowFallbackModal(false);
+  };
+
+  // PIN verification success (for eye icon - view password)
+  const handlePinPromptSuccess = async (masterPassword: string) => {
+    setShowPinPrompt(false);
+    
+    if (pinPromptResolver) {
+      pinPromptResolver.resolve(masterPassword);
+      setPinPromptResolver(null);
+    }
+  };
+
+  const handlePinPromptCancel = () => {
+    setShowPinPrompt(false);
+    
+    if (pinPromptResolver) {
+      pinPromptResolver.reject();
+      setPinPromptResolver(null);
     }
   };
 
@@ -590,6 +920,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
             onDataChange={handleFormSave}
             isEditing={false}
             enableAutoSave={false}
+            onDecryptPassword={handleDecryptPassword}
           />
         </ScrollView>
 
@@ -631,6 +962,134 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
         confirmStyle={confirmDialog.confirmStyle}
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
+      />
+
+      {/* PIN Unlock Dialog */}
+      <Modal
+        visible={showPinDialog}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handlePinCancel}
+      >
+        <KeyboardAvoidingView
+          style={styles.pinOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View
+            style={[styles.pinContainer, { backgroundColor: theme.surface }]}
+          >
+            <View style={styles.pinHeader}>
+              <View
+                style={[
+                  styles.pinIconContainer,
+                  { backgroundColor: theme.primary + '20' },
+                ]}
+              >
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={32}
+                  color={theme.primary}
+                />
+              </View>
+              <Text style={[styles.pinTitle, { color: theme.text }]}>
+                PIN Required
+              </Text>
+              <Text
+                style={[styles.pinSubtitle, { color: theme.textSecondary }]}
+              >
+                Enter your PIN to save this password
+              </Text>
+            </View>
+
+            <View style={styles.pinInputSection}>
+              <View
+                style={[
+                  styles.pinInputContainer,
+                  { borderColor: theme.border },
+                ]}
+              >
+                <Ionicons
+                  name="keypad-outline"
+                  size={24}
+                  color={theme.textSecondary}
+                />
+                <TextInput
+                  style={[styles.pinInput, { color: theme.text }]}
+                  placeholder="Enter PIN"
+                  placeholderTextColor={theme.textSecondary}
+                  value={pin}
+                  onChangeText={setPin}
+                  secureTextEntry={true}
+                  keyboardType="numeric"
+                  maxLength={6}
+                  autoFocus={true}
+                  onSubmitEditing={handlePinUnlock}
+                />
+              </View>
+            </View>
+
+            <View style={styles.pinButtonSection}>
+              <TouchableOpacity
+                style={[
+                  styles.pinButton,
+                  styles.pinCancelButton,
+                  { borderColor: theme.border },
+                ]}
+                onPress={handlePinCancel}
+                disabled={pinLoading}
+              >
+                <Text
+                  style={[styles.pinButtonText, { color: theme.textSecondary }]}
+                >
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.pinButton,
+                  styles.pinUnlockButton,
+                  { backgroundColor: theme.primary },
+                  (pinLoading || !pin.trim()) && styles.pinButtonDisabled,
+                ]}
+                onPress={handlePinUnlock}
+                disabled={pinLoading || !pin.trim()}
+              >
+                <Text
+                  style={[styles.pinButtonText, { color: theme.background }]}
+                >
+                  {pinLoading ? 'Unlocking...' : 'Unlock'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Layer 1: Biometric Authentication */}
+      <BiometricPrompt
+        visible={showBiometricPrompt}
+        onClose={handleBiometricClose}
+        onSuccess={handleBiometricSuccess}
+        onError={handleBiometricError}
+        title="Authenticate to view password"
+        subtitle="Use biometric authentication to reveal password"
+      />
+
+      {/* Layer 1B: Biometric Fallback (Master Password + PIN when biometric fails) */}
+      <BiometricFallbackPrompt
+        visible={showFallbackModal}
+        onSuccess={handleFallbackSuccess}
+        onCancel={handleFallbackCancel}
+      />
+
+      {/* Layer 2: PIN Prompt Modal (after biometric succeeds) */}
+      <PinPromptModal
+        visible={showPinPrompt}
+        onSuccess={handlePinPromptSuccess}
+        onCancel={handlePinPromptCancel}
+        title="Enter PIN"
+        subtitle="Enter your PIN to view password"
       />
     </SafeAreaView>
   );
@@ -707,6 +1166,90 @@ const createStyles = (theme: any) =>
       color: theme.textSecondary,
       marginTop: 16,
       fontSize: 16,
+    },
+    // PIN Dialog Styles
+    pinOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+    },
+    pinContainer: {
+      width: '100%',
+      maxWidth: 400,
+      borderRadius: 16,
+      paddingHorizontal: 24,
+      paddingVertical: 32,
+      elevation: 8,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+    },
+    pinHeader: {
+      alignItems: 'center',
+      marginBottom: 32,
+    },
+    pinIconContainer: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    pinTitle: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      textAlign: 'center',
+      marginBottom: 8,
+    },
+    pinSubtitle: {
+      fontSize: 16,
+      textAlign: 'center',
+      lineHeight: 22,
+    },
+    pinInputSection: {
+      marginBottom: 32,
+    },
+    pinInputContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    pinInput: {
+      flex: 1,
+      fontSize: 16,
+      marginLeft: 12,
+      marginRight: 8,
+    },
+    pinButtonSection: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    pinButton: {
+      flex: 1,
+      paddingVertical: 16,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    pinCancelButton: {
+      borderWidth: 1,
+    },
+    pinUnlockButton: {
+      // backgroundColor set dynamically
+    },
+    pinButtonDisabled: {
+      opacity: 0.6,
+    },
+    pinButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
     },
   });
 

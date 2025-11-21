@@ -72,8 +72,8 @@ jest.mock('../BiometricPrompt', () => ({
   },
 }));
 
-jest.mock('../MasterPasswordPrompt', () => ({
-  MasterPasswordPrompt: function MockMasterPasswordPrompt() {
+jest.mock('../BiometricFallbackPrompt', () => ({
+  BiometricFallbackPrompt: function MockBiometricFallbackPrompt() {
     return null;
   },
 }));

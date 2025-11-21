@@ -11,10 +11,17 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useBiometric } from '../../hooks/useBiometric';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAppDispatch } from '../../hooks/redux';
 import { setIsInSetupFlow } from '../../store/slices/authSlice';
 import { BiometricPrompt } from '../../components/BiometricPrompt';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { AuthStackParamList } from '../../navigation/AuthNavigator';
+
+type BiometricSetupNavigationProp = NativeStackNavigationProp<
+  AuthStackParamList,
+  'CredentialOptions'
+>;
 
 interface BiometricFeature {
   icon: string;
@@ -25,7 +32,7 @@ interface BiometricFeature {
 export const BiometricSetupScreen: React.FC = () => {
   const { theme } = useTheme();
   const dispatch = useAppDispatch();
-  const navigation = useNavigation();
+  const navigation = useNavigation<BiometricSetupNavigationProp>();
   const {
     isAvailable,
     isSetup,
@@ -115,6 +122,9 @@ export const BiometricSetupScreen: React.FC = () => {
   const handleBiometricSuccess = async () => {
     setShowPrompt(false);
 
+    console.log(
+      '🔐 [BiometricSetupScreen] Setup mode - calling setupBiometric()',
+    );
     try {
       const success = await setupBiometric();
       if (success) {
@@ -124,9 +134,28 @@ export const BiometricSetupScreen: React.FC = () => {
           title: 'Setup Complete',
           message: `${biometryType} authentication has been enabled successfully!`,
           confirmText: 'Continue',
-          onConfirm: () => {
+          onConfirm: async () => {
             setConfirmDialog(prev => ({ ...prev, visible: false }));
-            navigation.goBack();
+            try {
+              const { enableBiometricForMasterPassword } = await import(
+                '../../services/secureStorageService'
+              );
+              const { getEffectiveMasterPassword } = await import(
+                '../../services/staticMasterPasswordService'
+              );
+              const mpResult = await getEffectiveMasterPassword();
+              if (mpResult.success && mpResult.password) {
+                await enableBiometricForMasterPassword(mpResult.password);
+              }
+            } catch (err) {
+              console.error(
+                'Failed to enable biometric for master password:',
+                err,
+              );
+            }
+            navigation.navigate('MasterPassword', {
+              biometricSetupComplete: true,
+            });
           },
         });
       } else {

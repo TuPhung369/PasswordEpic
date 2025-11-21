@@ -37,7 +37,7 @@ const initialState: SettingsState = {
     biometricEnabled: true,
     biometricType: 'Biometric Authentication',
     biometricPreference: 'any',
-    autoLockTimeout: 5,
+    autoLockTimeout: 2,
     requireBiometricForAutoFill: true,
     screenProtectionEnabled: true,
     securityChecksEnabled: true,
@@ -46,7 +46,7 @@ const initialState: SettingsState = {
     memoryProtectionEnabled: true,
   },
   generator: {
-    defaultLength: 16,
+    defaultLength: 30,
     includeUppercase: true,
     includeLowercase: true,
     includeNumbers: true,

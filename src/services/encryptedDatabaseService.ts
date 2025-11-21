@@ -187,6 +187,76 @@ export class EncryptedDatabaseService {
   }
 
   /**
+   * Save password entry with already-encrypted data (for imports)
+   * Bypasses encryption - directly stores the encrypted ciphertext with its metadata
+   * Used during import to restore encrypted entries without decrypt/re-encrypt cycle
+   */
+  public async savePasswordEntryWithEncryptedData(
+    entry: PasswordEntry,
+    encryptedData: {
+      ciphertext: string;
+      salt: string;
+      iv: string;
+      tag: string;
+    },
+  ): Promise<void> {
+    try {
+      console.log('🔐 [SaveEncrypted] Saving pre-encrypted password entry:', {
+        title: entry.title,
+        ciphertextLength: encryptedData.ciphertext.length,
+        saltLength: encryptedData.salt.length,
+        ivLength: encryptedData.iv.length,
+        tagLength: encryptedData.tag.length,
+      });
+
+      const existingEntries = await this.getAllOptimizedEntries();
+      const allEntries = [...existingEntries];
+      const existingIndex = allEntries.findIndex(e => e.id === entry.id);
+
+      const optimizedEntry = {
+        id: entry.id,
+        title: entry.title,
+        username: entry.username,
+        encryptedPassword: encryptedData.ciphertext,
+        passwordSalt: encryptedData.salt,
+        passwordIv: encryptedData.iv,
+        passwordAuthTag: encryptedData.tag,
+        website: entry.website || '',
+        notes: entry.notes || '',
+        category: entry.category || 'General',
+        tags: entry.tags || [],
+        isFavorite: entry.isFavorite || false,
+        createdAt: entry.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lastUsed: entry.lastUsed || null,
+        auditData: entry.auditData || [],
+        breachStatus: entry.breachStatus || { status: 'unknown' },
+      };
+
+      if (existingIndex >= 0) {
+        allEntries[existingIndex] = optimizedEntry;
+      } else {
+        allEntries.push(optimizedEntry);
+      }
+
+      await AsyncStorage.setItem(
+        PASSWORDS_STORAGE_KEY,
+        JSON.stringify(allEntries),
+      );
+
+      console.log(
+        `✅ [SaveEncrypted] Pre-encrypted entry saved: ${entry.title}`,
+      );
+    } catch (error) {
+      console.error(
+        `❌ [SaveEncrypted] Failed to save encrypted entry:`,
+        error,
+      );
+      throw new Error(`Failed to save encrypted entry: ${error}`);
+    }
+  }
+
+  /**
    * Alias for backward compatibility
    */
   public async savePasswordEntryOptimized(

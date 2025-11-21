@@ -5,6 +5,10 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -12,6 +16,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordManagement } from '../../hooks/usePasswordManagement';
+import { useBiometric } from '../../hooks/useBiometric';
 import PasswordForm from '../../components/PasswordForm';
 import PasswordHistoryViewer, {
   PasswordHistoryItem,
@@ -19,13 +24,24 @@ import PasswordHistoryViewer, {
 import SecurityAuditPanel from '../../components/SecurityAuditPanel';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { PinPromptModal } from '../../components/PinPromptModal';
+import { BiometricPrompt } from '../../components/BiometricPrompt';
+import { BiometricFallbackPrompt } from '../../components/BiometricFallbackPrompt';
 import { PasswordEntry, PasswordHistoryEntry } from '../../types/password';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
 import { PasswordValidationService } from '../../services/passwordValidationService';
-import { calculateSecurityScore, isValidDomain } from '../../utils/passwordUtils';
+import { AuditHistoryService } from '../../services/auditHistoryService';
+import {
+  calculateSecurityScore,
+  isValidDomain,
+} from '../../utils/passwordUtils';
 import { useAppDispatch } from '../../hooks/redux';
 import { decryptPasswordField } from '../../store/slices/passwordsSlice';
-import { getEffectiveMasterPassword } from '../../services/staticMasterPasswordService';
+import {
+  getEffectiveMasterPassword,
+  unlockMasterPasswordWithPin,
+  clearStaticMasterPasswordData,
+} from '../../services/staticMasterPasswordService';
 
 type EditPasswordRouteProp = RouteProp<PasswordsStackParamList, 'EditPassword'>;
 
@@ -45,6 +61,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
 
   const { passwords, updatePassword, deletePassword, isLoading } =
     usePasswordManagement();
+  const { authenticate: authenticateBiometric } = useBiometric();
 
   const [password, setPassword] = useState<PasswordEntry | null>(null);
   const [formData, setFormData] = useState<Partial<PasswordEntry>>({});
@@ -53,6 +70,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const [toastDuration, setToastDuration] = useState(2000);
   const [isDeleteDialogShowing, setIsDeleteDialogShowing] = useState(false);
 
   // Confirm dialog state
@@ -74,10 +92,51 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
   const [isPasswordDecrypted, setIsPasswordDecrypted] = useState(false);
   const [decryptedPassword, setDecryptedPassword] = useState<string>('');
 
+  // PIN unlock dialog state
+  const [showPinDialog, setShowPinDialog] = useState(false);
+  const [pin, setPin] = useState('');
+  const [pinLoading, setPinLoading] = useState(false);
+  const [pendingUpdateData, setPendingUpdateData] =
+    useState<PasswordEntry | null>(null);
+  const [isPasswordChanged, setIsPasswordChanged] = useState(false); // Track if password changed
+  const [unlockedMasterPassword, setUnlockedMasterPassword] = useState<
+    string | undefined
+  >(undefined);
+
+  // Audit data state
+  const [latestAudit, setLatestAudit] = useState<any>(null);
+
+  // Biometric authentication flow states
+  const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
+  const [showFallbackModal, setShowFallbackModal] = useState(false);
+  const [showPinPrompt, setShowPinPrompt] = useState(false);
+  const [pinPromptResolver, setPinPromptResolver] = useState<{
+    resolve: (password: string) => void;
+    reject: () => void;
+  } | null>(null);
+
   // Memoize toast hide callback to prevent re-renders from resetting the timer
   const handleHideToast = useCallback(() => {
     setShowToast(false);
   }, []);
+
+  const showToastNotification = useCallback(
+    ({
+      message,
+      type,
+      duration,
+    }: {
+      message: string;
+      type: 'success' | 'error';
+      duration?: number;
+    }) => {
+      setToastMessage(message);
+      setToastType(type);
+      setToastDuration(duration ?? 2000);
+      setShowToast(true);
+    },
+    [],
+  );
 
   const styles = StyleSheet.create({
     container: {
@@ -209,6 +268,90 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
       textAlign: 'center',
       lineHeight: 22,
     },
+    // PIN Dialog Styles
+    pinOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+    },
+    pinContainer: {
+      width: '100%',
+      maxWidth: 400,
+      borderRadius: 16,
+      paddingHorizontal: 24,
+      paddingVertical: 32,
+      elevation: 8,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+    },
+    pinHeader: {
+      alignItems: 'center',
+      marginBottom: 32,
+    },
+    pinIconContainer: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    pinTitle: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      textAlign: 'center',
+      marginBottom: 8,
+    },
+    pinSubtitle: {
+      fontSize: 16,
+      textAlign: 'center',
+      lineHeight: 22,
+    },
+    pinInputSection: {
+      marginBottom: 32,
+    },
+    pinInputContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    pinInput: {
+      flex: 1,
+      fontSize: 16,
+      marginLeft: 12,
+      marginRight: 8,
+    },
+    pinButtonSection: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    pinButton: {
+      flex: 1,
+      paddingVertical: 16,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    pinCancelButton: {
+      borderWidth: 1,
+    },
+    pinUnlockButton: {
+      // backgroundColor set dynamically
+    },
+    pinButtonDisabled: {
+      opacity: 0.6,
+    },
+    pinButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+    },
   });
 
   // Load password data
@@ -261,59 +404,206 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
     }
   }, [passwords, passwordId, isPasswordLoaded, isPasswordDecrypted]);
 
+  // Fetch audit history
+  useEffect(() => {
+    if (!password) return;
+
+    const fetchAuditData = async () => {
+      try {
+        const history = await AuditHistoryService.getAuditHistory(password.id);
+        if (history.length > 0) {
+          setLatestAudit({
+            ...history[0],
+            auditHistory: history,
+          });
+          console.log('✅ EditPasswordScreen: Audit history loaded for:', password.id, 'Total:', history.length, 'Latest Score:', history[0]?.score);
+        }
+      } catch (error) {
+        console.error('❌ EditPasswordScreen: Failed to load audit history:', error);
+      }
+    };
+
+    fetchAuditData();
+  }, [password]);
+
   // Decrypt password on-demand when user wants to view it
+  const performDecryption = useCallback(
+    async (masterPassword: string) => {
+      if (!password) return '';
+
+      try {
+        console.log(
+          '🔓 EditPasswordScreen: Decrypting password with master password...',
+        );
+
+        const result = await dispatch(
+          decryptPasswordField({
+            id: password.id,
+            masterPassword: masterPassword,
+          }),
+        ).unwrap();
+
+        if (result.password) {
+          setDecryptedPassword(result.password);
+          setIsPasswordDecrypted(true);
+          // Update formData with decrypted password so PasswordForm can display it
+          setFormData(prev => {
+            const updated = { ...prev, password: result.password };
+            console.log(
+              '✅ EditPasswordScreen: Password decrypted, updating formData:',
+              {
+                before: '[ENCRYPTED]',
+                after: '[DECRYPTED]',
+                actualPassword: updated.password.substring(0, 3) + '***',
+              },
+            );
+            return updated;
+          });
+          console.log('✅ EditPasswordScreen: Password decrypted successfully');
+          return result.password;
+        }
+
+        throw new Error('Failed to decrypt password');
+      } catch (error) {
+        console.error(
+          '❌ EditPasswordScreen: Failed to decrypt password:',
+          error,
+        );
+        setToastType('error');
+        setToastMessage('Failed to decrypt password');
+        setShowToast(true);
+        return '';
+      }
+    },
+    [password, dispatch],
+  );
+
   const handleDecryptPassword = useCallback(async () => {
     if (isPasswordDecrypted || !password) {
       return decryptedPassword;
     }
 
+    console.log(
+      '🔐 EditPasswordScreen: Starting biometric authentication flow...',
+    );
+
+    // Return a promise that resolves when authentication completes
+    return new Promise<string>((resolve, reject) => {
+      setPinPromptResolver({ resolve, reject });
+      // Trigger biometric flow - will lead to PinPrompt or FallbackModal
+      setShowBiometricPrompt(true);
+    });
+  }, [password, isPasswordDecrypted, decryptedPassword]);
+
+  // Layer 2: PIN verification (after successful biometric)
+  const handlePinPromptSuccess = async (masterPassword: string) => {
+    setShowPinPrompt(false);
+    await performDecryption(masterPassword);
+
+    // Resolve the promise from handleDecryptPassword with the master password
+    if (pinPromptResolver) {
+      pinPromptResolver.resolve(masterPassword);
+      setPinPromptResolver(null);
+    }
+  };
+
+  const handlePinPromptCancel = () => {
+    setShowPinPrompt(false);
+
+    // Reject the promise from handleDecryptPassword
+    if (pinPromptResolver) {
+      pinPromptResolver.reject();
+      setPinPromptResolver(null);
+    }
+  };
+
+  // Biometric authentication success - proceed to PIN verification
+  const handleBiometricSuccess = async () => {
+    setShowBiometricPrompt(false);
+    showToastNotification({
+      message: 'Biometric verified',
+      type: 'success',
+      duration: 1500,
+    });
+
+    setTimeout(() => {
+      setShowPinPrompt(true);
+    }, 500);
+  };
+
+  // Biometric authentication error - fallback to master password + PIN
+  const handleBiometricError = (error: string) => {
+    setShowBiometricPrompt(false);
+    showToastNotification({
+      message: error || 'Authentication failed',
+      type: 'error',
+      duration: 1500,
+    });
+
+    setTimeout(() => {
+      setShowFallbackModal(true);
+    }, 500);
+  };
+
+  // Biometric prompt closed by user - show fallback modal
+  const handleBiometricClose = () => {
+    setShowBiometricPrompt(false);
+    setTimeout(() => {
+      setShowFallbackModal(true);
+    }, 500);
+  };
+
+  // Biometric fallback (Master Password + PIN) success
+  const handleFallbackSuccess = async (masterPassword: string) => {
+    setShowFallbackModal(false);
+
     try {
-      console.log('🔓 EditPasswordScreen: Decrypting password on-demand...');
-      const masterPasswordResult = await getEffectiveMasterPassword();
+      console.log(
+        '🔓 EditPasswordScreen: Fallback verified - decrypting password',
+      );
+      const decrypted = await performDecryption(masterPassword);
 
-      if (!masterPasswordResult.success || !masterPasswordResult.password) {
-        throw new Error('Failed to get master password');
+      if (!decrypted) {
+        throw new Error('Decryption returned empty password');
       }
 
-      const result = await dispatch(
-        decryptPasswordField({
-          id: password.id,
-          masterPassword: masterPasswordResult.password,
-        }),
-      ).unwrap();
+      showToastNotification({
+        message: 'Authentication successful',
+        type: 'success',
+        duration: 1500,
+      });
 
-      if (result.password) {
-        setDecryptedPassword(result.password);
-        setIsPasswordDecrypted(true);
-        // Update formData with decrypted password so PasswordForm can display it
-        setFormData(prev => {
-          const updated = { ...prev, password: result.password };
-          console.log(
-            '✅ EditPasswordScreen: Password decrypted, updating formData:',
-            {
-              before: '[ENCRYPTED]',
-              after: '[DECRYPTED]',
-              actualPassword: updated.password.substring(0, 3) + '***',
-            },
-          );
-          return updated;
-        });
-        console.log('✅ EditPasswordScreen: Password decrypted successfully');
-        return result.password;
+      if (pinPromptResolver) {
+        pinPromptResolver.resolve(masterPassword);
+        setPinPromptResolver(null);
       }
-
-      throw new Error('Failed to decrypt password');
     } catch (error) {
       console.error(
         '❌ EditPasswordScreen: Failed to decrypt password:',
         error,
       );
-      setToastType('error');
-      setToastMessage('Failed to decrypt password');
-      setShowToast(true);
-      return '';
+      showToastNotification({
+        message: 'Failed to decrypt password',
+        type: 'error',
+        duration: 1500,
+      });
+
+      if (pinPromptResolver) {
+        pinPromptResolver.reject();
+        setPinPromptResolver(null);
+      }
     }
-  }, [password, isPasswordDecrypted, decryptedPassword, dispatch]);
+  };
+
+  // Biometric fallback cancelled
+  const handleFallbackCancel = () => {
+    setShowFallbackModal(false);
+
+    if (pinPromptResolver) {
+      pinPromptResolver.reject();
+      setPinPromptResolver(null);
+    }
+  };
 
   const handleCancel = () => {
     if (hasUnsavedChanges()) {
@@ -348,17 +638,18 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
       formData.isFavorite !== password.isFavorite;
 
     // Check password changes:
-    // 1. If password hasn't been decrypted -> no change (still encrypted)
-    // 2. If password has been decrypted and modified -> has change
-    const passwordChanged =
-      isPasswordDecrypted && formData.password !== decryptedPassword;
+    // Compare current password with original password value
+    // This works for both encrypted and decrypted states
+    const passwordChanged = formData.password !== password.password;
 
     return metadataChanged || passwordChanged;
   };
 
   const isFormValid = (): boolean => {
     const hasTitle = !!(formData.title && formData.title.trim().length > 0);
-    const hasPassword = !!(formData.password && formData.password.trim().length > 0);
+    const hasPassword = !!(
+      formData.password && formData.password.trim().length > 0
+    );
     const hasUsernameOrEmail = !!(
       (formData.username && formData.username.trim().length > 0) ||
       (formData.website && formData.website.trim().length > 0)
@@ -374,7 +665,9 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
   const handleSave = async () => {
     if (!password || !isFormValid()) {
       const hasTitle = !!(formData.title && formData.title.trim().length > 0);
-      const hasPassword = !!(formData.password && formData.password.trim().length > 0);
+      const hasPassword = !!(
+        formData.password && formData.password.trim().length > 0
+      );
       const hasUsernameOrEmail = !!(
         (formData.username && formData.username.trim().length > 0) ||
         (formData.website && formData.website.trim().length > 0)
@@ -431,6 +724,32 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
         );
         finalPassword = password.password; // Keep encrypted password
         passwordChanged = false;
+      }
+
+      // Store password changed status for error handling
+      setIsPasswordChanged(passwordChanged);
+
+      // 🔐 PROACTIVE PIN CHECK: If password changed, verify authentication BEFORE saving
+      if (passwordChanged) {
+        console.log(
+          '🔐 EditPasswordScreen: Password changed - checking authentication...',
+        );
+        const authCheck = await getEffectiveMasterPassword();
+
+        if (!authCheck.success || !authCheck.password) {
+          console.log(
+            '🔐 EditPasswordScreen: Authentication required - showing PIN dialog',
+          );
+          // Store the current form data to retry after PIN unlock
+          setPendingUpdateData(password);
+          setIsSaving(false);
+          setShowPinDialog(true);
+          return; // Stop here and wait for PIN
+        }
+
+        console.log(
+          '✅ EditPasswordScreen: Authentication verified - proceeding with save',
+        );
       }
 
       // Create new password history entry if password changed
@@ -495,7 +814,44 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
       console.log(
         '💾 EditPasswordScreen: Saving password entry (password will be encrypted by updatePassword)',
       );
-      await updatePassword(password.id, updatedPassword);
+      await updatePassword(
+        password.id,
+        updatedPassword,
+        unlockedMasterPassword,
+      );
+
+      // 🔍 Run security audit and save audit result after password is saved
+      try {
+        console.log('🔍 EditPasswordScreen: Running security audit...');
+        
+        const securityScore = updatedPassword.auditData?.securityScore || 0;
+        let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
+        if (securityScore < 40) riskLevel = 'critical';
+        else if (securityScore < 60) riskLevel = 'high';
+        else if (securityScore < 75) riskLevel = 'medium';
+        
+        const auditData = {
+          date: new Date(),
+          score: securityScore,
+          riskLevel,
+          vulnerabilityCount: 0,
+          vulnerabilities: [],
+          passwordStrength: {
+            score: updatedPassword.auditData?.passwordStrength?.score || 0,
+            label: updatedPassword.auditData?.passwordStrength?.label || 'Unknown',
+            color: '#9E9E9E',
+            feedback: updatedPassword.auditData?.passwordStrength?.feedback || [],
+            crackTime: updatedPassword.auditData?.passwordStrength?.crackTime || 'Unknown',
+          },
+          changes: passwordChanged ? ['Password changed'] : [],
+        };
+
+        await AuditHistoryService.saveAuditResult(password.id, auditData);
+        console.log('✅ EditPasswordScreen: Audit result saved');
+      } catch (auditError) {
+        console.warn('⚠️ EditPasswordScreen: Failed to save audit result:', auditError);
+        // Don't throw - audit is a secondary feature
+      }
 
       // Reset navigation stack to PasswordsList with success message
       // Don't set isSaving(false) here as navigation.reset will unmount the component
@@ -508,60 +864,186 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
           },
         ],
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating password:', error);
-      setToastType('error');
-      setToastMessage('Failed to update password entry. Please try again.');
-      setShowToast(true);
-      setIsSaving(false); // Only reset loading state on error
+
+      // Check if error is due to missing master password
+      const errorMessage = error?.message || String(error);
+      const isAuthError =
+        errorMessage.includes('Master password required') ||
+        errorMessage.includes('PIN unlock required') ||
+        errorMessage.includes('not cached');
+
+      // Only show PIN dialog if password was changed and authentication is required
+      if (isAuthError && isPasswordChanged) {
+        console.log(
+          '🔐 EditPasswordScreen: Password changed - requiring PIN authentication',
+        );
+        // Store the current form data to retry after PIN unlock
+        setPendingUpdateData(password);
+        setIsSaving(false);
+        setShowPinDialog(true);
+      } else if (isAuthError && !isPasswordChanged) {
+        // Password not changed, but auth error occurred (shouldn't happen for metadata-only changes)
+        // Try to save anyway without master password requirement
+        console.log(
+          '⚠️ EditPasswordScreen: Auth error but password not changed - saving metadata only',
+        );
+        setToastType('error');
+        setToastMessage(
+          'Authentication required. Please try again or contact support.',
+        );
+        setShowToast(true);
+        setIsSaving(false);
+      } else {
+        setToastType('error');
+        setToastMessage('Failed to update password entry. Please try again.');
+        setShowToast(true);
+        setIsSaving(false);
+      }
     }
   };
 
-  const handleDelete = () => {
+  const handlePinUnlock = async () => {
+    if (!pin.trim() || !pendingUpdateData) {
+      setToastType('error');
+      setToastMessage('Please enter your PIN');
+      setShowToast(true);
+      return;
+    }
+
+    setPinLoading(true);
+    try {
+      // Unlock with PIN
+      const unlockResult = await unlockMasterPasswordWithPin(pin.trim());
+
+      if (!unlockResult.success || !unlockResult.password) {
+        throw new Error(unlockResult.error || 'Failed to unlock with PIN');
+      }
+
+      console.log('✅ PIN unlock successful, updating password...');
+
+      // Close PIN dialog
+      setShowPinDialog(false);
+      setPin('');
+
+      // Store the unlocked master password temporarily for handleSave to use
+      setUnlockedMasterPassword(unlockResult.password);
+
+      // Now retry handleSave with the unlocked master password
+      await handleSave();
+
+      // 🔒 SECURITY: Clear master password cache immediately after use
+      await clearStaticMasterPasswordData();
+      console.log('🔒 Master password cache cleared for security');
+
+      // Clear the temporarily stored master password
+      setUnlockedMasterPassword(undefined);
+    } catch (error: any) {
+      console.error('PIN unlock failed:', error);
+      const errorMessage = error?.message || String(error);
+
+      setToastType('error');
+      setToastMessage(
+        errorMessage.includes('locked')
+          ? errorMessage
+          : 'Incorrect PIN. Please try again.',
+      );
+      setShowToast(true);
+    } finally {
+      setPinLoading(false);
+      // Ensure unlocked master password is cleared
+      setUnlockedMasterPassword(undefined);
+    }
+  };
+
+  const handlePinCancel = () => {
+    setShowPinDialog(false);
+    setPin('');
+    setPendingUpdateData(null);
+    setIsSaving(false);
+  };
+
+  const handleDelete = async () => {
     if (!password || isDeleteDialogShowing || isDeleting) return;
 
-    setIsDeleteDialogShowing(true);
+    // 🔐 SECURITY: Require biometric authentication before delete
+    // 🔑 IMPORTANT: Enable PIN fallback (allowDeviceCredentials=true) for delete operations
+    try {
+      console.log('🔒 [Delete] Requesting biometric authentication...');
+      const biometricResult = await authenticateBiometric(
+        'Authenticate to delete password',
+      );
 
-    setConfirmDialog({
-      visible: true,
-      title: 'Delete Password',
-      message: `Are you sure you want to delete "${password.title}"? This action cannot be undone.`,
-      confirmText: 'Delete',
-      confirmStyle: 'destructive',
-      onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, visible: false }));
-        setIsDeleting(true);
-        try {
-          await deletePassword(password.id);
+      if (!biometricResult) {
+        console.log('❌ [Delete] Biometric authentication failed or cancelled');
+        setConfirmDialog({
+          visible: true,
+          title: 'Authentication Failed',
+          message: 'Biometric authentication is required to delete passwords',
+          confirmText: 'OK',
+          onConfirm: () =>
+            setConfirmDialog(prev => ({ ...prev, visible: false })),
+        });
+        return;
+      }
 
-          // Reset navigation stack to PasswordsList with success message
-          // Don't set isDeleting(false) here as navigation.reset will unmount the component
-          navigation.reset({
-            index: 0,
-            routes: [
-              {
-                name: 'PasswordsList',
-                params: {
-                  successMessage: 'Password deleted successfully!',
+      console.log('✅ [Delete] Biometric authentication successful');
+
+      // Show confirmation dialog after biometric success
+      setIsDeleteDialogShowing(true);
+
+      setConfirmDialog({
+        visible: true,
+        title: 'Delete Password',
+        message: `Are you sure you want to delete "${password.title}"? This action cannot be undone.`,
+        confirmText: 'Delete',
+        confirmStyle: 'destructive',
+        onConfirm: async () => {
+          setConfirmDialog(prev => ({ ...prev, visible: false }));
+          setIsDeleting(true);
+          try {
+            await deletePassword(password.id);
+
+            // Reset navigation stack to PasswordsList with success message
+            // Don't set isDeleting(false) here as navigation.reset will unmount the component
+            navigation.reset({
+              index: 0,
+              routes: [
+                {
+                  name: 'PasswordsList',
+                  params: {
+                    successMessage: 'Password deleted successfully!',
+                  },
                 },
-              },
-            ],
-          });
-        } catch (error) {
-          console.error('Error deleting password:', error);
-          setIsDeleteDialogShowing(false);
-          setConfirmDialog({
-            visible: true,
-            title: 'Error',
-            message: 'Failed to delete password entry. Please try again.',
-            confirmText: 'OK',
-            onConfirm: () =>
-              setConfirmDialog(prev => ({ ...prev, visible: false })),
-          });
-          setIsDeleting(false); // Only reset loading state on error
-        }
-      },
-    });
+              ],
+            });
+          } catch (error) {
+            console.error('Error deleting password:', error);
+            setIsDeleteDialogShowing(false);
+            setConfirmDialog({
+              visible: true,
+              title: 'Error',
+              message: 'Failed to delete password entry. Please try again.',
+              confirmText: 'OK',
+              onConfirm: () =>
+                setConfirmDialog(prev => ({ ...prev, visible: false })),
+            });
+            setIsDeleting(false); // Only reset loading state on error
+          }
+        },
+      });
+    } catch (error) {
+      console.error('❌ [Delete] Biometric authentication error:', error);
+      setConfirmDialog({
+        visible: true,
+        title: 'Error',
+        message: 'Failed to authenticate. Please try again.',
+        confirmText: 'OK',
+        onConfirm: () =>
+          setConfirmDialog(prev => ({ ...prev, visible: false })),
+      });
+    }
   };
 
   // Loading state
@@ -677,6 +1159,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
           {/* Security Audit Section - Always show */}
           <SecurityAuditPanel
             passwordEntry={password}
+            auditData={latestAudit}
             onDecryptPassword={handleDecryptPassword}
           />
         </ScrollView>
@@ -710,7 +1193,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
         type={toastType}
         visible={showToast}
         onHide={handleHideToast}
-        duration={2000}
+        duration={toastDuration}
       />
 
       {/* Confirm Dialog */}
@@ -725,6 +1208,134 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
           setConfirmDialog(prev => ({ ...prev, visible: false }));
           setIsDeleteDialogShowing(false);
         }}
+      />
+
+      {/* PIN Unlock Dialog */}
+      <Modal
+        visible={showPinDialog}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handlePinCancel}
+      >
+        <KeyboardAvoidingView
+          style={styles.pinOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View
+            style={[styles.pinContainer, { backgroundColor: theme.surface }]}
+          >
+            <View style={styles.pinHeader}>
+              <View
+                style={[
+                  styles.pinIconContainer,
+                  { backgroundColor: theme.primary + '20' },
+                ]}
+              >
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={32}
+                  color={theme.primary}
+                />
+              </View>
+              <Text style={[styles.pinTitle, { color: theme.text }]}>
+                PIN Required
+              </Text>
+              <Text
+                style={[styles.pinSubtitle, { color: theme.textSecondary }]}
+              >
+                Enter your PIN to update this password
+              </Text>
+            </View>
+
+            <View style={styles.pinInputSection}>
+              <View
+                style={[
+                  styles.pinInputContainer,
+                  { borderColor: theme.border },
+                ]}
+              >
+                <Ionicons
+                  name="keypad-outline"
+                  size={24}
+                  color={theme.textSecondary}
+                />
+                <TextInput
+                  style={[styles.pinInput, { color: theme.text }]}
+                  placeholder="Enter PIN"
+                  placeholderTextColor={theme.textSecondary}
+                  value={pin}
+                  onChangeText={setPin}
+                  secureTextEntry={true}
+                  keyboardType="numeric"
+                  maxLength={8}
+                  autoFocus={true}
+                  onSubmitEditing={handlePinUnlock}
+                />
+              </View>
+            </View>
+
+            <View style={styles.pinButtonSection}>
+              <TouchableOpacity
+                style={[
+                  styles.pinButton,
+                  styles.pinCancelButton,
+                  { borderColor: theme.border },
+                ]}
+                onPress={handlePinCancel}
+                disabled={pinLoading}
+              >
+                <Text
+                  style={[styles.pinButtonText, { color: theme.textSecondary }]}
+                >
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.pinButton,
+                  styles.pinUnlockButton,
+                  { backgroundColor: theme.primary },
+                  (pinLoading || !pin.trim()) && styles.pinButtonDisabled,
+                ]}
+                onPress={handlePinUnlock}
+                disabled={pinLoading || !pin.trim()}
+              >
+                <Text
+                  style={[styles.pinButtonText, { color: theme.background }]}
+                >
+                  {pinLoading ? 'Unlocking...' : 'Unlock'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Layer 1: Biometric Authentication */}
+      <BiometricPrompt
+        visible={showBiometricPrompt}
+        onClose={handleBiometricClose}
+        onSuccess={handleBiometricSuccess}
+        onError={handleBiometricError}
+        title="Authenticate to view password"
+        subtitle="Use biometric authentication to reveal password"
+      />
+
+      {/* Layer 1B: Biometric Fallback (Master Password + PIN when biometric fails) */}
+      <BiometricFallbackPrompt
+        visible={showFallbackModal}
+        onSuccess={handleFallbackSuccess}
+        onCancel={handleFallbackCancel}
+      />
+
+      {/* Layer 2: PIN Prompt (after successful biometric) */}
+      <PinPromptModal
+        visible={showPinPrompt}
+        onSuccess={handlePinPromptSuccess}
+        onCancel={handlePinPromptCancel}
+        title="Unlock to View Password"
+        subtitle="Enter your PIN to decrypt and view this password"
       />
     </SafeAreaView>
   );

@@ -2165,3 +2165,30 @@ All entries throughout workflows carry encryption metadata:
 **Last Updated**: November 19, 2025 (Backup File-Level Encryption Wrapper Added)  
 **Based on**: Actual implementation in `importExportService.ts` & `backupService.ts`  
 **Project**: PasswordEpic Mobile App
+
+---
+
+## Settings Backup and Restore
+
+The settings backup and restore feature is a critical component for ensuring a seamless user experience across devices or after a re-installation.
+
+### Backup Summary
+
+The settings backup feature in PasswordEpic is **complete and verified**. It correctly backs up all **21 settings** from the Redux store, including:
+
+-   **10 Security Settings**: Covers all security-related configurations such as biometric preferences, auto-lock timeout, screen protection, and root detection.
+-   **9 Generator Settings**: Includes all password generator preferences like default length, character sets (uppercase, lowercase, numbers, symbols), and exclusion rules.
+-   **2 UI Settings**: Captures the user's selected theme (light/dark/system) and language.
+
+### Technical Flow
+
+1.  **Collection**: The backup process collects the entire `settings` state object directly from the Redux store.
+2.  **Enrichment**: Device-specific information (model, brand, OS version) is added to the settings data for diagnostic purposes.
+3.  **Inclusion**: The complete settings object is included in the main backup file (`password-backup-TIMESTAMP.backup`) alongside password entries and categories.
+4.  **Restore**: During a restore operation, the settings from the backup file are dispatched to the Redux store, overwriting the current settings.
+5.  **Persistence**: `Redux Persist` automatically saves the restored settings to the device's local storage (`AsyncStorage`), ensuring they are applied immediately and persist across app restarts.
+
+**Conclusion**: The system is robust and ensures that no user configurations are lost during a backup and restore cycle. All settings are fully accounted for.
+
+---
+

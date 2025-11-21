@@ -703,23 +703,22 @@ export const isValidDomain = (domain: string | undefined): boolean => {
     !trimmed.includes('/');
 
   if (isAppPackage) {
-    // For app packages, verify it has at least 2 segments (e.g., com.example)
+    // For app packages, verify it has at least 2 segments (e.g., com.example or com.zing.zalo)
     const segments = trimmed.split('.');
     if (segments.length < 2) {
       return false;
     }
 
-    // Last segment must be a valid TLD (2+ chars and in VALID_TLDS)
-    const lastSegment = segments[segments.length - 1];
-    if (lastSegment.length < 2) {
-      console.log('❌ isValidDomain: App package TLD too short:', lastSegment);
+    // All segments must be at least 1 character
+    const allSegmentsValid = segments.every(seg => seg.length >= 1);
+    if (!allSegmentsValid) {
+      console.log('❌ isValidDomain: Invalid app package segments:', segments);
       return false;
     }
 
-    // Check if last segment is a valid TLD
-    const isValidTld = VALID_TLDS.has(lastSegment);
-    console.log('🔍 isValidDomain (app):', { domain: trimmed, lastSegment, isValidTld });
-    return isValidTld;
+    // App packages from system are auto-verified, no need for TLD validation
+    console.log('🔍 isValidDomain (app):', { domain: trimmed, valid: true });
+    return true;
   }
 
   return isValidUrl(trimmed);

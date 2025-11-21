@@ -47,7 +47,6 @@ class DomainVerificationService {
    */
   async verifyDomain(
     domain: string,
-    packageName?: string,
   ): Promise<DomainVerificationResult> {
     try {
       // Normalize domain

@@ -450,7 +450,7 @@ flowchart TD
 
     subgraph "Password Entry"
         Entry[Password Entry Item]
-        ViewPassword["Toggle Visibility (Eye Icon)"]
+        ViewPassword["Toggle Visibility / Eye Icon"]
         CopyPassword[Copy to Clipboard]
     end
 
@@ -466,6 +466,19 @@ flowchart TD
     G -- Click --> Q
     H -- Click --> R
     I -- Click --> P
+
+    %% Styling
+    style A fill:#2C3E50,color:#ECF0F1
+    style Entry fill:#34495E,color:#ECF0F1
+    style M fill:#16A085,color:#FFF
+    style N fill:#27AE60,color:#FFF
+    style S fill:#2980B9,color:#FFF
+    style O fill:#C0392B,color:#FFF
+    style P fill:#8E44AD,color:#FFF
+    style Q fill:#8E44AD,color:#FFF
+    style R fill:#8E44AD,color:#FFF
+    style K fill:#D35400,color:#FFF
+    style L fill:#D35400,color:#FFF
 ```
 
 #### Flow Explanation
@@ -686,6 +699,20 @@ graph TD
       K -- User selects credential --> L[Fill password field];
       H -- Failure --> G;
     end
+
+    %% Styling
+    style A fill:#E1F5FE,color:#000
+    style B fill:#E1F5FE,color:#000
+    style C fill:#FFF9C4,color:#000
+    style D fill:#C8E6C9,color:#000
+    style E fill:#FFCCBC,color:#000
+    style F fill:#FFECB3,color:#000
+    style G fill:#FFCDD2,color:#000
+    style H fill:#D1C4E9,color:#000
+    style I fill:#C5CAE9,color:#000
+    style J fill:#BBDEFB,color:#000
+    style K fill:#B3E5FC,color:#000
+    style L fill:#B2EBF2,color:#000
 ```
 
 ### Next Steps for Testing

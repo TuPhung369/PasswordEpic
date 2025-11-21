@@ -305,8 +305,8 @@ flowchart TD
     P --> Q[Navigate to Main Stack]
     Q --> R[PasswordsScreen]
 
-    style J fill:#90EE90
-    style L fill:#90EE90
+    style J fill:#90EE90,color:#000
+    style L fill:#90EE90,color:#000
     style M fill:#1F2020
 ```
 
@@ -368,10 +368,10 @@ flowchart TD
     S --> T[Unlock Successful]
     T --> M
 
-    style I fill:#FFD700
-    style J fill:#FFD700
-    style K fill:#90EE90
-    style L fill:#FFA500
+    style I fill:#FFD700,color:#000
+    style J fill:#FFD700,color:#000
+    style K fill:#90EE90,color:#000
+    style L fill:#FFA500,color:#000
     style Q fill:#1F2020
 ```
 

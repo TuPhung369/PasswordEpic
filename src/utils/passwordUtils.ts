@@ -685,9 +685,12 @@ export const isValidUrl = (url: string): boolean => {
   }
 };
 
+const APP_PACKAGE_REGEX = /^[a-z][a-z0-9]*(\.[a-z0-9]+)+$/;
+const DOMAIN_VALIDATION_CACHE = new Map<string, boolean>();
+
 /**
  * Validate domain - checks if domain is either a valid URL or valid app package name
- * Both must have a valid TLD from VALID_TLDS list
+ * Cached for performance since this is called frequently during render cycles
  */
 export const isValidDomain = (domain: string | undefined): boolean => {
   if (!domain || domain.trim().length === 0) {
@@ -696,32 +699,26 @@ export const isValidDomain = (domain: string | undefined): boolean => {
 
   const trimmed = domain.trim();
 
-  // Check if it's a valid app package (for mobile apps)
+  if (DOMAIN_VALIDATION_CACHE.has(trimmed)) {
+    return DOMAIN_VALIDATION_CACHE.get(trimmed) ?? false;
+  }
+
+  let result = false;
+
   const isAppPackage =
-    /^[a-z][a-z0-9]*(\.[a-z0-9]+)+$/.test(trimmed) &&
+    APP_PACKAGE_REGEX.test(trimmed) &&
     !trimmed.includes('://') &&
     !trimmed.includes('/');
 
   if (isAppPackage) {
-    // For app packages, verify it has at least 2 segments (e.g., com.example or com.zing.zalo)
     const segments = trimmed.split('.');
-    if (segments.length < 2) {
-      return false;
-    }
-
-    // All segments must be at least 1 character
-    const allSegmentsValid = segments.every(seg => seg.length >= 1);
-    if (!allSegmentsValid) {
-      console.log('❌ isValidDomain: Invalid app package segments:', segments);
-      return false;
-    }
-
-    // App packages from system are auto-verified, no need for TLD validation
-    console.log('🔍 isValidDomain (app):', { domain: trimmed, valid: true });
-    return true;
+    result = segments.length >= 2 && segments.every(seg => seg.length >= 1);
+  } else {
+    result = isValidUrl(trimmed);
   }
 
-  return isValidUrl(trimmed);
+  DOMAIN_VALIDATION_CACHE.set(trimmed, result);
+  return result;
 };
 
 /**

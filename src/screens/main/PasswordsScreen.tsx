@@ -70,6 +70,10 @@ import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { autofillService } from '../../services/autofillService';
 import RNFS from 'react-native-fs';
 import { ConcurrentQueueManager } from '../../utils/concurrentQueueManager';
+import {
+  backupMetadataCache,
+  CachedBackupMetadata,
+} from '../../services/backupMetadataCache';
 
 // Define local types for PasswordsScreen string-based filtering
 type SortOption =
@@ -279,105 +283,148 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             'items',
           );
 
-          // Convert Google Drive files to BackupInfo format (WITH metadata extraction)
-          // Use concurrent queue to limit simultaneous downloads (max 3 at a time)
+          // Filter backup files
           const filteredFiles = driveResult.files.filter(
-            file => file.name.endsWith('.bak') || file.name.endsWith('.backup'),
+            (file: any) =>
+              file.name.endsWith('.bak') || file.name.endsWith('.backup'),
           );
 
-          const queueManager = new ConcurrentQueueManager({
-            concurrency: 3,
-            onProgress: (current, total) => {
-              console.log(
-                `🔵 [PasswordsScreen] Download progress: ${current}/${total}`,
-              );
-            },
-            onError: (error, taskId) => {
-              console.warn(
-                `⚠️ [PasswordsScreen] Failed to process backup ${taskId}:`,
-                error.message,
-              );
-            },
-          });
+          // 🚀 OPTIMIZATION: Check cache first
+          const { cached, needsFetch } = await backupMetadataCache.checkCache(
+            filteredFiles,
+          );
 
-          const queueTasks = filteredFiles.map(file => ({
-            id: file.id,
-            execute: async () => {
-              try {
-                // Download file to extract metadata
-                const tempPath =
-                  RNFS.CachesDirectoryPath || RNFS.TemporaryDirectoryPath;
-                const tempFile = `${tempPath}/backup_${file.id}.tmp`;
+          console.log(
+            `🚀 [PasswordsScreen] Cache: ${cached.length} hit, ${needsFetch.length} miss`,
+          );
 
-                const downloadResult = await downloadFromGoogleDrive(
-                  file.id,
-                  tempFile,
+          // Only fetch metadata for uncached backups
+          let fetchedBackups: CachedBackupMetadata[] = [];
+
+          if (needsFetch.length > 0) {
+            const queueManager = new ConcurrentQueueManager({
+              concurrency: 5, // Increased from 3 to 5
+              onProgress: (current, total) => {
+                console.log(
+                  `🔵 [PasswordsScreen] Download progress: ${current}/${total}`,
                 );
+              },
+              onError: (error, taskId) => {
+                console.warn(
+                  `⚠️ [PasswordsScreen] Failed to process backup ${taskId}:`,
+                  error.message,
+                );
+              },
+            });
 
-                if (!downloadResult.success) {
-                  console.warn(
-                    `Failed to download backup metadata for ${file.name}`,
+            const queueTasks = needsFetch.map((file: any) => ({
+              id: file.id,
+              execute: async (): Promise<CachedBackupMetadata> => {
+                try {
+                  const tempPath =
+                    RNFS.CachesDirectoryPath || RNFS.TemporaryDirectoryPath;
+                  const tempFile = `${tempPath}/backup_${file.id}.tmp`;
+
+                  const downloadResult = await downloadFromGoogleDrive(
+                    file.id,
+                    tempFile,
                   );
+
+                  if (!downloadResult.success) {
+                    console.warn(
+                      `Failed to download backup metadata for ${file.name}`,
+                    );
+                    return {
+                      id: file.id,
+                      filename: file.name,
+                      modifiedTime: file.modifiedTime,
+                      createdAt: file.createdTime,
+                      size: parseInt(file.size || '0', 10),
+                      entryCount: 0,
+                      categoryCount: 0,
+                      encrypted: true,
+                      version: '1.0',
+                      appVersion: '1.0.0',
+                      cachedAt: Date.now(),
+                    };
+                  }
+
+                  // Extract metadata from downloaded file
+                  const fileContent = await RNFS.readFile(tempFile, 'utf8');
+                  const metadata = await backupService.extractBackupMetadata(
+                    fileContent,
+                  );
+
+                  // Clean up temp file
+                  try {
+                    await RNFS.unlink(tempFile);
+                  } catch (e) {
+                    // Ignore cleanup errors
+                  }
+
                   return {
                     id: file.id,
                     filename: file.name,
-                    createdAt: new Date(file.createdTime),
+                    modifiedTime: file.modifiedTime,
+                    createdAt: file.createdTime,
+                    size: parseInt(file.size || '0', 10),
+                    entryCount: metadata?.entryCount || 0,
+                    categoryCount: metadata?.categoryCount || 0,
+                    encrypted: true,
+                    version: metadata?.appVersion || '1.0',
+                    appVersion: metadata?.appVersion || '1.0.0',
+                    cachedAt: Date.now(),
+                  };
+                } catch (error) {
+                  console.error(`Error processing backup ${file.name}:`, error);
+                  return {
+                    id: file.id,
+                    filename: file.name,
+                    modifiedTime: file.modifiedTime,
+                    createdAt: file.createdTime,
                     size: parseInt(file.size || '0', 10),
                     entryCount: 0,
                     categoryCount: 0,
                     encrypted: true,
                     version: '1.0',
                     appVersion: '1.0.0',
+                    cachedAt: Date.now(),
                   };
                 }
+              },
+            }));
 
-                // Extract metadata from downloaded file
-                const fileContent = await RNFS.readFile(tempFile, 'utf8');
-                const metadata = await backupService.extractBackupMetadata(
-                  fileContent,
-                );
+            const { results } = await queueManager.executeAll(queueTasks);
+            fetchedBackups = results as CachedBackupMetadata[];
 
-                // Clean up temp file
-                try {
-                  await RNFS.unlink(tempFile);
-                } catch (e) {
-                  console.warn('Failed to cleanup temp file:', e);
-                }
+            // 🚀 Save newly fetched metadata to cache
+            await backupMetadataCache.setMany(fetchedBackups);
+          }
 
-                return {
-                  id: file.id,
-                  filename: file.name,
-                  createdAt: new Date(file.createdTime),
-                  size: parseInt(file.size || '0', 10),
-                  entryCount: metadata?.entryCount || 0,
-                  categoryCount: metadata?.categoryCount || 0,
-                  encrypted: true,
-                  version: metadata?.appVersion || '1.0',
-                  appVersion: metadata?.appVersion || '1.0.0',
-                };
-              } catch (error) {
-                console.error(`Error processing backup ${file.name}:`, error);
-                return {
-                  id: file.id,
-                  filename: file.name,
-                  createdAt: new Date(file.createdTime),
-                  size: parseInt(file.size || '0', 10),
-                  entryCount: 0,
-                  categoryCount: 0,
-                  encrypted: true,
-                  version: '1.0',
-                  appVersion: '1.0.0',
-                };
-              }
-            },
-          }));
+          // Combine cached and newly fetched backups
+          const allBackups = [...cached, ...fetchedBackups];
 
-          const { results: backups } = await queueManager.executeAll(
-            queueTasks,
+          // Sort by createdAt descending (newest first)
+          allBackups.sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
           );
 
+          // Convert to expected format
+          const backups = allBackups.map(b => ({
+            id: b.id,
+            filename: b.filename,
+            createdAt: new Date(b.createdAt),
+            size: b.size,
+            entryCount: b.entryCount,
+            categoryCount: b.categoryCount,
+            encrypted: b.encrypted,
+            version: b.version,
+            appVersion: b.appVersion,
+          }));
+
           console.log(
-            '🔵 [PasswordsScreen] Converted backups:',
+            '🔵 [PasswordsScreen] Total backups:',
             backups.length,
             'items',
           );
@@ -428,9 +475,20 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   );
 
   // Reset authentication modals on screen blur (fix hot reload state stuck issue)
+  // NOTE: Only cleanup when NOT actively authenticating to prevent cancelling
+  // authentication flow mid-process (e.g., after biometric success but before PIN entry)
   useFocusEffect(
     React.useCallback(() => {
       return () => {
+        // Only cleanup if NOT in authentication process
+        // This prevents cancelling PIN prompt right after biometric success
+        if (isPasswordAuthenticating) {
+          console.log(
+            '🔄 [PasswordsScreen] Screen blur during authentication - NOT cleaning up',
+          );
+          return;
+        }
+
         // Cleanup: reset auth states to prevent stuck modals after hot reload
         console.log(
           '🔄 [PasswordsScreen] Cleaning up auth state on screen blur',
@@ -446,6 +504,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         }
       };
     }, [
+      isPasswordAuthenticating,
       showBiometricPrompt,
       showPinPrompt,
       showFallbackModal,

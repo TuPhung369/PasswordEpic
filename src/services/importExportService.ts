@@ -9,7 +9,6 @@ import {
   EncryptedDatabaseService,
 } from './encryptedDatabaseService';
 import { getCurrentUser } from './firebase';
-import { decryptData, deriveKeyFromPassword } from './cryptoService';
 import FilePicker from '../modules/FilePicker';
 
 // Fixed constant string for export encryption - added for additional entropy
@@ -19,39 +18,16 @@ const EXPORT_KEY_CONSTANT = '920374798$gsdg9@#875982kldsf';
 // For Android: /storage/emulated/0/Android/data/com.passwordepic.mobile/files/
 // For iOS: Documents folder
 // This path doesn't require MANAGE_EXTERNAL_STORAGE permission (sensitive permission)
-const DEFAULT_EXPORT_PATH = Platform.OS === 'android'
-  ? RNFS.ExternalDirectoryPath
-  : RNFS.DocumentDirectoryPath;
-
-// Test if encryption key is correct by trying to decrypt/encrypt a test string
-const validateEncryptionKey = (encryptionKey: string): boolean => {
-  try {
-    const testString = 'test_validation_string';
-    const encrypted = CryptoJS.AES.encrypt(
-      testString,
-      encryptionKey,
-    ).toString();
-    const decrypted = CryptoJS.AES.decrypt(encrypted, encryptionKey).toString(
-      CryptoJS.enc.Utf8,
-    );
-
-    const isValid = decrypted === testString;
-    console.log(
-      '🔍 [Validation] Encryption key validation:',
-      isValid ? 'PASSED' : 'FAILED',
-    );
-    return isValid;
-  } catch (error) {
-    console.log('🔍 [Validation] Key validation check failed:', error.message);
-    return false;
-  }
-};
+const DEFAULT_EXPORT_PATH =
+  Platform.OS === 'android'
+    ? RNFS.ExternalDirectoryPath
+    : RNFS.DocumentDirectoryPath;
 
 // Generate secure export key from plain text masterPassword + fixed constant
 const generateSecureExportKey = (
   masterPassword: string | null,
-  email?: string,
-  uid?: string,
+  _email?: string,
+  _uid?: string,
 ): string => {
   // Use plain text master password combined with fixed constant string
   // Fixed constant ensures consistent decryption across reinstalls
@@ -652,9 +628,7 @@ class ImportExportService {
 
       // 🔐 If master password not in cache, try options.encryptionPassword first
       if (!masterPassword && options.encryptionPassword) {
-        console.log(
-          '🔐 [Import] Using encryptionPassword from import options',
-        );
+        console.log('🔐 [Import] Using encryptionPassword from import options');
         masterPassword = options.encryptionPassword;
       }
 
@@ -690,7 +664,10 @@ class ImportExportService {
           fileContent = this.decryptExportFile(fileContent, masterPassword);
           console.log('✅ [Import] File decrypted if necessary');
         } catch (decryptError) {
-          console.warn('⚠️ [Import] File decryption attempt failed, proceeding with original content:', decryptError);
+          console.warn(
+            '⚠️ [Import] File decryption attempt failed, proceeding with original content:',
+            decryptError,
+          );
         }
       }
 
@@ -866,10 +843,7 @@ class ImportExportService {
                   `Cannot encrypt plaintext entry "${entry.title}" without master password`,
                 );
               }
-              await encryptedDatabase.savePasswordEntry(
-                entry,
-                masterPassword,
-              );
+              await encryptedDatabase.savePasswordEntry(entry, masterPassword);
               console.log(`💾 [Import] Encrypted and saved: ${entry.title}`);
             }
           }
@@ -1015,16 +989,18 @@ class ImportExportService {
   ): Promise<ImportPreview> {
     try {
       let fileContent = await RNFS.readFile(filePath, 'utf8');
-      
+
       // Decrypt file-level encryption if present and master password provided
       if (masterPassword) {
         try {
           fileContent = this.decryptExportFile(fileContent, masterPassword);
         } catch (decryptError) {
-          console.warn('⚠️ [Preview] File decryption attempt failed, proceeding with original content');
+          console.warn(
+            '⚠️ [Preview] File decryption attempt failed, proceeding with original content',
+          );
         }
       }
-      
+
       const parsedData = await this.parseImportData(fileContent, format as any);
 
       const preview: ImportPreview = {
@@ -1420,6 +1396,46 @@ class ImportExportService {
 
     const now = new Date();
 
+    // Build auditData if audit fields were exported
+    let auditData;
+    const importedSecurityScore = rawEntry.securityScore;
+    const importedStrengthScore = rawEntry.passwordStrengthScore;
+    const importedStrengthLabel = rawEntry.passwordStrengthLabel;
+    const importedStrengthColor = rawEntry.passwordStrengthColor;
+    const importedStrengthCrackTime = rawEntry.passwordStrengthCrackTime;
+
+    // Check if we have any audit data to restore
+    const hasAuditData =
+      importedSecurityScore !== null &&
+      importedSecurityScore !== undefined &&
+      typeof importedSecurityScore === 'number';
+    const hasStrengthData =
+      importedStrengthLabel !== null && importedStrengthLabel !== undefined;
+
+    if (hasAuditData || hasStrengthData) {
+      console.log(
+        `📊 [Import] Restoring audit data for: ${title} (score: ${importedSecurityScore}, label: ${importedStrengthLabel})`,
+      );
+      auditData = {
+        passwordStrength: {
+          score:
+            typeof importedStrengthScore === 'number'
+              ? importedStrengthScore
+              : 0,
+          label: importedStrengthLabel || 'Unknown',
+          color: importedStrengthColor || '#888888',
+          feedback: [],
+          crackTime: importedStrengthCrackTime || 'Unknown',
+        },
+        duplicateCount: 0,
+        compromisedCount: 0,
+        lastPasswordChange: now,
+        securityScore:
+          typeof importedSecurityScore === 'number' ? importedSecurityScore : 0,
+        lastAuditDate: now,
+      };
+    }
+
     return {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
       title: title.trim(),
@@ -1434,6 +1450,7 @@ class ImportExportService {
       createdAt: now,
       updatedAt: now,
       lastUsed: null,
+      auditData,
     };
   }
 
@@ -1562,16 +1579,24 @@ class ImportExportService {
   }
 
   // Encrypt entire export file with master password (file-level encryption)
-  private encryptExportFile(jsonContent: string, masterPassword: string): string {
+  private encryptExportFile(
+    jsonContent: string,
+    masterPassword: string,
+  ): string {
     try {
-      console.log('🔐 [FileEncryption] Encrypting entire export file with master password...');
-      
+      console.log(
+        '🔐 [FileEncryption] Encrypting entire export file with master password...',
+      );
+
       // Generate file encryption key from master password
       const fileEncryptionKey = `${masterPassword}::FILE_EXPORT_${EXPORT_KEY_CONSTANT}`;
-      
+
       // Encrypt the JSON content
-      const encrypted = CryptoJS.AES.encrypt(jsonContent, fileEncryptionKey).toString();
-      
+      const encrypted = CryptoJS.AES.encrypt(
+        jsonContent,
+        fileEncryptionKey,
+      ).toString();
+
       // Create encrypted export wrapper with minimal metadata
       const wrapper = {
         _fileEncryption: true,
@@ -1579,44 +1604,67 @@ class ImportExportService {
         _encryptionMethod: 'AES-256-CBC',
         _data: encrypted,
       };
-      
+
       console.log('✅ [FileEncryption] Export file encrypted successfully');
       return JSON.stringify(wrapper);
     } catch (error) {
-      console.error('❌ [FileEncryption] Failed to encrypt export file:', error);
-      throw new Error(`Failed to encrypt export file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(
+        '❌ [FileEncryption] Failed to encrypt export file:',
+        error,
+      );
+      throw new Error(
+        `Failed to encrypt export file: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+      );
     }
   }
 
   // Decrypt file-level encryption if present
-  private decryptExportFile(fileContent: string, masterPassword: string): string {
+  private decryptExportFile(
+    fileContent: string,
+    masterPassword: string,
+  ): string {
     try {
       const wrapper = JSON.parse(fileContent);
-      
+
       // Check if file is encrypted at the file level
       if (!wrapper._fileEncryption || !wrapper._data) {
-        console.log('ℹ️ [FileDecryption] File is not encrypted at file level, parsing as-is');
+        console.log(
+          'ℹ️ [FileDecryption] File is not encrypted at file level, parsing as-is',
+        );
         return fileContent;
       }
-      
-      console.log('🔐 [FileDecryption] Decrypting file-level encryption with master password...');
-      
+
+      console.log(
+        '🔐 [FileDecryption] Decrypting file-level encryption with master password...',
+      );
+
       // Generate file encryption key from master password
       const fileEncryptionKey = `${masterPassword}::FILE_EXPORT_${EXPORT_KEY_CONSTANT}`;
-      
+
       // Decrypt the content
       const decrypted = CryptoJS.AES.decrypt(wrapper._data, fileEncryptionKey);
       const decryptedContent = decrypted.toString(CryptoJS.enc.Utf8);
-      
+
       if (!decryptedContent || decryptedContent.trim().length === 0) {
-        throw new Error('Decryption returned empty content - wrong master password or corrupted file');
+        throw new Error(
+          'Decryption returned empty content - wrong master password or corrupted file',
+        );
       }
-      
+
       console.log('✅ [FileDecryption] Export file decrypted successfully');
       return decryptedContent;
     } catch (error) {
-      console.error('❌ [FileDecryption] Failed to decrypt export file:', error);
-      throw new Error(`Failed to decrypt export file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(
+        '❌ [FileDecryption] Failed to decrypt export file:',
+        error,
+      );
+      throw new Error(
+        `Failed to decrypt export file: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+      );
     }
   }
 
@@ -1653,6 +1701,13 @@ class ImportExportService {
         createdAt: entry.createdAt,
         updatedAt: entry.updatedAt,
         lastUsed: entry.lastUsed,
+        // Include audit data if available
+        securityScore: entry.auditData?.securityScore ?? null,
+        passwordStrengthScore: entry.auditData?.passwordStrength?.score ?? null,
+        passwordStrengthLabel: entry.auditData?.passwordStrength?.label ?? null,
+        passwordStrengthColor: entry.auditData?.passwordStrength?.color ?? null,
+        passwordStrengthCrackTime:
+          entry.auditData?.passwordStrength?.crackTime ?? null,
       };
 
       if (options.includePasswords) {
@@ -1724,14 +1779,14 @@ class ImportExportService {
           },
           entries: data,
         };
-        
+
         const jsonContent = JSON.stringify(jsonData, null, 2);
-        
+
         // Apply file-level encryption if master password is available
         if (masterPassword) {
           return this.encryptExportFile(jsonContent, masterPassword);
         }
-        
+
         return jsonContent;
 
       case 'csv':
@@ -1874,17 +1929,18 @@ class ImportExportService {
     // Use custom destination folder if provided
     if (options.destinationFolder) {
       const customFolder = options.destinationFolder;
-      console.log(
-        `📁 Using custom destination folder: ${customFolder}`,
-      );
+      console.log(`📁 Using custom destination folder: ${customFolder}`);
 
       try {
-        if (Platform.OS === 'android' && customFolder.startsWith('content://')) {
+        if (
+          Platform.OS === 'android' &&
+          customFolder.startsWith('content://')
+        ) {
           console.log(`🎯 Using DocumentProvider URI for write`);
           console.log(`📋 Folder URI: ${customFolder}`);
           console.log(`📝 File name: ${fileName}`);
           console.log(`📊 Content size: ${content.length} bytes`);
-          
+
           try {
             const result = await FilePicker.writeToFolder(
               customFolder,
@@ -1894,10 +1950,12 @@ class ImportExportService {
             console.log(`✅ Successfully wrote to custom folder: ${result}`);
             return result;
           } catch (writeError: any) {
-            console.warn('⚠️ Custom folder write failed, falling back to default export path');
+            console.warn(
+              '⚠️ Custom folder write failed, falling back to default export path',
+            );
             console.warn(`Reason: ${writeError?.message || writeError}`);
             console.debug(`Full error: ${JSON.stringify(writeError)}`);
-            
+
             downloadPath = DEFAULT_EXPORT_PATH;
           }
         } else {
@@ -1905,15 +1963,15 @@ class ImportExportService {
         }
       } catch (uriError) {
         console.error('Failed to write using URI:', uriError);
-        console.warn('⚠️ Custom folder access failed. Falling back to default export path...');
+        console.warn(
+          '⚠️ Custom folder access failed. Falling back to default export path...',
+        );
         downloadPath = DEFAULT_EXPORT_PATH;
       }
     } else {
       // Use default export path (same for all devices)
       downloadPath = DEFAULT_EXPORT_PATH;
-      console.log(
-        `✅ Using default export path: ${downloadPath}`,
-      );
+      console.log(`✅ Using default export path: ${downloadPath}`);
     }
 
     const filePath = `${downloadPath}/${fileName}`;
@@ -1989,13 +2047,8 @@ class ImportExportService {
       if (!fixedSalt) {
         return undefined;
       }
-      const saltHash = CryptoJS.SHA256(fixedSalt)
-        .toString()
-        .substring(0, 16);
-      console.log(
-        '🔐 [Export] Fixed salt hash for recovery:',
-        saltHash,
-      );
+      const saltHash = CryptoJS.SHA256(fixedSalt).toString().substring(0, 16);
+      console.log('🔐 [Export] Fixed salt hash for recovery:', saltHash);
       return saltHash;
     } catch (error) {
       console.warn('⚠️ [Export] Failed to get fixed salt hash:', error);
@@ -2011,9 +2064,11 @@ class ImportExportService {
     try {
       const jsonData = JSON.parse(fileContent);
       const exportSaltHash = jsonData.exportInfo?.fixedSaltHash;
-      
+
       if (!exportSaltHash) {
-        console.log('ℹ️ [Import] No salt hash in export metadata - skipping mismatch check');
+        console.log(
+          'ℹ️ [Import] No salt hash in export metadata - skipping mismatch check',
+        );
         return;
       }
 
@@ -2027,14 +2082,12 @@ class ImportExportService {
         return;
       }
 
-      console.warn(
-        '⚠️ [Import] SALT MISMATCH DETECTED!',
-        {
-          exportSaltHash,
-          currentSaltHash,
-          reason: 'Export was created with a different device or after app reinstall',
-        },
-      );
+      console.warn('⚠️ [Import] SALT MISMATCH DETECTED!', {
+        exportSaltHash,
+        currentSaltHash,
+        reason:
+          'Export was created with a different device or after app reinstall',
+      });
 
       // Add recovery keys: try deriving with different PBKDF2 iterations and variations
       if (!options._recoveryKeys) {
@@ -2045,42 +2098,42 @@ class ImportExportService {
       if (currentUser && options.encryptionPassword) {
         options._alternativeKeys = options._alternativeKeys || [];
         const addedKeys: string[] = [];
-        
+
         // Generate comprehensive key variations for recovery
         const basePassword = options.encryptionPassword;
         const email = currentUser.email;
         const uid = currentUser.uid;
-        
+
         // Collection of all password variations to try
         const keyVariations = [
           // Direct password
           basePassword,
-          
+
           // With email
           email ? `${basePassword}::${email}` : null,
           email ? `${basePassword}:${email}` : null,
           email ? `${email}::${basePassword}` : null,
-          
+
           // With uid
           uid ? `${basePassword}::${uid}` : null,
           uid ? `${basePassword}:${uid}` : null,
           uid ? `${uid}::${basePassword}` : null,
-          
+
           // With both email and uid
           email && uid ? `${basePassword}::${email}::${uid}` : null,
           email && uid ? `${basePassword}:${email}:${uid}` : null,
           email && uid ? `${email}::${uid}::${basePassword}` : null,
           email && uid ? `${uid}::${email}::${basePassword}` : null,
-          
+
           // Try with "recovered" suffix
           `${basePassword}::recovered_old_salt`,
           email ? `${basePassword}::${email}::recovered` : null,
-          
+
           // Try with current session indicators
           `${basePassword}::current_session`,
           `${basePassword}::legacy_password`,
         ].filter((k): k is string => k !== null);
-        
+
         // Add all variations to alternative keys
         for (let i = 0; i < keyVariations.length; i++) {
           const variation = keyVariations[i];
@@ -2089,7 +2142,7 @@ class ImportExportService {
             addedKeys.push(variation);
           }
         }
-        
+
         console.log(
           `🔧 [Import] Added ${options._alternativeKeys.length} recovery key variation(s) for salt mismatch`,
         );

@@ -40,9 +40,6 @@ import { useBiometric } from '../../hooks/useBiometric';
 import BackupRestoreModal from '../../components/BackupRestoreModal';
 import { backupService } from '../../services/backupService';
 import { loadPasswordsLazy } from '../../store/slices/passwordsSlice';
-import {
-  getEffectiveMasterPassword,
-} from '../../services/staticMasterPasswordService';
 import { SettingsStackParamList } from '../../navigation/SettingsNavigator';
 import { useSecurity } from '../../hooks/useSecurity';
 import SecurityWarningModal from '../../components/SecurityWarningModal';
@@ -62,6 +59,10 @@ import AutofillTestService from '../../services/autofillTestService';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ConcurrentQueueManager } from '../../utils/concurrentQueueManager';
+import {
+  backupMetadataCache,
+  CachedBackupMetadata,
+} from '../../services/backupMetadataCache';
 
 // Memoized SettingItem để tránh re-render
 const SettingItem = React.memo<{
@@ -225,114 +226,153 @@ export const SettingsScreen: React.FC = () => {
             driveResult.files.length,
             'items',
           );
-          console.log(
-            '🔵 [loadAvailableBackups] Files:',
-            JSON.stringify(driveResult.files, null, 2),
-          );
 
-          // Convert Google Drive files to BackupInfo format
+          // Filter backup files
           const filteredFiles = driveResult.files.filter(
-            file =>
+            (file: any) =>
               file.name.endsWith('.bak') || file.name.endsWith('.backup'),
           );
 
-          const queueManager = new ConcurrentQueueManager({
-            concurrency: 3,
-            onProgress: (current, total) => {
-              console.log(
-                `📊 [loadAvailableBackups] Progress: ${current}/${total} backups processed`,
-              );
-            },
-          });
+          // 🚀 OPTIMIZATION: Check cache first
+          const { cached, needsFetch } = await backupMetadataCache.checkCache(
+            filteredFiles,
+          );
 
-          const tasks = filteredFiles.map(file => ({
-            id: file.id,
-            execute: async () => {
-              try {
-                // Download file to extract metadata
-                const { downloadFromGoogleDrive } = await import(
-                  '../../services/googleDriveService'
+          console.log(
+            `🚀 [loadAvailableBackups] Cache: ${cached.length} hit, ${needsFetch.length} miss`,
+          );
+
+          // Only fetch metadata for uncached backups
+          let fetchedBackups: CachedBackupMetadata[] = [];
+
+          if (needsFetch.length > 0) {
+            // Use higher concurrency for faster loading
+            const queueManager = new ConcurrentQueueManager({
+              concurrency: 5, // Increased from 3 to 5
+              onProgress: (current, total) => {
+                console.log(
+                  `📊 [loadAvailableBackups] Fetching: ${current}/${total}`,
                 );
-                const RNFS = await import('react-native-fs').then(
-                  m => m.default,
-                );
+              },
+            });
 
-                const tempPath =
-                  RNFS.CachesDirectoryPath || RNFS.TemporaryDirectoryPath;
-                const tempFile = `${tempPath}/backup_${file.id}.tmp`;
-
-                const downloadResult = await downloadFromGoogleDrive(
-                  file.id,
-                  tempFile,
-                );
-
-                if (!downloadResult.success) {
-                  console.warn(
-                    `Failed to download backup metadata for ${file.name}`,
+            const tasks = needsFetch.map((file: any) => ({
+              id: file.id,
+              execute: async (): Promise<CachedBackupMetadata> => {
+                try {
+                  const { downloadFromGoogleDrive } = await import(
+                    '../../services/googleDriveService'
                   );
+                  const RNFS = await import('react-native-fs').then(
+                    m => m.default,
+                  );
+
+                  const tempPath =
+                    RNFS.CachesDirectoryPath || RNFS.TemporaryDirectoryPath;
+                  const tempFile = `${tempPath}/backup_${file.id}.tmp`;
+
+                  const downloadResult = await downloadFromGoogleDrive(
+                    file.id,
+                    tempFile,
+                  );
+
+                  if (!downloadResult.success) {
+                    console.warn(
+                      `Failed to download backup metadata for ${file.name}`,
+                    );
+                    return {
+                      id: file.id,
+                      filename: file.name,
+                      modifiedTime: file.modifiedTime,
+                      createdAt: file.createdTime,
+                      size: parseInt(file.size || '0', 10),
+                      entryCount: 0,
+                      categoryCount: 0,
+                      encrypted: true,
+                      version: '1.0',
+                      appVersion: '1.0.0',
+                      cachedAt: Date.now(),
+                    };
+                  }
+
+                  // Extract metadata from downloaded file
+                  const fileContent = await RNFS.readFile(tempFile, 'utf8');
+                  const metadata = await backupService.extractBackupMetadata(
+                    fileContent,
+                  );
+
+                  // Clean up temp file
+                  try {
+                    await RNFS.unlink(tempFile);
+                  } catch (e) {
+                    // Ignore cleanup errors
+                  }
+
                   return {
                     id: file.id,
                     filename: file.name,
-                    createdAt: new Date(file.createdTime),
+                    modifiedTime: file.modifiedTime,
+                    createdAt: file.createdTime,
+                    size: parseInt(file.size || '0', 10),
+                    entryCount: metadata?.entryCount || 0,
+                    categoryCount: metadata?.categoryCount || 0,
+                    encrypted: true,
+                    version: metadata?.appVersion || '1.0',
+                    appVersion: metadata?.appVersion || '1.0.0',
+                    cachedAt: Date.now(),
+                  };
+                } catch (error) {
+                  console.error(`Error processing backup ${file.name}:`, error);
+                  return {
+                    id: file.id,
+                    filename: file.name,
+                    modifiedTime: file.modifiedTime,
+                    createdAt: file.createdTime,
                     size: parseInt(file.size || '0', 10),
                     entryCount: 0,
                     categoryCount: 0,
                     encrypted: true,
                     version: '1.0',
                     appVersion: '1.0.0',
+                    cachedAt: Date.now(),
                   };
                 }
+              },
+            }));
 
-                // Extract metadata from downloaded file
-                const fileContent = await RNFS.readFile(tempFile, 'utf8');
-                const metadata = await backupService.extractBackupMetadata(
-                  fileContent,
-                );
+            const { results } = await queueManager.executeAll(tasks);
+            fetchedBackups = results as CachedBackupMetadata[];
 
-                // Clean up temp file
-                try {
-                  await RNFS.unlink(tempFile);
-                } catch (e) {
-                  console.warn('Failed to cleanup temp file:', e);
-                }
+            // 🚀 Save newly fetched metadata to cache
+            await backupMetadataCache.setMany(fetchedBackups);
+          }
 
-                return {
-                  id: file.id,
-                  filename: file.name,
-                  createdAt: new Date(file.createdTime),
-                  size: parseInt(file.size || '0', 10),
-                  entryCount: metadata?.entryCount || 0,
-                  categoryCount: metadata?.categoryCount || 0,
-                  encrypted: true,
-                  version: metadata?.appVersion || '1.0',
-                  appVersion: metadata?.appVersion || '1.0.0',
-                };
-              } catch (error) {
-                console.error(`Error processing backup ${file.name}:`, error);
-                return {
-                  id: file.id,
-                  filename: file.name,
-                  createdAt: new Date(file.createdTime),
-                  size: parseInt(file.size || '0', 10),
-                  entryCount: 0,
-                  categoryCount: 0,
-                  encrypted: true,
-                  version: '1.0',
-                  appVersion: '1.0.0',
-                };
-              }
-            },
+          // Combine cached and newly fetched backups
+          const allBackups = [...cached, ...fetchedBackups];
+
+          // Sort by createdAt descending (newest first)
+          allBackups.sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          );
+
+          // Convert to expected format
+          const backups = allBackups.map(b => ({
+            id: b.id,
+            filename: b.filename,
+            createdAt: new Date(b.createdAt),
+            size: b.size,
+            entryCount: b.entryCount,
+            categoryCount: b.categoryCount,
+            encrypted: b.encrypted,
+            version: b.version,
+            appVersion: b.appVersion,
           }));
 
-          const { results: backups } = await queueManager.executeAll(tasks);
-
           console.log(
-            '🔵 [loadAvailableBackups] Converted backups:',
+            '🔵 [loadAvailableBackups] Total backups:',
             backups.length,
             'items',
-          );
-          console.log(
-            '🔵 [loadAvailableBackups] Setting availableBackups state...',
           );
           setAvailableBackups(backups as any);
           console.log('✅ [loadAvailableBackups] State updated successfully');
@@ -834,15 +874,21 @@ export const SettingsScreen: React.FC = () => {
     try {
       setIsBackupLoading(true);
 
-      // Get master password for entry decryption (restored entries are encrypted with their own keys)
-      console.log('🟢 [SettingsScreen] Getting master password for entry decryption...');
-      const masterPasswordResult = await getEffectiveMasterPassword();
-      if (!masterPasswordResult.success || !masterPasswordResult.password) {
-        console.log('❌ [SettingsScreen] Failed to get master password');
-        showAlert('Error', 'Failed to get master password for entry decryption');
+      // 🔐 Require authentication before restore (biometric/PIN)
+      console.log(
+        '🟢 [SettingsScreen] Triggering authentication for restore...',
+      );
+      const masterPassword = await triggerPasswordAuthentication();
+      if (!masterPassword) {
+        console.log('❌ [SettingsScreen] Authentication cancelled or failed');
+        setToastMessage('Authentication required to restore backup');
+        setToastType('error');
+        setShowToast(true);
         return;
       }
-      console.log('✅ [SettingsScreen] Master password retrieved');
+      console.log(
+        '✅ [SettingsScreen] Authentication successful, master password retrieved',
+      );
 
       const backup = availableBackups.find((b: any) => b.id === backupId);
       if (!backup) {
@@ -954,9 +1000,7 @@ export const SettingsScreen: React.FC = () => {
             '🗑️ [SettingsScreen] Replace mode: clearing existing passwords...',
           );
           const existingPasswords =
-            await encryptedDatabase.getAllPasswordEntries(
-              masterPasswordResult.password,
-            );
+            await encryptedDatabase.getAllPasswordEntries(masterPassword);
           for (const existingEntry of existingPasswords) {
             try {
               await encryptedDatabase.deletePasswordEntry(existingEntry.id);
@@ -984,7 +1028,7 @@ export const SettingsScreen: React.FC = () => {
           let existingPasswords: any[] = [];
           if (restoreOptions.mergeStrategy === 'merge') {
             existingPasswords = await encryptedDatabase.getAllPasswordEntries(
-              masterPasswordResult.password,
+              masterPassword,
             );
             console.log(
               `🔍 [SettingsScreen] Found ${existingPasswords.length} existing passwords for duplicate detection`,
@@ -1047,7 +1091,7 @@ export const SettingsScreen: React.FC = () => {
                     // Plaintext entry - encrypt normally
                     await encryptedDatabase.savePasswordEntry(
                       entry,
-                      masterPasswordResult.password,
+                      masterPassword,
                     );
                   }
                   overwrittenCount++;
@@ -1083,7 +1127,7 @@ export const SettingsScreen: React.FC = () => {
                   // Plaintext entry - encrypt normally
                   await encryptedDatabase.savePasswordEntry(
                     entry,
-                    masterPasswordResult.password,
+                    masterPassword,
                   );
                 }
                 savedCount++;
@@ -1102,9 +1146,7 @@ export const SettingsScreen: React.FC = () => {
         }
 
         // Reload passwords after restore
-        await dispatch(
-          loadPasswordsLazy(masterPasswordResult.password),
-        ).unwrap();
+        await dispatch(loadPasswordsLazy(masterPassword)).unwrap();
 
         const restoreInfo = [
           `${result.result.restoredEntries} passwords`,
@@ -1259,7 +1301,10 @@ export const SettingsScreen: React.FC = () => {
   };
 
   // Save avatar to AsyncStorage
-  const saveAvatarToStorage = async (emoji: string, imageUri: string | null) => {
+  const saveAvatarToStorage = async (
+    emoji: string,
+    imageUri: string | null,
+  ) => {
     try {
       if (emoji) {
         await AsyncStorage.setItem('avatar_emoji', emoji);
@@ -1312,7 +1357,10 @@ export const SettingsScreen: React.FC = () => {
           console.log('Camera cancelled by user');
         } else if (response.errorCode) {
           console.error('❌ Camera error:', response.errorMessage);
-          showAlert('Error', `Failed to capture photo: ${response.errorMessage}`);
+          showAlert(
+            'Error',
+            `Failed to capture photo: ${response.errorMessage}`,
+          );
         } else if (response.assets && response.assets[0]?.uri) {
           console.log('✅ Photo captured:', response.assets[0].uri);
           setAvatarImageUri(response.assets[0].uri);
@@ -1698,7 +1746,7 @@ export const SettingsScreen: React.FC = () => {
             theme={theme}
             onPress={() => {
               Linking.openURL('mailto:tuphung010787@gmail.com').catch(_err =>
-                Alert.alert('Error', 'Unable to open email client')
+                Alert.alert('Error', 'Unable to open email client'),
               );
             }}
           />
@@ -1709,9 +1757,9 @@ export const SettingsScreen: React.FC = () => {
             theme={theme}
             onPress={() => {
               Linking.openURL(
-                'https://sites.google.com/d/1lLNdVzYODUF47j5wcYL-xcIYx1qZcV_r/p/1MkZIPuRIyXdfx2KvyCxDsq9gKgKfb3p5/edit'
+                'https://sites.google.com/d/1lLNdVzYODUF47j5wcYL-xcIYx1qZcV_r/p/1MkZIPuRIyXdfx2KvyCxDsq9gKgKfb3p5/edit',
               ).catch(_err =>
-                Alert.alert('Error', 'Unable to open Privacy Policy')
+                Alert.alert('Error', 'Unable to open Privacy Policy'),
               );
             }}
           />

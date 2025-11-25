@@ -22,6 +22,7 @@ const config = {
       'otf',
       'woff',
       'woff2',
+      'mp4',
     ],
     sourceExts: ['js', 'jsx', 'ts', 'tsx', 'json'],
   },

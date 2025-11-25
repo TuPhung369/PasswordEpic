@@ -50,10 +50,11 @@ export const AuthNavigator: React.FC<{
       />
       <Stack.Screen
         name="MasterPassword"
-        component={MasterPasswordScreen}
         options={{ gestureEnabled: false }}
         initialParams={needsUnlock ? { mode: 'unlock' } : undefined}
-      />
+      >
+        {props => <MasterPasswordScreen {...props} onUnlock={onUnlock} />}
+      </Stack.Screen>
       <Stack.Screen name="BiometricUnlock">
         {props => <BiometricUnlockScreen {...props} onUnlock={onUnlock} />}
       </Stack.Screen>

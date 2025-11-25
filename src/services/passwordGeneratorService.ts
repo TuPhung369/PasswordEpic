@@ -4,25 +4,13 @@ import {
   PasswordStrengthResult,
 } from '../types/password';
 import { calculatePasswordStrength } from '../utils/passwordUtils';
-
-export interface PasswordTemplate {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  options: PasswordGeneratorOptions;
-  category: 'security' | 'usability' | 'specific';
-  examples: string[];
-}
-
-export interface GeneratorPreset {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  options: PasswordGeneratorOptions;
-  color: string;
-}
+import {
+  PRONOUNCEABLE_SYLLABLES,
+  MEMORABLE_WORDS,
+  MEMORABLE_ADJECTIVES,
+  PASSPHRASE_WORDS,
+  SOCIAL_PASSWORD_SYLLABLES,
+} from '../constants/passwordWordLists';
 
 export interface GenerationHistory {
   id: string;
@@ -46,197 +34,37 @@ export class PasswordGeneratorService {
     return PasswordGeneratorService.instance;
   }
 
-  // Predefined templates for different use cases
-  public getTemplates(): PasswordTemplate[] {
-    return [
-      {
-        id: 'banking',
-        name: 'Banking & Finance',
-        description: 'Ultra-secure passwords for financial accounts',
-        icon: 'account-balance',
-        category: 'security',
-        options: {
-          length: 16,
-          includeUppercase: true,
-          includeLowercase: true,
-          includeNumbers: true,
-          includeSymbols: true,
-          excludeSimilar: true,
-          excludeAmbiguous: true,
-          minNumbers: 3,
-          minSymbols: 2,
-        },
-        examples: ['K9#mP2$rL4xN8@qW', 'R7&nQ3!sM5yT9#eA'],
-      },
-      {
-        id: 'social',
-        name: 'Social Media',
-        description: 'Memorable yet secure for social platforms',
-        icon: 'people',
-        category: 'usability',
-        options: {
-          length: 12,
-          includeUppercase: true,
-          includeLowercase: true,
-          includeNumbers: true,
-          includeSymbols: false,
-          excludeSimilar: true,
-          excludeAmbiguous: false,
-          minNumbers: 2,
-        },
-        examples: ['BrightSun42Me', 'Ocean7Wave3'],
-      },
-      {
-        id: 'email',
-        name: 'Email Accounts',
-        description: 'Strong passwords for email security',
-        icon: 'email',
-        category: 'security',
-        options: {
-          length: 14,
-          includeUppercase: true,
-          includeLowercase: true,
-          includeNumbers: true,
-          includeSymbols: true,
-          excludeSimilar: true,
-          excludeAmbiguous: true,
-          minNumbers: 2,
-          minSymbols: 1,
-        },
-        examples: ['Mail9#Secure2K', 'Inbox4$Safe7T'],
-      },
-      {
-        id: 'wifi',
-        name: 'WiFi Network',
-        description: 'Easy to type and share WiFi passwords',
-        icon: 'wifi',
-        category: 'usability',
-        options: {
-          length: 10,
-          includeUppercase: true,
-          includeLowercase: true,
-          includeNumbers: true,
-          includeSymbols: false,
-          excludeSimilar: true,
-          excludeAmbiguous: true,
-          minNumbers: 2,
-        },
-        examples: ['HomeNet2024', 'GuestWifi99'],
-      },
-      {
-        id: 'gaming',
-        name: 'Gaming Accounts',
-        description: 'Fun yet secure for gaming platforms',
-        icon: 'games',
-        category: 'usability',
-        options: {
-          length: 13,
-          includeUppercase: true,
-          includeLowercase: true,
-          includeNumbers: true,
-          includeSymbols: true,
-          excludeSimilar: false,
-          excludeAmbiguous: false,
-          minNumbers: 2,
-          minSymbols: 1,
-        },
-        examples: ['Player1*Best', 'Game7#Hero9'],
-      },
-      {
-        id: 'work',
-        name: 'Work & Corporate',
-        description: 'Professional passwords for work accounts',
-        icon: 'work',
-        category: 'security',
-        options: {
-          length: 15,
-          includeUppercase: true,
-          includeLowercase: true,
-          includeNumbers: true,
-          includeSymbols: true,
-          excludeSimilar: true,
-          excludeAmbiguous: true,
-          minNumbers: 2,
-          minSymbols: 2,
-        },
-        examples: ['Work2024#Safe!', 'Corp9$Secure@'],
-      },
-      {
-        id: 'memorable',
-        name: 'Memorable',
-        description: 'Easy to remember patterns',
-        icon: 'psychology',
-        category: 'usability',
-        options: {
-          length: 11,
-          includeUppercase: true,
-          includeLowercase: true,
-          includeNumbers: true,
-          includeSymbols: false,
-          excludeSimilar: true,
-          excludeAmbiguous: true,
-          minNumbers: 2,
-        },
-        examples: ['BlueSky2024', 'RedCar789Go'],
-      },
-      {
-        id: 'maximum',
-        name: 'Maximum Security',
-        description: 'Highest security for critical accounts',
-        icon: 'security',
-        category: 'security',
-        options: {
-          length: 20,
-          includeUppercase: true,
-          includeLowercase: true,
-          includeNumbers: true,
-          includeSymbols: true,
-          excludeSimilar: true,
-          excludeAmbiguous: true,
-          minNumbers: 4,
-          minSymbols: 3,
-        },
-        examples: ['X9#mK2$rQ7!nP5@wL4&z', 'A8%nM3*sR6#qT9$eY2!u'],
-      },
-    ];
-  }
-
-  // Quick presets for common scenarios
-  public getPresets(): GeneratorPreset[] {
-    // Import presets from component to avoid duplication
-    const { DEFAULT_PRESETS } = require('../components/GeneratorPresets');
-
-    // Convert component presets to service format (add missing properties)
-    return DEFAULT_PRESETS.map((preset: any) => ({
-      ...preset,
-      options: {
-        ...preset.options,
-        excludeSimilar:
-          preset.options.excludeSimilar !== undefined
-            ? preset.options.excludeSimilar
-            : true,
-        excludeAmbiguous:
-          preset.options.excludeAmbiguous !== undefined
-            ? preset.options.excludeAmbiguous
-            : false,
-        minNumbers: preset.options.minNumbers || 0,
-        minSymbols: preset.options.minSymbols || 0,
-      },
-    }));
-  }
-
   // Generate password using specified options
   public async generatePassword(
     options: PasswordGeneratorOptions,
     templateId?: string,
   ): Promise<{ password: string; strength: PasswordStrengthResult }> {
     try {
-      console.log(
-        '🔧 Service: Generating secure password with options:',
-        options,
-      );
+      let password: string;
 
-      const password = generateSecurePassword(options);
+      // Handle specialized templates
+      if (templateId === 'passphrase') {
+        console.log(
+          `📝 Service: Generating passphrase with length ${options.length}`,
+        );
+        password = this.generatePassphrase(
+          options.length,
+          options.includeNumbers,
+        );
+      } else if (templateId === 'memorable') {
+        console.log(
+          `🧠 Service: Generating memorable password with length ${options.length}`,
+        );
+        password = this.generateMemorablePassword(options.length);
+      } else {
+        // Generic password generation for all other templates
+        console.log(
+          '🔧 Service: Generating secure password with options:',
+          options,
+        );
+        password = generateSecurePassword(options);
+      }
+
       const strength = calculatePasswordStrength(password);
 
       console.log(
@@ -288,111 +116,7 @@ export class PasswordGeneratorService {
       `🔧 Service: Generating pronounceable password with length ${length}`,
     );
 
-    // Common syllables that are easy to pronounce
-    const syllables = [
-      'ba',
-      'be',
-      'bi',
-      'bo',
-      'bu',
-      'by',
-      'ca',
-      'ce',
-      'ci',
-      'co',
-      'cu',
-      'cy',
-      'da',
-      'de',
-      'di',
-      'do',
-      'du',
-      'dy',
-      'fa',
-      'fe',
-      'fi',
-      'fo',
-      'fu',
-      'fy',
-      'ga',
-      'ge',
-      'gi',
-      'go',
-      'gu',
-      'gy',
-      'ha',
-      'he',
-      'hi',
-      'ho',
-      'hu',
-      'hy',
-      'ka',
-      'ke',
-      'ki',
-      'ko',
-      'ku',
-      'ky',
-      'la',
-      'le',
-      'li',
-      'lo',
-      'lu',
-      'ly',
-      'ma',
-      'me',
-      'mi',
-      'mo',
-      'mu',
-      'my',
-      'na',
-      'ne',
-      'ni',
-      'no',
-      'nu',
-      'ny',
-      'pa',
-      'pe',
-      'pi',
-      'po',
-      'pu',
-      'py',
-      'ra',
-      're',
-      'ri',
-      'ro',
-      'ru',
-      'ry',
-      'sa',
-      'se',
-      'si',
-      'so',
-      'su',
-      'sy',
-      'ta',
-      'te',
-      'ti',
-      'to',
-      'tu',
-      'ty',
-      'va',
-      've',
-      'vi',
-      'vo',
-      'vu',
-      'vy',
-      'wa',
-      'we',
-      'wi',
-      'wo',
-      'wu',
-      'wy',
-      'za',
-      'ze',
-      'zi',
-      'zo',
-      'zu',
-      'zy',
-    ];
+    const syllables = PRONOUNCEABLE_SYLLABLES;
 
     const numbers = '23456789'; // Exclude confusing 0 and 1
     let password = '';
@@ -438,475 +162,380 @@ export class PasswordGeneratorService {
       `🔧 Service: Generating memorable password with length ${length}`,
     );
 
-    // Simple, common words that are easy to remember
-    const memorableWords = [
-      'Sun',
-      'Moon',
-      'Star',
-      'Sky',
-      'Sea',
-      'Tree',
-      'Cat',
-      'Dog',
-      'Bird',
-      'Fish',
-      'Red',
-      'Blue',
-      'Gold',
-      'Pink',
-      'Green',
-      'White',
-      'Black',
-      'Gray',
-      'Big',
-      'Small',
-      'Fast',
-      'Slow',
-      'Hot',
-      'Cold',
-      'New',
-      'Old',
-      'Good',
-      'Nice',
-      'Cool',
-      'Warm',
-      'Safe',
-      'Happy',
-      'Lucky',
-      'Smart',
-      'Home',
-      'Work',
-      'Play',
-      'Game',
-      'Book',
-      'Key',
-      'Door',
-      'Car',
-      'Love',
-      'Hope',
-      'Dream',
-      'Life',
-      'Time',
-      'Day',
-      'Year',
-      'Way',
-      'Light',
-      'Dark',
-      'Rain',
-      'Storm',
-      'Cloud',
-      'Snow',
-      'River',
-      'Mountain',
-      'Forest',
-      'Path',
-      'Road',
-      'Bridge',
-      'Garden',
-      'Flower',
-      'Leaf',
-      'Stone',
-      'Rock',
-      'Sand',
-      'Beach',
-      'Wave',
-      'Shell',
-      'Boat',
-      'Ship',
-      'Island',
-      'Castle',
-      'Tower',
-      'Knight',
-      'King',
-      'Queen',
-      'Prince',
-      'Princess',
-      'Hero',
-      'Villain',
-      'Dragon',
-      'Wizard',
-      'Magic',
-      'Spell',
-      'Potion',
-      'Sword',
-      'Shield',
-      'Arrow',
-      'Bow',
-      'Helmet',
-      'Armor',
-      'Battle',
-      'War',
-      'Peace',
-      'Friend',
-      'Enemy',
-      'Ally',
-      'Stranger',
-      'Traveler',
-      'Explorer',
-      'Hunter',
-      'Gatherer',
-      'Farmer',
-      'Builder',
-      'Maker',
-      'Creator',
-      'Inventor',
-      'Artist',
-      'Singer',
-      'Dancer',
-      'Writer',
-      'Reader',
-      'Thinker',
-      'Dreamer',
-      'Leader',
-      'Follower',
-      'Teacher',
-      'Student',
-      'Child',
-      'Parent',
-      'Family',
-      'Friendship',
-      'Love',
-      'Happiness',
-      'Joy',
-      'Sadness',
-      'Anger',
-      'Fear',
-      'Courage',
-      'Bravery',
-      'Wisdom',
-      'Knowledge',
-      'Truth',
-      'Justice',
-      'Freedom',
-      'Honor',
-      'Glory',
-      'Victory',
-      'Defeat',
-      'Challenge',
-      'Adventure',
-      'Journey',
-      'Quest',
-      'Mission',
-      'Goal',
-      'Purpose',
-      'Destiny',
-      'Fate',
-      'Luck',
-      'Chance',
-      'Opportunity',
-      'Choice',
-      'Decision',
-      'Action',
-      'Effort',
-      'Work',
-      'Success',
-      'Failure',
-      'Progress',
-      'Growth',
-      'Change',
-      'Time',
-      'Moment',
-      'Memory',
-      'History',
-      'Future',
-      'Past',
-      'Present',
-      'Reality',
-      'Dream',
-      'Fantasy',
-      'Imagination',
-      'Creativity',
-      'Inspiration',
-      'Idea',
-      'Thought',
-      'Mind',
-      'Soul',
-      'Heart',
-      'Body',
-      'Spirit',
-      'Energy',
-      'Power',
-      'Strength',
-      'Weakness',
-      'Speed',
-      'Agility',
-      'Skill',
-      'Talent',
-      'Ability',
-      'Potential',
-      'Achievement',
-      'Accomplishment',
-      'Mastery',
-      'Excellence',
-    ];
+    const memorableWords = MEMORABLE_WORDS;
+    const adjectives = MEMORABLE_ADJECTIVES;
+    let password = '';
+    let useAdjective = true; // Start with an adjective
 
-    const adjectives = [
-      'Bright',
-      'Quick',
-      'Strong',
-      'Sweet',
-      'Gentle',
-      'Brave',
-      'Calm',
-      'Wild',
-      'Soft',
-      'Sharp',
-      'Smooth',
-      'Fresh',
-      'Clean',
-      'Pure',
-      'Rich',
-      'Deep',
-      'Warm',
-      'Cool',
-      'Hot',
-      'Cold',
-      'Fast',
-      'Slow',
-      'Big',
-      'Small',
-      'Tall',
-      'Short',
-      'Wide',
-      'Narrow',
-      'Thick',
-      'Thin',
-      'Heavy',
-      'Light',
-      'Dark',
-      'Bright',
-      'Shiny',
-      'Dull',
-      'Colorful',
-      'Pale',
-      'Vivid',
-      'Lively',
-      'Quiet',
-      'Noisy',
-      'Loud',
-      'Silent',
-      'Peaceful',
-      'Angry',
-      'Happy',
-      'Sad',
-      'Joyful',
-      'Cheerful',
-      'Merry',
-      'Friendly',
-      'Kind',
-      'Gentle',
-      'Rough',
-      'Polite',
-      'Rude',
-      'Honest',
-      'Dishonest',
-      'Brave',
-      'Cowardly',
-      'Wise',
-      'Foolish',
-      'Smart',
-      'Clever',
-      'Dumb',
-      'Stupid',
-      'Lazy',
-      'Hardworking',
-      'Energetic',
-      'Tired',
-      'Hungry',
-      'Thirsty',
-      'Full',
-      'Empty',
-      'Open',
-      'Closed',
-      'Safe',
-      'Dangerous',
-      'Secure',
-      'Insecure',
-      'Strong',
-      'Weak',
-      'Healthy',
-      'Sick',
-      'Rich',
-      'Poor',
-      'Wealthy',
-      'Needy',
-      'Generous',
-      'Greedy',
-      'Selfish',
-      'Unselfish',
-      'Happy',
-      'Sad',
-      'Angry',
-      'Calm',
-      'Excited',
-      'Bored',
-      'Interested',
-      'Uninterested',
-      'Curious',
-      'Uncurious',
-      'Brave',
-      'Cowardly',
-      'Bold',
-      'Timid',
-      'Confident',
-      'Shy',
-      'Outgoing',
-      'Reserved',
-      'Talkative',
-      'Quiet',
-      'Loud',
-      'Noisy',
-      'Silent',
-      'Peaceful',
-      'Violent',
-      'Gentle',
-      'Rough',
-      'Polite',
-      'Rude',
-      'Friendly',
-      'Unfriendly',
-      'Kind',
-      'Mean',
-      'Nice',
-      'Nasty',
-      'Sweet',
-      'Sour',
-      'Bitter',
-      'Salty',
-      'Spicy',
-      'Hot',
-      'Cold',
-      'Warm',
-      'Cool',
-      'Fresh',
-      'Stale',
-      'Clean',
-      'Dirty',
-      'Pure',
-      'Impure',
-      'Rich',
-      'Poor',
-      'Wealthy',
-      'Needy',
-      'Generous',
-      'Greedy',
-      'Selfish',
-      'Unselfish',
-      'Happy',
-      'Sad',
-      'Angry',
-      'Calm',
-      'Excited',
-      'Bored',
-      'Interested',
-      'Uninterested',
-      'Curious',
-      'Uncurious',
-      'Brave',
-      'Cowardly',
-      'Bold',
-      'Timid',
-      'Confident',
-      'Shy',
-      'Outgoing',
-      'Reserved',
-      'Talkative',
-      'Quiet',
-    ];
+    while (password.length < length) {
+      let word;
+      if (useAdjective) {
+        word = adjectives[Math.floor(Math.random() * adjectives.length)];
+      } else {
+        word = memorableWords[Math.floor(Math.random() * memorableWords.length)];
+      }
+      useAdjective = !useAdjective; // Alternate
+
+      // Capitalize first letter of each word
+      word = word.charAt(0).toUpperCase() + word.slice(1);
+      
+      if (password.length + word.length <= length) {
+        password += word;
+      } else {
+        // if the word is too long, break the loop
+        break;
+      }
+
+      // Add a number if there is space
+      const numDigits = Math.floor(Math.random() * 2) + 1; // 1 or 2 digits
+      if (password.length + numDigits <= length) {
+        const number = Math.floor(Math.random() * Math.pow(10, numDigits));
+        password += number;
+      } else {
+        break;
+      }
+    }
+
+    // If password is still shorter than length, fill with numbers
+    while (password.length < length) {
+      password += Math.floor(Math.random() * 10);
+    }
+    
+    // Ensure exact length
+    password = password.substring(0, length);
+
+    console.log(
+      `🔧 Service: Generated memorable password "${password}" (${password.length} chars)`,
+    );
+    return password;
+  }
+
+  // Generate Banking password - Maximum security
+  public generateBankingPassword(length: number = 50): string {
+    console.log(
+      `🏦 Service: Generating Banking password with length ${length}`,
+    );
+
+    const charset = {
+      uppercase: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      lowercase: 'abcdefghijklmnopqrstuvwxyz',
+      numbers: '0123456789',
+      symbols: '!@#$%^&*',
+    };
+
+    let password = '';
+    const allChars =
+      charset.uppercase + charset.lowercase + charset.numbers + charset.symbols;
+
+    // Guarantee at least 1 of each
+    password +=
+      charset.uppercase[Math.floor(Math.random() * charset.uppercase.length)];
+    password +=
+      charset.lowercase[Math.floor(Math.random() * charset.lowercase.length)];
+    password +=
+      charset.numbers[Math.floor(Math.random() * charset.numbers.length)];
+    password +=
+      charset.symbols[Math.floor(Math.random() * charset.symbols.length)];
+
+    // Fill rest with random from all
+    for (let i = password.length; i < length; i++) {
+      password += allChars[Math.floor(Math.random() * allChars.length)];
+    }
+
+    // Shuffle
+    password = password
+      .split('')
+      .sort(() => Math.random() - 0.5)
+      .join('');
+
+    console.log(`✅ Generated Banking password (${password.length} chars)`);
+    return password;
+  }
+
+  // Generate Social password - Pronounceable + Numbers
+  public generateSocialPassword(length: number = 40): string {
+    console.log(`📱 Service: Generating Social password with length ${length}`);
+
+    const syllables = SOCIAL_PASSWORD_SYLLABLES;
+
+    let password = '';
+    let targetLength = length;
+
+    // Start with capital letter + syllable
+    let firstSyllable = syllables[Math.floor(Math.random() * syllables.length)];
+    firstSyllable =
+      firstSyllable.charAt(0).toUpperCase() + firstSyllable.slice(1);
+    password += firstSyllable;
+    targetLength -= firstSyllable.length;
+
+    // Add syllables
+    while (targetLength > 5) {
+      const syllable = syllables[Math.floor(Math.random() * syllables.length)];
+      password += syllable;
+      targetLength -= syllable.length;
+    }
+
+    // Add 2-3 digit numbers
+    const numbers = Math.floor(Math.random() * 900) + 100;
+    password += numbers;
+
+    password = password.substring(0, length);
+
+    console.log(`✅ Generated Social password (${password.length} chars)`);
+    return password;
+  }
+
+  // Generate Email password - Balanced security
+  public generateEmailPassword(length: number = 38): string {
+    console.log(`📧 Service: Generating Email password with length ${length}`);
+
+    const charset = {
+      uppercase: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      lowercase: 'abcdefghijklmnopqrstuvwxyz',
+      numbers: '0123456789',
+      symbols: '!@#$%',
+    };
 
     let password = '';
 
-    // Strategy: Adjective + Noun + Year/Number
-    if (length >= 10) {
-      // Long password: Adjective + Noun + 4-digit year
-      const adjective =
-        adjectives[Math.floor(Math.random() * adjectives.length)];
-      const noun =
-        memorableWords[Math.floor(Math.random() * memorableWords.length)];
-      const currentYear = new Date().getFullYear();
-      const years = [
-        currentYear - 1,
-        currentYear,
-        currentYear + 1,
-        currentYear + 2,
-      ];
-      const year = years[Math.floor(Math.random() * years.length)];
+    // Start with uppercase
+    password +=
+      charset.uppercase[Math.floor(Math.random() * charset.uppercase.length)];
 
-      const yearStr = year.toString();
-      const wordsLength = adjective.length + noun.length;
-
-      // Reserve space for numbers
-      const maxWordsLength = length - yearStr.length;
-      let adjPart = adjective;
-      let nounPart = noun;
-
-      // If words are too long, truncate them while preserving the year
-      if (wordsLength > maxWordsLength && maxWordsLength > 0) {
-        // Truncate adjective first, then noun if needed
-        const totalExcess = wordsLength - maxWordsLength;
-        if (adjPart.length > totalExcess) {
-          adjPart = adjPart.substring(0, adjPart.length - totalExcess);
-        } else {
-          const remaining = totalExcess - (adjPart.length - 1);
-          adjPart = adjPart.substring(
-            0,
-            Math.max(1, adjPart.length - totalExcess + 1),
-          );
-          nounPart = nounPart.substring(
-            0,
-            Math.max(1, nounPart.length - remaining),
-          );
-        }
+    for (let i = password.length; i < length; i++) {
+      const section = i % 3;
+      if (section === 0) {
+        password +=
+          charset.lowercase[
+            Math.floor(Math.random() * charset.lowercase.length)
+          ];
+      } else if (section === 1) {
+        password +=
+          charset.numbers[Math.floor(Math.random() * charset.numbers.length)];
+      } else {
+        password +=
+          charset.symbols[Math.floor(Math.random() * charset.symbols.length)];
       }
-
-      password = `${adjPart}${nounPart}${yearStr}`;
-    } else if (length >= 8) {
-      // Medium password: Noun + 3-digit number
-      const noun =
-        memorableWords[Math.floor(Math.random() * memorableWords.length)];
-      const number = Math.floor(Math.random() * 900) + 100; // 100-999
-      const numberStr = number.toString();
-
-      // Reserve space for 3-digit number
-      const maxNounLength = length - numberStr.length;
-      let nounPart = noun;
-
-      if (nounPart.length > maxNounLength && maxNounLength > 0) {
-        nounPart = nounPart.substring(0, maxNounLength);
-      }
-
-      password = `${nounPart}${numberStr}`;
-    } else {
-      // Short password: Noun + 2-digit number
-      const noun =
-        memorableWords[Math.floor(Math.random() * memorableWords.length)];
-      const number = Math.floor(Math.random() * 90) + 10; // 10-99
-      const numberStr = number.toString();
-
-      // Reserve space for 2-digit number
-      const maxNounLength = length - numberStr.length;
-      let nounPart = noun;
-
-      if (nounPart.length > maxNounLength && maxNounLength > 0) {
-        nounPart = nounPart.substring(0, maxNounLength);
-      }
-
-      password = `${nounPart}${numberStr}`;
     }
 
-    // Adjust length if needed - pad with numbers only
+    console.log(`✅ Generated Email password (${password.length} chars)`);
+    return password;
+  }
+
+  // Generate Business password - Professional
+  public generateBusinessPassword(length: number = 46): string {
+    console.log(
+      `💼 Service: Generating Business password with length ${length}`,
+    );
+
+    const words = [
+      'Pro',
+      'Secure',
+      'Safe',
+      'Prime',
+      'Elite',
+      'Premium',
+      'Corp',
+      'Enterprise',
+      'Turbo',
+      'Ultra',
+      'Super',
+      'Power',
+    ];
+
+    const adjectives = [
+      'Alpha',
+      'Beta',
+      'Delta',
+      'Sigma',
+      'Omega',
+      'Forte',
+      'Nexus',
+      'Apex',
+      'Vertex',
+    ];
+
+    const word = words[Math.floor(Math.random() * words.length)];
+    const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const number = Math.floor(Math.random() * 10000)
+      .toString()
+      .padStart(4, '0');
+    const symbol = ['@', '#', '$', '%', '!'][Math.floor(Math.random() * 5)];
+
+    let password = `${word}${adjective}${symbol}${number}`;
+
+    // Add more security if needed
+    const charset =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    while (password.length < length) {
+      password += charset[Math.floor(Math.random() * charset.length)];
+    }
+
+    password = password.substring(0, length);
+
+    console.log(`✅ Generated Business password (${password.length} chars)`);
+    return password;
+  }
+
+  // Generate Gaming password - Fun but secure
+  public generateGamingPassword(length: number = 24): string {
+    console.log(`🎮 Service: Generating Gaming password with length ${length}`);
+
+    const gameWords = [
+      'Player',
+      'Master',
+      'Pro',
+      'King',
+      'Quest',
+      'Hero',
+      'Gamer',
+      'Legend',
+      'Nexus',
+      'Portal',
+      'Arena',
+      'Forge',
+    ];
+
+    const suffixes = [
+      'One',
+      'Two',
+      'Max',
+      'Ultra',
+      'Elite',
+      'Prime',
+      'Ascend',
+      'Omega',
+    ];
+
+    const word = gameWords[Math.floor(Math.random() * gameWords.length)];
+    const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
+    const number = Math.floor(Math.random() * 999) + 1;
+
+    let password = `${word}${suffix}${number}`;
+
+    // Add symbols and padding if needed
+    const symbols = '!@#$%';
+    while (password.length < length) {
+      password += symbols[Math.floor(Math.random() * symbols.length)];
+    }
+
+    password = password.substring(0, length);
+
+    console.log(`✅ Generated Gaming password (${password.length} chars)`);
+    return password;
+  }
+
+  // Generate Shopping password - Secure but shareable
+  public generateShoppingPassword(length: number = 26): string {
+    console.log(
+      `🛍️  Service: Generating Shopping password with length ${length}`,
+    );
+
+    const words = [
+      'Buy',
+      'Shop',
+      'Cart',
+      'Pay',
+      'Store',
+      'Deal',
+      'Sale',
+      'Shop',
+      'Checkout',
+    ];
+
+    const qualifiers = [
+      'Safe',
+      'Secure',
+      'Pro',
+      'Max',
+      'Plus',
+      'Prime',
+      'Guard',
+    ];
+
+    const word = words[Math.floor(Math.random() * words.length)];
+    const qualifier = qualifiers[Math.floor(Math.random() * qualifiers.length)];
+    const year = new Date().getFullYear();
+    const number = Math.floor(Math.random() * 100) + 1;
+
+    let password = `${word}${qualifier}${year}${number}`;
+
+    // Add one symbol for security
+    const symbol = ['@', '#', '!'][Math.floor(Math.random() * 3)];
+    password += symbol;
+
+    password = password.substring(0, length);
+
+    console.log(`✅ Generated Shopping password (${password.length} chars)`);
+    return password;
+  }
+
+  // Generate WiFi password with pattern: Word@Word2024#Word!Numbers
+  public generateWiFiPassword(length: number = 34): string {
+    console.log(`🔧 Service: Generating WiFi password with length ${length}`);
+
+    const words = [
+      'WiFi',
+      'Network',
+      'Home',
+      'Secure',
+      'Safe',
+      'Signal',
+      'Access',
+      'Guest',
+      'Connect',
+      'Link',
+      'Online',
+      'Bright',
+      'Quick',
+      'Strong',
+      'Smart',
+      'Cool',
+      'Cloud',
+      'Speed',
+      'Guard',
+      'Portal',
+      'Router',
+      'Server',
+      'Prime',
+      'Elite',
+      'Premium',
+      'Turbo',
+      'Ultra',
+      'Super',
+      'Power',
+      'Mighty',
+    ];
+
+    const currentYear = new Date().getFullYear();
+    const years = [currentYear - 1, currentYear, currentYear + 1];
+
+    // Select 3 random words
+    const word1 = words[Math.floor(Math.random() * words.length)];
+    const word2 = words[Math.floor(Math.random() * words.length)];
+    const word3 = words[Math.floor(Math.random() * words.length)];
+    const year = years[Math.floor(Math.random() * years.length)];
+
+    // Generate 4-digit numbers
+    const numbers1 = Math.floor(Math.random() * 10000)
+      .toString()
+      .padStart(4, '0');
+    const numbers2 = Math.floor(Math.random() * 10000)
+      .toString()
+      .padStart(4, '0');
+
+    // Pattern: Word1@Word22024#Word3!Numbers
+    let password = `${word1}@${word2}${year}#${word3}!${numbers1}`;
+
+    // Adjust to exact length if needed
     if (password.length < length) {
-      // Add additional numbers to reach target length
-      while (password.length < length) {
-        password += Math.floor(Math.random() * 10);
-      }
+      password += numbers2;
     } else if (password.length > length) {
-      // Should not happen with new logic, but keep as safety net
       password = password.substring(0, length);
     }
 
     console.log(
-      `🔧 Service: Generated memorable password "${password}" (${password.length} chars)`,
+      `🔧 Service: Generated WiFi password "${password}" (${password.length} chars)`,
     );
     return password;
   }
@@ -1384,6 +1013,56 @@ export class PasswordGeneratorService {
     this.generationHistory = this.generationHistory.filter(
       e => e.id !== entryId,
     );
+  }
+
+  // Generate passphrase using word combinations (e.g., "BlueSky2024Fast")
+  public generatePassphrase(
+    length: number = 34,
+    includeNumbers: boolean = true,
+  ): string {
+    console.log(`📝 Service: Generating passphrase with length ${length}`);
+
+    const words = PASSPHRASE_WORDS;
+
+    let passphrase = '';
+    let currentLength = 0;
+
+    // Add words until we approach target length
+    while (currentLength < length - 4) {
+      const word = words[Math.floor(Math.random() * words.length)];
+      passphrase += word;
+      currentLength += word.length;
+    }
+
+    // Add year or numbers to reach target length
+    if (includeNumbers) {
+      const currentYear = new Date().getFullYear();
+      const years = [
+        currentYear - 1,
+        currentYear,
+        currentYear + 1,
+        currentYear + 2,
+      ];
+      const year = years[Math.floor(Math.random() * years.length)];
+      const yearStr = year.toString();
+
+      // If passphrase + year is too long, remove words from end
+      if (passphrase.length + yearStr.length > length) {
+        passphrase = passphrase.substring(0, length - yearStr.length);
+      }
+
+      passphrase += yearStr;
+    }
+
+    // Ensure exact length by truncating if needed
+    if (passphrase.length > length) {
+      passphrase = passphrase.substring(0, length);
+    }
+
+    console.log(
+      `✅ Service: Generated passphrase "${passphrase}" (${passphrase.length} chars)`,
+    );
+    return passphrase;
   }
 
   public clearHistory(): void {

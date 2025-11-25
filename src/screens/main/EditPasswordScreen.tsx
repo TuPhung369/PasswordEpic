@@ -31,10 +31,7 @@ import { PasswordEntry, PasswordHistoryEntry } from '../../types/password';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
 import { PasswordValidationService } from '../../services/passwordValidationService';
 import { AuditHistoryService } from '../../services/auditHistoryService';
-import {
-  calculateSecurityScore,
-  isValidDomain,
-} from '../../utils/passwordUtils';
+import { isValidDomain } from '../../utils/passwordUtils';
 import { useAppDispatch } from '../../hooks/redux';
 import { decryptPasswordField } from '../../store/slices/passwordsSlice';
 import {
@@ -415,10 +412,20 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
             ...history[0],
             auditHistory: history,
           });
-          console.log('✅ EditPasswordScreen: Audit history loaded for:', password.id, 'Total:', history.length, 'Latest Score:', history[0]?.score);
+          console.log(
+            '✅ EditPasswordScreen: Audit history loaded for:',
+            password.id,
+            'Total:',
+            history.length,
+            'Latest Score:',
+            history[0]?.score,
+          );
         }
       } catch (error) {
-        console.error('❌ EditPasswordScreen: Failed to load audit history:', error);
+        console.error(
+          '❌ EditPasswordScreen: Failed to load audit history:',
+          error,
+        );
       }
     };
 
@@ -806,23 +813,26 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
         // Update audit data if password changed
         auditData:
           passwordChanged && finalPassword
-            ? {
-                ...password.auditData,
-                lastPasswordChange: new Date(),
-                passwordStrength:
+            ? (() => {
+                const strengthResult =
                   PasswordValidationService.analyzePasswordStrength(
                     finalPassword,
-                  ),
-                duplicateCount: password.auditData?.duplicateCount || 0,
-                compromisedCount: password.auditData?.compromisedCount || 0,
-                securityScore: calculateSecurityScore(tempPassword),
-                recommendedAction:
-                  PasswordValidationService.analyzePasswordStrength(
-                    finalPassword,
-                  ).score < 2
-                    ? 'change_password'
-                    : 'none',
-              }
+                  );
+
+                const baseScore = Math.round((strengthResult.score / 4) * 70);
+                const securityScore = Math.min(100, baseScore + 20);
+
+                return {
+                  ...password.auditData,
+                  lastPasswordChange: new Date(),
+                  passwordStrength: strengthResult,
+                  duplicateCount: password.auditData?.duplicateCount || 0,
+                  compromisedCount: password.auditData?.compromisedCount || 0,
+                  securityScore,
+                  recommendedAction:
+                    strengthResult.score < 2 ? 'change_password' : 'none',
+                };
+              })()
             : password.auditData,
       };
 
@@ -838,13 +848,13 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
       // 🔍 Run security audit and save audit result after password is saved
       try {
         console.log('🔍 EditPasswordScreen: Running security audit...');
-        
+
         const securityScore = updatedPassword.auditData?.securityScore || 0;
         let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
         if (securityScore < 40) riskLevel = 'critical';
         else if (securityScore < 60) riskLevel = 'high';
         else if (securityScore < 75) riskLevel = 'medium';
-        
+
         const auditData = {
           date: new Date(),
           score: securityScore,
@@ -853,10 +863,23 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
           vulnerabilities: [],
           passwordStrength: {
             score: updatedPassword.auditData?.passwordStrength?.score || 0,
-            label: updatedPassword.auditData?.passwordStrength?.label || 'Unknown',
+            label:
+              updatedPassword.auditData?.passwordStrength?.label || 'Unknown',
             color: '#9E9E9E',
-            feedback: updatedPassword.auditData?.passwordStrength?.feedback || [],
-            crackTime: updatedPassword.auditData?.passwordStrength?.crackTime || 'Unknown',
+            feedback:
+              updatedPassword.auditData?.passwordStrength?.feedback || [],
+            crackTime:
+              updatedPassword.auditData?.passwordStrength?.crackTime ||
+              'Unknown',
+            factors:
+              updatedPassword.auditData?.passwordStrength?.factors || {
+                length: false,
+                hasUppercase: false,
+                hasLowercase: false,
+                hasNumbers: false,
+                hasSpecialChars: false,
+                hasCommonPatterns: false,
+              },
           },
           changes: passwordChanged ? ['Password changed'] : [],
         };
@@ -864,7 +887,10 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
         await AuditHistoryService.saveAuditResult(password.id, auditData);
         console.log('✅ EditPasswordScreen: Audit result saved');
       } catch (auditError) {
-        console.warn('⚠️ EditPasswordScreen: Failed to save audit result:', auditError);
+        console.warn(
+          '⚠️ EditPasswordScreen: Failed to save audit result:',
+          auditError,
+        );
         // Don't throw - audit is a secondary feature
       }
 

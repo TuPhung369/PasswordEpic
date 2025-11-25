@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   BiometricService,
-  BiometricCapability,
   BiometricAuthResult,
 } from '../services/biometricService';
 import { useAppDispatch, useAppSelector } from './redux';
@@ -10,6 +9,7 @@ import {
   setBiometricType,
 } from '../store/slices/settingsSlice';
 import { RootState } from '../store';
+import { useBiometricContext } from '../contexts/BiometricContext';
 
 export interface UseBiometricReturn {
   // State
@@ -34,11 +34,8 @@ export const useBiometric = (): UseBiometricReturn => {
   const dispatch = useAppDispatch();
   const { security } = useAppSelector((state: RootState) => state.settings);
 
-  const [isAvailable, setIsAvailable] = useState<boolean>(false);
-  const [isSetup, setIsSetup] = useState<boolean>(false);
-  const [biometryType, setBiometryTypeLocal] = useState<string>(
-    'Biometric Authentication',
-  );
+  const biometricContext = useBiometricContext();
+
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,59 +45,32 @@ export const useBiometric = (): UseBiometricReturn => {
 
   /**
    * Check biometric capability and setup status
+   * Uses context data instead of doing individual checks
    */
   const checkCapability = useCallback(async (): Promise<void> => {
     try {
-      setIsLoading(true);
       setError(null);
 
-      const biometricService = BiometricService.getInstance();
-
-      // Check device capability
-      const capability: BiometricCapability =
-        await biometricService.checkBiometricCapability();
-
-      setIsAvailable(capability.available);
-
-      if (capability.available && capability.biometryType) {
-        const typeName = biometricService.getBiometricTypeName(
-          capability.biometryType,
-        );
-        setBiometryTypeLocal(typeName);
-        dispatch(setBiometricType(typeName));
+      if (biometricContext.error) {
+        setError(biometricContext.error);
       }
 
-      // Check if biometric is set up
-      if (capability.available) {
-        const setupStatus = await biometricService.isBiometricSetup();
-        // Biometric capability checked
-
-        setIsSetup(setupStatus);
-
-        // ⚠️ DO NOT automatically sync Redux state with device capability
-        // This would override user's explicit settings (e.g., after restore from backup)
-        // Only update local state, let Redux state be controlled by user actions
-      } else {
+      if (!biometricContext.isAvailable) {
         // Biometric not available, disabling
-        setIsSetup(false);
         // Only disable in Redux if biometric is not available on device
         if (securityRef.current.biometricEnabled) {
           dispatch(setBiometricEnabled(false));
         }
       }
 
-      if (capability.error) {
-        setError(capability.error);
+      if (biometricContext.isAvailable && biometricContext.biometryType) {
+        dispatch(setBiometricType(biometricContext.biometryType));
       }
     } catch (err) {
       console.error('Error checking biometric capability:', err);
       setError('Failed to check biometric capability');
-      setIsAvailable(false);
-      setIsSetup(false);
-    } finally {
-      setIsLoading(false);
     }
-  }, [dispatch]); // Remove security.biometricEnabled to avoid circular dependency
+  }, [dispatch, biometricContext]);
 
   /**
    * Setup biometric authentication
@@ -124,7 +94,6 @@ export const useBiometric = (): UseBiometricReturn => {
 
       if (result.success) {
         console.log('✅ [useBiometric] Setup successful, updating states...');
-        setIsSetup(true);
         dispatch(setBiometricEnabled(true));
         console.log('✅ [useBiometric] Redux state updated to enabled=true');
         return true;
@@ -153,7 +122,7 @@ export const useBiometric = (): UseBiometricReturn => {
           '🔐 [useBiometric] authenticate called with message:',
           message,
         );
-        console.log('🔐 [useBiometric] biometryType:', biometryType);
+        console.log('🔐 [useBiometric] biometryType:', biometricContext.biometryType);
         console.log(
           '🔐 [useBiometric] security.biometricPreference:',
           security.biometricPreference,
@@ -163,7 +132,7 @@ export const useBiometric = (): UseBiometricReturn => {
         setError(null);
 
         const biometricService = BiometricService.getInstance();
-        const authMessage = message || `Authenticate with ${biometryType}`;
+        const authMessage = message || `Authenticate with ${biometricContext.biometryType}`;
 
         console.log(
           '🔐 [useBiometric] Calling authenticateWithBiometrics with message:',
@@ -200,7 +169,7 @@ export const useBiometric = (): UseBiometricReturn => {
         setIsLoading(false);
       }
     },
-    [biometryType, security.biometricPreference],
+    [security.biometricPreference, biometricContext.biometryType],
   );
 
   /**
@@ -215,7 +184,6 @@ export const useBiometric = (): UseBiometricReturn => {
       const success = await biometricService.disableBiometricAuth();
 
       if (success) {
-        setIsSetup(false);
         dispatch(setBiometricEnabled(false));
         return true;
       } else {
@@ -236,7 +204,8 @@ export const useBiometric = (): UseBiometricReturn => {
    */
   const clearError = useCallback((): void => {
     setError(null);
-  }, []);
+    biometricContext.clearError();
+  }, [biometricContext]);
 
   /**
    * Show biometric setup prompt
@@ -249,22 +218,22 @@ export const useBiometric = (): UseBiometricReturn => {
     [],
   );
 
-  // Check capability on mount only
+  // Sync Redux state with context on mount
   useEffect(() => {
     checkCapability();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [checkCapability]);
 
-  // ⚠️ REMOVED: Auto-sync with Redux state changes
-  // This was causing biometric to be re-enabled after restore from backup
-  // The checkCapability function should only run on mount, not on every Redux state change
+  // Combine local isLoading with context isLoading for setup/auth operations
+  const effectiveIsLoading = isLoading || biometricContext.isLoading;
+  const effectiveError = error || biometricContext.error;
 
   return {
     // State
-    isAvailable,
-    isSetup,
-    biometryType,
-    isLoading,
-    error,
+    isAvailable: biometricContext.isAvailable,
+    isSetup: biometricContext.isSetup,
+    biometryType: biometricContext.biometryType,
+    isLoading: effectiveIsLoading,
+    error: effectiveError,
 
     // Actions
     checkCapability,

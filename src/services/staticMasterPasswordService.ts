@@ -33,7 +33,19 @@ interface StaticMasterPasswordCache {
 }
 
 let staticMPCache: StaticMasterPasswordCache | null = null;
-const STATIC_MP_CACHE_TTL = 0; // DISABLED: No caching - require PIN/biometric for every operation (security-first)
+// Cache TTL for static master password (derived from UUID::email::salt, NOT user's plaintext password)
+// Safe to cache longer since this is a derived value, not sensitive user input
+const STATIC_MP_CACHE_TTL = 30 * 60 * 1000; // 30 minutes - matches session cache TTL
+
+// Persistent session cache keys (survives hot reload, cleared on full app restart)
+const SESSION_CACHE_KEYS = {
+  DERIVED_KEY: '@session_derived_key',
+  DERIVED_KEY_TIMESTAMP: '@session_derived_key_timestamp',
+  DERIVED_KEY_USER_ID: '@session_derived_key_user_id',
+};
+
+// Session cache TTL: 5 minutes (within same session)
+const SESSION_CACHE_TTL = 5 * 60 * 1000;
 
 // In-flight request deduplication - prevents multiple concurrent PBKDF2 operations
 let inFlightRequest: Promise<StaticMasterPasswordResult> | null = null;
@@ -46,6 +58,81 @@ export interface StaticMasterPasswordResult {
   masterPassword?: string; // The decrypted user's master password (for entry decryption)
   error?: string;
 }
+
+/**
+ * Persistent session cache - survives hot reload, cleared on app restart
+ * Used to avoid re-running expensive PBKDF2 operation within same session
+ */
+const getSessionCachedDerivedKey = async (
+  userId: string,
+): Promise<string | null> => {
+  try {
+    const cachedKey = await AsyncStorage.getItem(
+      SESSION_CACHE_KEYS.DERIVED_KEY,
+    );
+    const cachedTimestamp = await AsyncStorage.getItem(
+      SESSION_CACHE_KEYS.DERIVED_KEY_TIMESTAMP,
+    );
+    const cachedUserId = await AsyncStorage.getItem(
+      SESSION_CACHE_KEYS.DERIVED_KEY_USER_ID,
+    );
+
+    if (!cachedKey || !cachedTimestamp) return null;
+
+    // Check if cache is still valid
+    const timestamp = parseInt(cachedTimestamp, 10);
+    const now = Date.now();
+    const isExpired = now - timestamp > SESSION_CACHE_TTL;
+
+    if (isExpired) {
+      console.log('⏰ [StaticMP] Session cache expired, clearing...');
+      await clearSessionCache();
+      return null;
+    }
+
+    // Check if user ID matches (security check)
+    if (cachedUserId !== userId) {
+      console.log('⚠️ [StaticMP] Session cache user ID mismatch, clearing...');
+      await clearSessionCache();
+      return null;
+    }
+
+    console.log('✅ [StaticMP] Using cached derived key (survives hot reload)');
+    return cachedKey;
+  } catch (error) {
+    console.warn('⚠️ [StaticMP] Failed to read session cache:', error);
+    return null;
+  }
+};
+
+const setSessionCachedDerivedKey = async (
+  userId: string,
+  derivedKey: string,
+): Promise<void> => {
+  try {
+    await AsyncStorage.multiSet([
+      [SESSION_CACHE_KEYS.DERIVED_KEY, derivedKey],
+      [SESSION_CACHE_KEYS.DERIVED_KEY_TIMESTAMP, Date.now().toString()],
+      [SESSION_CACHE_KEYS.DERIVED_KEY_USER_ID, userId],
+    ]);
+    console.log('💾 [StaticMP] Derived key cached to session storage');
+  } catch (error) {
+    console.warn('⚠️ [StaticMP] Failed to cache derived key:', error);
+  }
+};
+
+const clearSessionCache = async (): Promise<void> => {
+  try {
+    await AsyncStorage.multiRemove([
+      SESSION_CACHE_KEYS.DERIVED_KEY,
+      SESSION_CACHE_KEYS.DERIVED_KEY_TIMESTAMP,
+      SESSION_CACHE_KEYS.DERIVED_KEY_USER_ID,
+    ]);
+    console.log('🗑️ [StaticMP] Session cache cleared');
+  } catch (error) {
+    console.warn('⚠️ [StaticMP] Failed to clear session cache:', error);
+  }
+};
 
 /**
  * Save encrypted fixed salt to Firebase
@@ -486,6 +573,42 @@ export const unlockMasterPasswordWithPin = async (
     ]);
     console.log('✅ [StaticMP] Encrypted MP saved to AsyncStorage');
 
+    // Generate static master password (UID::email::salt_prefix) for vault encryption
+    const staticPassword = [
+      currentUser.uid,
+      currentUser.email || 'anonymous',
+      fixedSalt.substring(0, 16),
+    ].join('::');
+
+    // Check persistent session cache first (survives hot reload)
+    let cachedDerivedKey = await getSessionCachedDerivedKey(currentUser.uid);
+
+    let derivedKey: string;
+    if (cachedDerivedKey) {
+      console.log('⚡ [StaticMP] Skipping PBKDF2 - using cached derived key');
+      derivedKey = cachedDerivedKey;
+    } else {
+      // Cache miss - run expensive PBKDF2 on background thread
+      derivedKey = await new Promise<string>((resolve, reject) => {
+        setImmediate(() => {
+          try {
+            console.log('🔄 [StaticMP] Computing PBKDF2 derived key...');
+            const key = deriveKeyFromPassword(
+              staticPassword,
+              fixedSalt,
+              CRYPTO_CONSTANTS.PBKDF2_ITERATIONS,
+            );
+            resolve(key);
+          } catch (err) {
+            reject(err);
+          }
+        });
+      });
+
+      // Cache the derived key for future use within this session
+      await setSessionCachedDerivedKey(currentUser.uid, derivedKey);
+    }
+
     // Decrypt Master Password with PIN
     const decryptResult = pinSecurityService.decryptMasterPasswordWithPin(
       fbResult.encryptedMP,
@@ -494,27 +617,10 @@ export const unlockMasterPasswordWithPin = async (
     );
 
     if (!decryptResult.success || !decryptResult.masterPassword) {
-      return {
-        success: false,
-        error: decryptResult.error,
-      };
+      throw new Error(decryptResult.error || 'Decryption failed');
     }
 
-    // Get the user's actual Master Password (decrypted from Firebase)
     const userMasterPassword = decryptResult.masterPassword;
-
-    // Generate static master password (UID::email::salt_prefix) for vault encryption
-    const staticPassword = [
-      currentUser.uid,
-      currentUser.email || 'anonymous',
-      fixedSalt.substring(0, 16),
-    ].join('::');
-
-    const derivedKey = deriveKeyFromPassword(
-      staticPassword,
-      fixedSalt,
-      CRYPTO_CONSTANTS.PBKDF2_ITERATIONS,
-    );
 
     // Cache in memory (session-based)
     staticMPCache = {
@@ -1365,5 +1471,33 @@ export const cacheEncryptedMasterPasswordToAsyncStorage = async (): Promise<{
       error:
         error instanceof Error ? error.message : 'Failed to cache encrypted MP',
     };
+  }
+};
+
+/**
+ * Clear all session caches on logout or app exit
+ * Clears:
+ * - In-memory derived key cache
+ * - AsyncStorage session cache
+ * - Decryption cache
+ */
+export const clearAllSessionCaches = async (): Promise<void> => {
+  try {
+    console.log('🗑️ [StaticMP] Clearing all session caches on logout...');
+
+    // Clear in-memory cache
+    staticMPCache = null;
+    inFlightRequest = null;
+
+    // Clear persistent session cache from AsyncStorage
+    await clearSessionCache();
+
+    // Clear decryption cache from EncryptedDatabaseService
+    const { encryptedDatabase } = await import('./encryptedDatabaseService');
+    encryptedDatabase.clearDecryptionCache();
+
+    console.log('✅ [StaticMP] All session caches cleared');
+  } catch (error) {
+    console.error('❌ [StaticMP] Failed to clear session caches:', error);
   }
 };

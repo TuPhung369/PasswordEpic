@@ -1,8 +1,13 @@
 import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
 import { PasswordEntry, PasswordCategory } from '../../types/password';
 import { encryptedDatabase } from '../../services/encryptedDatabaseService';
-import { migratePasswordEntries } from '../../utils/passwordMigration';
+import {
+  migratePasswordEntries,
+  migratePasswordEntry,
+} from '../../utils/passwordMigration';
 import { autofillService } from '../../services/autofillService';
+import { AuditHistoryService } from '../../services/auditHistoryService';
+import { sessionCache } from '../../utils/sessionCache';
 
 interface PasswordsState {
   passwords: PasswordEntry[];
@@ -25,11 +30,43 @@ export const loadPasswords = createAsyncThunk(
         masterPassword,
       );
 
+      // Load latest audit data for each password
+      const passwordsWithAudit = await Promise.all(
+        passwords.map(async password => {
+          try {
+            const latestAudit = await AuditHistoryService.getLatestAudit(
+              password.id,
+            );
+            if (latestAudit) {
+              return {
+                ...password,
+                auditData: {
+                  ...password.auditData,
+                  securityScore: latestAudit.score,
+                  lastAuditDate: latestAudit.date,
+                  passwordStrength: latestAudit.passwordStrength,
+                  duplicateCount: password.auditData?.duplicateCount ?? 0,
+                  compromisedCount: password.auditData?.compromisedCount ?? 0,
+                  lastPasswordChange:
+                    password.auditData?.lastPasswordChange ?? latestAudit.date,
+                },
+              };
+            }
+          } catch (auditError) {
+            console.warn(
+              `⚠️ Failed to load audit data for password ${password.id}:`,
+              auditError,
+            );
+          }
+          return password;
+        }),
+      );
+
       // Prepare autofill credentials when passwords are fully loaded and decrypted
       try {
         console.log('🔄 Preparing autofill credentials on full load...');
         await autofillService.prepareCredentialsForAutofill(
-          passwords,
+          passwordsWithAudit,
           masterPassword,
         );
         console.log('✅ Autofill credentials prepared on full load');
@@ -41,7 +78,7 @@ export const loadPasswords = createAsyncThunk(
         // Don't fail password load if autofill prep fails
       }
 
-      return passwords;
+      return passwordsWithAudit;
     } catch (error: any) {
       return rejectWithValue(error.message);
     }
@@ -57,11 +94,43 @@ export const loadPasswordsLazy = createAsyncThunk(
       const passwords =
         await encryptedDatabase.getAllPasswordEntriesOptimized();
 
+      // Load latest audit data for each password
+      const passwordsWithAudit = await Promise.all(
+        passwords.map(async password => {
+          try {
+            const latestAudit = await AuditHistoryService.getLatestAudit(
+              password.id,
+            );
+            if (latestAudit) {
+              return {
+                ...password,
+                auditData: {
+                  ...password.auditData,
+                  securityScore: latestAudit.score,
+                  lastAuditDate: latestAudit.date,
+                  passwordStrength: latestAudit.passwordStrength,
+                  duplicateCount: password.auditData?.duplicateCount ?? 0,
+                  compromisedCount: password.auditData?.compromisedCount ?? 0,
+                  lastPasswordChange:
+                    password.auditData?.lastPasswordChange ?? latestAudit.date,
+                },
+              };
+            }
+          } catch (auditError) {
+            console.warn(
+              `⚠️ Failed to load audit data for password ${password.id}:`,
+              auditError,
+            );
+          }
+          return password;
+        }),
+      );
+
       // Note: Don't prepare autofill here since passwords are loaded lazily
       // (only metadata loaded, actual passwords not decrypted yet)
       // Autofill prep will happen after all passwords are decrypted
 
-      return passwords;
+      return passwordsWithAudit;
     } catch (error: any) {
       return rejectWithValue(error.message);
     }
@@ -142,62 +211,121 @@ export const savePassword = createAsyncThunk(
     { rejectWithValue, getState },
   ) => {
     try {
-      const hasValidMasterPassword = masterPassword && masterPassword.length > 0;
+      const hasValidMasterPassword =
+        masterPassword && masterPassword.length > 0;
       console.log('💾 [Redux] Saving password', {
         hasMasterPassword: hasValidMasterPassword,
         isMetadataOnly: !hasValidMasterPassword,
       });
 
-      await encryptedDatabase.savePasswordEntryOptimized(entry, masterPassword);
+      const encryptionMetadata =
+        await encryptedDatabase.savePasswordEntryOptimized(
+          entry,
+          masterPassword,
+        );
 
-      // 🔐 CRITICAL: Reload entry from database to get IV/TAG for autofill
-      // The entry we saved has IV/TAG in database, but the `entry` object
-      // passed in doesn't have those fields populated yet.
-      console.log('🔄 Loading saved entry from database to get IV/TAG...');
-      const allEntries = await encryptedDatabase.getAllPasswordEntries(
-        hasValidMasterPassword ? masterPassword : '',
-      );
-      const savedEntry = allEntries.find(e => e.id === entry.id);
-      if (!savedEntry) {
-        throw new Error('Failed to reload saved password entry');
-      }
+      // 🔐 Create savedEntry with IV/TAG from returned metadata
+      // No need to reload from database - we already have the encryption metadata
+      const savedEntry: PasswordEntry = {
+        ...entry,
+        passwordIv: encryptionMetadata.iv,
+        passwordTag: encryptionMetadata.tag,
+        passwordSalt: encryptionMetadata.salt,
+        isDecrypted: entry.isDecrypted ?? true,
+      };
       console.log(
-        `✅ Reloaded entry with IV=${!!savedEntry.passwordIv} TAG=${!!savedEntry.passwordTag}`,
+        `✅ Saved entry with IV=${!!savedEntry.passwordIv} TAG=${!!savedEntry.passwordTag}`,
       );
 
-      // Prepare credentials for autofill after saving (only if password was actually provided)
-      if (hasValidMasterPassword) {
+      // ⚠️ NOTE: auditData is already in entry (from AddPasswordScreen calculation)
+      // Do NOT load from AuditHistoryService here because:
+      // 1. For new passwords: audit history hasn't been saved yet (race condition)
+      // 2. For updates: we want to preserve the audit data passed in
+      // Audit history will be saved separately by AddPasswordScreen after this function returns
+      if (!savedEntry.auditData && entry.auditData) {
+        Object.assign(savedEntry, {
+          auditData: entry.auditData,
+        });
+        console.log(
+          `✅ Preserved auditData from entry: score=${entry.auditData.securityScore}`,
+        );
+      } else if (savedEntry.auditData) {
+        console.log(
+          `✅ auditData preserved from entry spread: score=${savedEntry.auditData.securityScore}`,
+        );
+      }
+
+      // Prepare credentials for autofill after saving
+      // Always update autofill to ensure metadata changes (username, website, title) are synced
+      try {
+        console.log('🔄 Preparing autofill credentials...');
+        // Clear old autofill cache first to ensure updated entry replaces old cached value
         try {
-          console.log('🔄 Preparing autofill credentials...');
-          // Clear old autofill cache first to ensure updated password replaces old cached value
+          await autofillService.clearCache();
+          console.log('✅ Autofill cache cleared');
+        } catch (cacheClrError) {
+          console.warn('⚠️ Failed to clear autofill cache:', cacheClrError);
+          // Continue anyway - not critical
+        }
+
+        // Get master password for autofill - use provided or get from session cache
+        let autofillMasterPassword = masterPassword;
+        if (!hasValidMasterPassword) {
+          console.log(
+            '🔐 [Autofill] No master password provided, getting from session cache...',
+          );
           try {
-            await autofillService.clearCache();
-            console.log('✅ Autofill cache cleared');
-          } catch (clearError) {
-            console.warn('⚠️ Failed to clear autofill cache:', clearError);
-            // Continue anyway - not critical
+            // Try to get from session cache (set after PIN/biometric unlock)
+            const cachedStaticMP = sessionCache.get<string>(
+              'staticMasterPassword',
+            );
+            const cachedDynamicMP = sessionCache.get<string>(
+              'dynamicMasterPassword',
+            );
+
+            if (cachedStaticMP) {
+              autofillMasterPassword = cachedStaticMP;
+              console.log(
+                '✅ [Autofill] Got master password from static session cache',
+              );
+            } else if (cachedDynamicMP) {
+              autofillMasterPassword = cachedDynamicMP;
+              console.log(
+                '✅ [Autofill] Got master password from dynamic session cache',
+              );
+            } else {
+              console.log(
+                '⚠️ [Autofill] No cached master password available, skipping autofill update',
+              );
+            }
+          } catch (mpError) {
+            console.warn(
+              '⚠️ [Autofill] Failed to get master password from cache:',
+              mpError,
+            );
           }
+        }
+
+        if (autofillMasterPassword && autofillMasterPassword.length > 0) {
           const state = getState() as any;
           const allPasswords = state.passwords.passwords || [];
           // Include the newly saved entry with full IV/TAG context
-          const allPasswordsWithNew = allPasswords.filter(p => p.id !== entry.id);
+          const allPasswordsWithNew = allPasswords.filter(
+            (p: PasswordEntry) => p.id !== entry.id,
+          );
           allPasswordsWithNew.push(savedEntry);
           await autofillService.prepareCredentialsForAutofill(
             allPasswordsWithNew,
-            masterPassword,
+            autofillMasterPassword,
           );
           console.log('✅ Autofill credentials prepared');
-        } catch (autofillError) {
-          console.warn(
-            '⚠️ Non-critical: Failed to prepare autofill:',
-            autofillError,
-          );
-          // Don't fail password save if autofill prep fails
         }
-      } else {
-        console.log(
-          '💾 Skipping autofill prep for metadata-only update (no master password)',
+      } catch (autofillError) {
+        console.warn(
+          '⚠️ Non-critical: Failed to prepare autofill:',
+          autofillError,
         );
+        // Don't fail password save if autofill prep fails
       }
 
       return savedEntry;
@@ -328,6 +456,31 @@ const passwordsSlice = createSlice({
         console.warn('⚠️ [Redux] Password not found:', passwordId);
       }
     },
+    updatePasswordAuditData: (
+      state,
+      action: PayloadAction<{
+        passwordId: string;
+        auditData: PasswordEntry['auditData'];
+      }>,
+    ) => {
+      const { passwordId, auditData } = action.payload;
+      const passwordEntry = state.passwords.find(p => p.id === passwordId);
+      if (passwordEntry && auditData) {
+        console.log(
+          '🔄 [Redux] Updating auditData for password:',
+          passwordId,
+          'securityScore:',
+          auditData.securityScore,
+        );
+        passwordEntry.auditData = auditData;
+        console.log(
+          '✅ [Redux] Updated. securityScore is now:',
+          auditData.securityScore,
+        );
+      } else {
+        console.warn('⚠️ [Redux] Password not found:', passwordId);
+      }
+    },
   },
   extraReducers: builder => {
     // Load passwords
@@ -380,13 +533,21 @@ const passwordsSlice = createSlice({
       })
       .addCase(savePassword.fulfilled, (state, action) => {
         state.isLoading = false;
+        const payload = action.payload;
+
+        // Only migrate if necessary (old data without auditData)
+        // If payload has auditData, it was already calculated from plaintext during create/update
+        const finalPayload = payload.auditData
+          ? payload
+          : migratePasswordEntry(payload);
+
         const existingIndex = state.passwords.findIndex(
-          p => p.id === action.payload.id,
+          p => p.id === finalPayload.id,
         );
         if (existingIndex !== -1) {
-          state.passwords[existingIndex] = action.payload;
+          state.passwords[existingIndex] = finalPayload;
         } else {
-          state.passwords.push(action.payload);
+          state.passwords.push(finalPayload);
         }
       })
       .addCase(savePassword.rejected, (state, action) => {
@@ -451,6 +612,7 @@ export const {
   clearError,
   clearPasswords,
   updatePasswordLastUsed,
+  updatePasswordAuditData,
 } = passwordsSlice.actions;
 
 export default passwordsSlice.reducer;

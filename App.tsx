@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useRef } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
 import {
@@ -9,15 +10,18 @@ import {
 import { store, persistor } from './src/store';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { ThemeProvider } from './src/contexts/ThemeContext';
+import { BiometricProvider } from './src/contexts/BiometricContext';
 import { initializeAuth } from './src/services/authService';
 import { initializeFirebase } from './src/services/firebase';
 import { initializeGoogleSignIn } from './src/services/googleAuthNative';
-import { ActivityIndicator, View, StyleSheet, AppState } from 'react-native';
+import { AppState } from 'react-native';
 import { NavigationPersistenceService } from './src/services/navigationPersistenceService';
 import { sessionManager } from './src/utils/sessionManager';
 import { UserActivityService } from './src/services/userActivityService';
 import { useAutofillDecryption } from './src/hooks/useAutofillDecryption';
 import { setShouldNavigateToUnlock } from './src/store/slices/authSlice';
+import { LoadingScreen } from './src/components/LoadingScreen';
+import { LoadingOverlayProvider } from './src/contexts/LoadingOverlayContext';
 
 // Import polyfills for crypto and URL
 import 'react-native-get-random-values';
@@ -224,6 +228,12 @@ const App: React.FC = () => {
         // Delay Google Sign-In initialization to ensure activity is ready
         setTimeout(async () => {
           try {
+            // Reset initialization state in case of hot reload
+            const { __resetInitializationState } = await import(
+              './src/services/googleAuthNative'
+            );
+            __resetInitializationState();
+
             const googleSignInInitialized = await initializeGoogleSignIn();
 
             if (googleSignInInitialized) {
@@ -238,75 +248,11 @@ const App: React.FC = () => {
 
         console.log('✅ Service initialization completed');
 
-        // 🔥 Trigger biometric on cold start (app first launch)
-        // AppNavigator handles biometric on app RESUME (background → active)
-        // This handles biometric on COLD START (app fully closed → opened)
-        setTimeout(async () => {
-          console.log(
-            '🔍 [App.tsx] Checking if biometric needed on cold start...',
-          );
-
-          const authState = store.getState().auth;
-          if (
-            authState.isAuthenticated &&
-            authState.masterPasswordConfigured &&
-            !authState.hasCompletedSessionAuth
-          ) {
-            try {
-              const { default: BiometricService } = await import(
-                './src/services/biometricService'
-              );
-              const biometricService = BiometricService.getInstance();
-              const capability =
-                await biometricService.checkBiometricCapability();
-
-              if (capability.available) {
-                console.log(
-                  '🔍 [App.tsx] Biometric available - triggering authentication...',
-                );
-
-                const result =
-                  await biometricService.authenticateWithBiometrics(
-                    'Unlock your vault',
-                  );
-
-                if (result.success) {
-                  console.log(
-                    '✅ [App.tsx] Biometric authentication successful!',
-                  );
-
-                  // Cache encrypted master password asynchronously (non-blocking)
-                  // This prevents the UI from freezing while waiting for Firebase operations
-                  const { cacheEncryptedMasterPasswordToAsyncStorage } =
-                    await import('./src/services/staticMasterPasswordService');
-                  
-                  // Fire and forget - don't await this operation
-                  cacheEncryptedMasterPasswordToAsyncStorage()
-                    .then(() => {
-                      console.log(
-                        '✅ [App.tsx] Encrypted MP cached successfully (background)',
-                      );
-                    })
-                    .catch((err) => {
-                      console.warn(
-                        '⚠️ [App.tsx] Failed to cache encrypted MP in background:',
-                        err,
-                      );
-                    });
-
-                  // Don't set any flags here - let AppNavigator handle it
-                  // This prevents navigation conflicts
-                } else {
-                  console.log(
-                    '❌ [App.tsx] Biometric failed - will show unlock screen',
-                  );
-                }
-              }
-            } catch (error) {
-              console.error('❌ [App.tsx] Error triggering biometric:', error);
-            }
-          }
-        }, 2000); // Wait 2 seconds to ensure app is fully ready
+        // 🔥 REMOVED: Premature biometric on cold start
+        // AppNavigator now handles all biometric authentication properly:
+        // - On app RESUME (background → active): AppNavigator triggers biometric via AppState listener
+        // - On COLD START: AppNavigator sets needsUnlock=true, MasterPasswordScreen auto-triggers biometric
+        // This prevents duplicate, conflicting biometric attempts and ensures proper fallback navigation
       } catch (error) {
         console.error('❌ Service initialization error:', error);
       }
@@ -316,39 +262,33 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <Provider store={store}>
-      {/* 🔐 Setup autofill decryption listener */}
-      <AutofillDecryptionListener />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <Provider store={store}>
+        {/* 🔐 Setup autofill decryption listener */}
+        <AutofillDecryptionListener />
 
-      <PersistGate
-        loading={
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#007AFF" />
-          </View>
-        }
-        persistor={persistor}
-      >
-        <SafeAreaProvider>
-          <ThemeProvider>
-            <NavigationContainer
-              ref={navigationRef}
-              onStateChange={handleNavigationStateChange}
-            >
-              <AppNavigator navigationRef={navigationRef} />
-            </NavigationContainer>
-          </ThemeProvider>
-        </SafeAreaProvider>
-      </PersistGate>
-    </Provider>
+        <PersistGate
+          loading={<LoadingScreen visible={true} />}
+          persistor={persistor}
+        >
+          <LoadingOverlayProvider>
+            <BiometricProvider>
+              <SafeAreaProvider>
+                <ThemeProvider>
+                  <NavigationContainer
+                    ref={navigationRef}
+                    onStateChange={handleNavigationStateChange}
+                  >
+                    <AppNavigator navigationRef={navigationRef} />
+                  </NavigationContainer>
+                </ThemeProvider>
+              </SafeAreaProvider>
+            </BiometricProvider>
+          </LoadingOverlayProvider>
+        </PersistGate>
+      </Provider>
+    </GestureHandlerRootView>
   );
 };
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});
 
 export default App;

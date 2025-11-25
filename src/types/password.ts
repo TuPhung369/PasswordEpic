@@ -83,6 +83,14 @@ export interface PasswordStrengthResult {
   color: string;
   feedback: string[];
   crackTime: string;
+  factors?: {
+    length: number | boolean;
+    hasUppercase: boolean;
+    hasLowercase: boolean;
+    hasNumbers: boolean;
+    hasSpecialChars: boolean;
+    hasCommonPatterns: boolean;
+  };
 }
 
 export interface PasswordGeneratorOptions {

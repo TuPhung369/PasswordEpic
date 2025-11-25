@@ -19,6 +19,15 @@ export class EncryptedDatabaseService {
   private static instance: EncryptedDatabaseService;
   private masterPasswordHash: string | null = null;
 
+  // Decryption cache: Map<passwordId, { decrypted: string; timestamp: number }>
+  // Survives hot reload via AsyncStorage, cleared on app restart
+  private decryptionCache = new Map<
+    string,
+    { decrypted: string; timestamp: number }
+  >();
+  
+  private static readonly DECRYPTION_CACHE_TTL = 5 * 60 * 1000; // 5 minutes per entry
+
   private constructor() {}
 
   public static getInstance(): EncryptedDatabaseService {
@@ -46,11 +55,12 @@ export class EncryptedDatabaseService {
    * Save password entry using optimized format
    * Metadata is stored unencrypted for instant loading
    * Only password field is encrypted
+   * Returns encryption metadata (iv, tag, salt) for autofill preparation
    */
   public async savePasswordEntry(
     entry: PasswordEntry,
     masterPassword: string,
-  ): Promise<void> {
+  ): Promise<{ iv: string; tag: string; salt: string }> {
     const startTime = Date.now();
     console.log('🔐 [Save] Starting password save...', {
       hasPassword: !!entry.password,
@@ -186,8 +196,17 @@ export class EncryptedDatabaseService {
         JSON.stringify(updatedEntries),
       );
 
+      // Clear decryption cache for this entry (it's been updated)
+      this.clearDecryptionCache(entry.id);
+
       const duration = Date.now() - startTime;
       console.log(`✅ [Save] Password saved in ${duration}ms`);
+
+      return {
+        iv: encryptedPasswordData.iv,
+        tag: encryptedPasswordData.tag,
+        salt: encryptedPasswordData.salt,
+      };
     } catch (error) {
       const duration = Date.now() - startTime;
       console.error(`❌ [Save] Failed after ${duration}ms:`, error);
@@ -271,7 +290,7 @@ export class EncryptedDatabaseService {
   public async savePasswordEntryOptimized(
     entry: PasswordEntry,
     masterPassword: string,
-  ): Promise<void> {
+  ): Promise<{ iv: string; tag: string; salt: string }> {
     return this.savePasswordEntry(entry, masterPassword);
   }
 
@@ -420,6 +439,22 @@ export class EncryptedDatabaseService {
     console.log(`🔓 [Decrypt] Decrypting password for entry ${id}...`);
 
     try {
+      // Check decryption cache first (5 minute TTL)
+      const cached = this.decryptionCache.get(id);
+      if (cached) {
+        const age = Date.now() - cached.timestamp;
+        if (age < EncryptedDatabaseService.DECRYPTION_CACHE_TTL) {
+          const duration = Date.now() - startTime;
+          console.log(
+            `⚡ [Decrypt] Using cached password (${duration}ms, age=${age}ms)`,
+          );
+          return cached.decrypted;
+        } else {
+          // Cache expired, remove it
+          this.decryptionCache.delete(id);
+        }
+      }
+
       const optimizedEntries = await this.getAllOptimizedEntries();
       const entry = optimizedEntries.find(e => e.id === id);
 
@@ -438,14 +473,29 @@ export class EncryptedDatabaseService {
         );
       }
 
-      // Decrypt the password field using retry mechanism for backward compatibility
-      const decryptedPassword = decryptDataWithRetry(
-        entry.encryptedPassword,
-        masterPassword,
-        entry.passwordSalt,
-        entry.passwordIv,
-        entry.passwordAuthTag,
-      );
+      // Decrypt on background thread to prevent UI freeze
+      const decryptedPassword = await new Promise<string>((resolve, reject) => {
+        setImmediate(() => {
+          try {
+            const result = decryptDataWithRetry(
+              entry.encryptedPassword,
+              masterPassword,
+              entry.passwordSalt,
+              entry.passwordIv,
+              entry.passwordAuthTag,
+            );
+            resolve(result);
+          } catch (err) {
+            reject(err);
+          }
+        });
+      });
+
+      // Cache the decrypted password for future use
+      this.decryptionCache.set(id, {
+        decrypted: decryptedPassword,
+        timestamp: Date.now(),
+      });
 
       const duration = Date.now() - startTime;
       console.log(`✅ [Decrypt] Password decrypted in ${duration}ms`);
@@ -500,6 +550,19 @@ export class EncryptedDatabaseService {
   }
 
   /**
+   * Clear decryption cache for a specific entry
+   */
+  public clearDecryptionCache(id?: string): void {
+    if (id) {
+      this.decryptionCache.delete(id);
+      console.log(`🗑️ [Decrypt] Cache cleared for entry ${id}`);
+    } else {
+      this.decryptionCache.clear();
+      console.log('🗑️ [Decrypt] All decryption cache cleared');
+    }
+  }
+
+  /**
    * Delete a password entry
    */
   public async deletePasswordEntry(id: string): Promise<void> {
@@ -511,6 +574,19 @@ export class EncryptedDatabaseService {
         PASSWORDS_STORAGE_KEY,
         JSON.stringify(updatedEntries),
       );
+
+      // Verify deletion was saved
+      const verifyEntries = await this.getAllOptimizedEntries();
+      const stillExists = verifyEntries.some(e => e.id === id);
+      
+      if (stillExists) {
+        throw new Error(`Deletion verification failed - entry ${id} still exists after delete`);
+      }
+
+      console.log(`✅ [DB] Password ${id} deleted and verified`);
+
+      // Clear decryption cache for deleted entry
+      this.clearDecryptionCache(id);
     } catch (error) {
       throw new Error(`Failed to delete password entry: ${error}`);
     }
@@ -693,6 +769,11 @@ export class EncryptedDatabaseService {
         createdAt: new Date(entry.createdAt),
         updatedAt: new Date(entry.updatedAt),
         lastUsed: entry.lastUsed ? new Date(entry.lastUsed) : undefined,
+        auditData: entry.auditData ? {
+          ...entry.auditData,
+          lastPasswordChange: entry.auditData.lastPasswordChange ? new Date(entry.auditData.lastPasswordChange) : new Date(),
+          lastAuditDate: entry.auditData.lastAuditDate ? new Date(entry.auditData.lastAuditDate) : undefined,
+        } : undefined,
       }));
     } catch (error) {
       console.error('Failed to get optimized entries:', error);

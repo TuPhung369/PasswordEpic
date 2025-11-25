@@ -215,13 +215,13 @@ class AutofillAuthActivity : FragmentActivity() {
         container.addView(input)
         builder.setView(container)
         
-        // Cancel button
+        // Cancel button (left side)
         builder.setNegativeButton("Cancel") { dialog, _ ->
             dialog.dismiss()
             setResultAndFinish(RESULT_CANCELED)
         }
         
-        // Unlock button
+        // Unlock button (right side)
         builder.setPositiveButton("Unlock") { _, _ ->
             val pin = input.text.toString().trim()
             if (pin.isEmpty()) {
@@ -237,7 +237,18 @@ class AutofillAuthActivity : FragmentActivity() {
             setResultAndFinish(RESULT_CANCELED)
         }
         
-        builder.show()
+        val dialog = builder.create()
+        dialog.show()
+        
+        // Swap button positions: Cancel left, Unlock right
+        val negativeButton = dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)
+        val positiveButton = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+        val parent = negativeButton.parent as? android.widget.LinearLayout
+        parent?.let {
+            it.removeAllViews()
+            it.addView(negativeButton)
+            it.addView(positiveButton)
+        }
     }
     
     private fun showMasterPasswordAndPinPrompt() {
@@ -295,13 +306,13 @@ class AutofillAuthActivity : FragmentActivity() {
         
         builder.setView(container)
         
-        // Cancel button
+        // Cancel button (left side)
         builder.setNegativeButton("Cancel") { dialog, _ ->
             dialog.dismiss()
             setResultAndFinish(RESULT_CANCELED)
         }
         
-        // Verify button
+        // Unlock button (right side)
         builder.setPositiveButton("Unlock") { _, _ ->
             val masterPassword = masterPasswordInput.text.toString().trim()
             val pin = pinInput.text.toString().trim()
@@ -327,6 +338,16 @@ class AutofillAuthActivity : FragmentActivity() {
         
         val dialog = builder.create()
         dialog.show()
+        
+        // Swap button positions: Cancel left, Unlock right
+        val negativeButton = dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)
+        val positiveButton = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+        val parent = negativeButton.parent as? android.widget.LinearLayout
+        parent?.let {
+            it.removeAllViews()
+            it.addView(negativeButton)
+            it.addView(positiveButton)
+        }
         
         // Auto-focus on master password input
         masterPasswordInput.requestFocus()

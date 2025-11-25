@@ -33,6 +33,26 @@ const STORAGE_KEYS = {
   ENCRYPTED_PASSWORDS: 'optimized_passwords_v2',
   BIOMETRIC_ENABLED: 'biometric_enabled',
   LAST_BACKUP: 'last_backup',
+  MASTER_PASSWORD_SET_CACHE: 'master_password_set_cache',
+  MASTER_PASSWORD_SET_CACHE_TIMESTAMP: 'master_password_set_cache_timestamp',
+};
+
+// Cache TTL: 1 minute - balance between performance and freshness
+const MASTER_PASSWORD_CACHE_TTL = 60 * 1000;
+
+// 🔥 Helper: Clear cache when master password changes
+const invalidateMasterPasswordCache = async (): Promise<void> => {
+  try {
+    await AsyncStorage.multiRemove([
+      STORAGE_KEYS.MASTER_PASSWORD_SET_CACHE,
+      STORAGE_KEYS.MASTER_PASSWORD_SET_CACHE_TIMESTAMP,
+    ]);
+    console.log(
+      '🧹 [invalidateMasterPasswordCache] Cache cleared - next check will recompute',
+    );
+  } catch (error) {
+    console.error('Error clearing master password cache:', error);
+  }
 };
 
 // Master password management
@@ -98,6 +118,9 @@ export const storeMasterPassword = async (
     } else {
       await storeBiometricStatus(false);
     }
+
+    // 🔥 Invalidate cache - master password state changed
+    await invalidateMasterPasswordCache();
 
     return { success: true };
   } catch (error: any) {
@@ -452,10 +475,37 @@ export const clearAllStoredData = async (): Promise<{
 // Check if master password is set
 export const isMasterPasswordSet = async (): Promise<boolean> => {
   try {
+    // 🔥 CHECK CACHE FIRST - Avoid redundant Firestore calls
+    const cacheTimestamp = await AsyncStorage.getItem(
+      STORAGE_KEYS.MASTER_PASSWORD_SET_CACHE_TIMESTAMP,
+    );
+    const cachedValue = await AsyncStorage.getItem(
+      STORAGE_KEYS.MASTER_PASSWORD_SET_CACHE,
+    );
+
+    if (cacheTimestamp && cachedValue) {
+      const timestamp = parseInt(cacheTimestamp, 10);
+      const now = Date.now();
+
+      // If cache is still valid, return it immediately
+      if (now - timestamp < MASTER_PASSWORD_CACHE_TTL) {
+        console.log(
+          '✅ [isMasterPasswordSet] Returning cached result (age: ' +
+            (now - timestamp) +
+            'ms)',
+        );
+        return cachedValue === 'true';
+      }
+    }
+
+    // Cache expired or doesn't exist - recompute
+    console.log('🔍 [isMasterPasswordSet] Cache miss/expired - checking sources');
+    let result = false;
+
     // First check Firebase if user is authenticated
     const { getCurrentUser, getFirebaseFirestore } = await import('./firebase');
     const currentUser = getCurrentUser();
-    
+
     if (currentUser?.uid) {
       try {
         const { doc, getDoc } = await import('firebase/firestore');
@@ -463,12 +513,12 @@ export const isMasterPasswordSet = async (): Promise<boolean> => {
         if (firestore) {
           const userDocRef = doc(firestore, 'users', currentUser.uid);
           const userDoc = await getDoc(userDocRef);
-          
+
           if (userDoc.exists()) {
             const data = userDoc.data();
             // Check if encrypted master password exists in Firebase
             if (data?.encryptedMasterPassword) {
-              return true;
+              result = true;
             }
           }
         }
@@ -477,21 +527,41 @@ export const isMasterPasswordSet = async (): Promise<boolean> => {
         // Fall through to local storage check
       }
     }
-    
+
     // Fallback: check local storage for new PIN-based setup
-    const { STATIC_MP_KEYS } = await import('./staticMasterPasswordService');
-    const pinSetupComplete = await AsyncStorage.getItem(
-      STATIC_MP_KEYS.PIN_SETUP_COMPLETE,
-    );
-    if (pinSetupComplete === 'true') {
-      return true;
+    if (!result) {
+      const { STATIC_MP_KEYS } = await import('./staticMasterPasswordService');
+      const pinSetupComplete = await AsyncStorage.getItem(
+        STATIC_MP_KEYS.PIN_SETUP_COMPLETE,
+      );
+      if (pinSetupComplete === 'true') {
+        result = true;
+      }
     }
 
     // Legacy: check old password hash
-    const passwordHash = await AsyncStorage.getItem(
-      STORAGE_KEYS.MASTER_PASSWORD_HASH,
+    if (!result) {
+      const passwordHash = await AsyncStorage.getItem(
+        STORAGE_KEYS.MASTER_PASSWORD_HASH,
+      );
+      result = passwordHash !== null;
+    }
+
+    // 🔥 SAVE TO CACHE
+    console.log(
+      '💾 [isMasterPasswordSet] Caching result:',
+      result,
+      '(TTL: ' + MASTER_PASSWORD_CACHE_TTL + 'ms)',
     );
-    return passwordHash !== null;
+    await AsyncStorage.multiSet([
+      [STORAGE_KEYS.MASTER_PASSWORD_SET_CACHE, result ? 'true' : 'false'],
+      [
+        STORAGE_KEYS.MASTER_PASSWORD_SET_CACHE_TIMESTAMP,
+        Date.now().toString(),
+      ],
+    ]);
+
+    return result;
   } catch (error) {
     console.error('Failed to check master password status:', error);
     return false;
@@ -689,4 +759,4 @@ export class SecureStorageService {
 export const secureStorageService = SecureStorageService.getInstance();
 
 // Storage keys export for external use
-export { STORAGE_KEYS };
+export { STORAGE_KEYS, invalidateMasterPasswordCache };

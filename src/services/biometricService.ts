@@ -23,6 +23,28 @@ export class BiometricService {
   private rnBiometricsWithFallback: ReactNativeBiometrics;
   private readonly BIOMETRIC_KEY_ALIAS = 'passwordepic_biometric_key';
 
+  // Cache for biometric capability check (5 second TTL)
+  private capabilityCache: {
+    result: BiometricCapability | null;
+    timestamp: number;
+  } = {
+    result: null,
+    timestamp: 0,
+  };
+
+  // Cache for biometric setup status (30 second TTL)
+  private setupStatusCache: {
+    result: boolean | null;
+    timestamp: number;
+    pending: Promise<boolean> | null; // Prevent simultaneous calls
+  } = {
+    result: null,
+    timestamp: 0,
+    pending: null,
+  };
+
+  private readonly CACHE_TTL = 30000; // 30 seconds (increased from 5 to survive navigation)
+
   private constructor() {
     this.rnBiometrics = new ReactNativeBiometrics({
       allowDeviceCredentials: false,
@@ -60,26 +82,55 @@ export class BiometricService {
 
   /**
    * Check if biometric authentication is available on the device
+   * Results are cached for 5 seconds to prevent excessive calls
    */
   public async checkBiometricCapability(): Promise<BiometricCapability> {
     try {
-      console.log('🔐 BiometricService: checkBiometricCapability called');
+      // Check cache first
+      const now = Date.now();
+      if (
+        this.capabilityCache.result &&
+        now - this.capabilityCache.timestamp < this.CACHE_TTL
+      ) {
+        return this.capabilityCache.result;
+      }
+
+      if (__DEV__) {
+        console.log('🔐 BiometricService: checkBiometricCapability called');
+      }
+
       const result = await this.rnBiometrics.isSensorAvailable();
       console.log('🔐 BiometricService: isSensorAvailable result:', result);
 
       const { biometryType } = result;
 
-      return {
+      const capability: BiometricCapability = {
         available: biometryType !== null,
         biometryType: biometryType as keyof typeof BiometryTypes | null,
       };
+
+      // Cache the result
+      this.capabilityCache = {
+        result: capability,
+        timestamp: now,
+      };
+
+      return capability;
     } catch (error) {
       console.error('Error checking biometric capability:', error);
-      return {
+      const errorResult: BiometricCapability = {
         available: false,
         biometryType: null,
         error: 'Failed to check biometric capability',
       };
+
+      // Cache error result to prevent repeated failures
+      this.capabilityCache = {
+        result: errorResult,
+        timestamp: Date.now(),
+      };
+
+      return errorResult;
     }
   }
 
@@ -185,6 +236,9 @@ export class BiometricService {
           console.log(
             `🔐 [setupBiometricAuth] Verification after store: ${verification}`,
           );
+
+          // Clear cache to force re-check with new status
+          this.clearCache();
         } catch (storageError) {
           console.error(
             '❌ [setupBiometricAuth] Failed to store biometric status:',
@@ -295,6 +349,19 @@ export class BiometricService {
             console.log(
               '✅ [BiometricService] Authentication succeeded (native module)',
             );
+
+            // ===== FIX: Cache biometric setup status after successful auth =====
+            const now = Date.now();
+            this.setupStatusCache = {
+              result: true, // If we successfully authenticated, biometric is set up
+              timestamp: now,
+              pending: null,
+            };
+            console.log(
+              '✅ [BiometricService] Biometric setup status cached after successful auth',
+            );
+            // ===== END FIX =====
+
             return {
               success: true,
               signature: 'auth_signature_' + Date.now(),
@@ -356,10 +423,10 @@ export class BiometricService {
           error: authResult.error || 'Authentication failed.',
         };
       } catch (biometricError: any) {
-        console.error(
-          '🔐 Biometric authentication error:',
-          biometricError.message,
-        );
+        // console.error(
+        //   '🔐 Biometric authentication error:',
+        //   biometricError.message,
+        // );
 
         // Check if FragmentActivity is null (Android-specific timing issue)
         if (
@@ -416,10 +483,63 @@ export class BiometricService {
 
   /**
    * Check if biometric authentication is set up
+   * Results are cached for 5 seconds to prevent excessive calls
    */
   public async isBiometricSetup(): Promise<boolean> {
     try {
-      console.log('🔐 BiometricService: isBiometricSetup called');
+      // Check cache first
+      const now = Date.now();
+      if (
+        this.setupStatusCache.result !== null &&
+        now - this.setupStatusCache.timestamp < this.CACHE_TTL
+      ) {
+        return this.setupStatusCache.result;
+      }
+
+      // ===== FIX: Debounce simultaneous calls =====
+      if (this.setupStatusCache.pending) {
+        return this.setupStatusCache.pending;
+      }
+      // ===== END FIX =====
+
+      if (__DEV__) {
+        const stack = new Error().stack?.split('\n')[2] || 'unknown';
+        console.log(
+          '🔐 BiometricService: isBiometricSetup called from:',
+          stack.trim(),
+        );
+        console.log('🔐 BiometricService: Cache miss - fetching from storage');
+      }
+
+      // ===== FIX: Create pending promise to prevent simultaneous calls =====
+      const fetchPromise = this._fetchBiometricSetupStatus();
+      this.setupStatusCache.pending = fetchPromise;
+
+      try {
+        const result = await fetchPromise;
+        return result;
+      } finally {
+        this.setupStatusCache.pending = null;
+      }
+    } catch (error) {
+      console.error('❌ Error checking biometric setup:', error);
+      // Cache the error result
+      this.setupStatusCache = {
+        result: false,
+        timestamp: Date.now(),
+        pending: null,
+      };
+      return false;
+    }
+  }
+
+  /**
+   * Internal method to fetch biometric setup status from storage
+   * Separated for debouncing purposes
+   */
+  private async _fetchBiometricSetupStatus(): Promise<boolean> {
+    try {
+      const now = Date.now();
       const status =
         await SecureStorageService.getInstance().getBiometricStatus();
       console.log('🔐 BiometricService: Storage status:', status);
@@ -428,6 +548,12 @@ export class BiometricService {
         console.log(
           '🔐 BiometricService: Biometric disabled in storage, returning false',
         );
+        // Cache the result
+        this.setupStatusCache = {
+          result: false,
+          timestamp: now,
+          pending: null,
+        };
         return false;
       }
 
@@ -442,20 +568,29 @@ export class BiometricService {
           '✅ biometricKeysExist() completed without triggering prompt',
         );
 
+        const finalResult = keysExist || status;
+
         if (keysExist) {
           // Real device with actual keys
           console.log(
             '🔐 BiometricService: Real device with keys, returning true',
           );
-          return true;
         } else {
           // Emulator or no keys - use storage status for emulator mode
           console.log(
             '🔐 BiometricService: Emulator mode, returning storage status:',
             status,
           );
-          return status;
         }
+
+        // Cache the result
+        this.setupStatusCache = {
+          result: finalResult,
+          timestamp: now,
+          pending: null,
+        };
+
+        return finalResult;
       } catch (keyCheckError) {
         // For emulator or when key check fails, rely on storage status only
         console.log(
@@ -466,10 +601,24 @@ export class BiometricService {
           '🔐 BiometricService: Key check error details:',
           keyCheckError,
         );
+
+        // Cache the result
+        this.setupStatusCache = {
+          result: status,
+          timestamp: now,
+          pending: null,
+        };
+
         return status;
       }
     } catch (error) {
       console.error('❌ Error checking biometric setup:', error);
+      // Cache the error result
+      this.setupStatusCache = {
+        result: false,
+        timestamp: Date.now(),
+        pending: null,
+      };
       return false;
     }
   }
@@ -485,11 +634,31 @@ export class BiometricService {
       // Update storage
       await SecureStorageService.getInstance().storeBiometricStatus(false);
 
+      // Clear cache to force re-check
+      this.clearCache();
+
       return true;
     } catch (error) {
       console.error('Error disabling biometric auth:', error);
       return false;
     }
+  }
+
+  /**
+   * Clear cached biometric status and capability
+   * Should be called after enabling/disabling biometric or after significant auth changes
+   */
+  public clearCache(): void {
+    console.log('🧹 BiometricService: Clearing cache');
+    this.capabilityCache = {
+      result: null,
+      timestamp: 0,
+    };
+    this.setupStatusCache = {
+      result: null,
+      timestamp: 0,
+      pending: null,
+    };
   }
 
   /**

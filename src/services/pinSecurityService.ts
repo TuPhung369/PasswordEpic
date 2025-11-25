@@ -97,7 +97,7 @@ class PinSecurityService {
       console.log('🔐 [PinSecurity] Decrypting Master Password with PIN...');
 
       // Validate PIN
-      if (!userPin || userPin.length < 4 || userPin.length > 6) {
+      if (!userPin || userPin.length < 6 || userPin.length > 8) {
         this.recordFailedPinAttempt();
         return { success: false, error: 'Invalid PIN format' };
       }

@@ -74,26 +74,20 @@ export const usePasswordAuthentication = (): UsePasswordAuthenticationReturn => 
   const handleBiometricSuccess = useCallback(() => {
     console.log('✅ [usePasswordAuthentication] Biometric success, proceeding to PIN');
     setShowBiometricPrompt(false);
-    setTimeout(() => {
-      setShowPinPrompt(true);
-    }, 500);
+    setShowPinPrompt(true);
   }, []);
   
   const handleBiometricError = useCallback((error: string) => {
     console.log('❌ [usePasswordAuthentication] Biometric error:', error);
     setShowBiometricPrompt(false);
     setError(error);
-    setTimeout(() => {
-      setShowFallbackModal(true);
-    }, 500);
+    setShowFallbackModal(true);
   }, []);
   
   const handleBiometricClose = useCallback(() => {
     console.log('👤 [usePasswordAuthentication] Biometric closed, showing fallback');
     setShowBiometricPrompt(false);
-    setTimeout(() => {
-      setShowFallbackModal(true);
-    }, 500);
+    setShowFallbackModal(true);
   }, []);
   
   const handleFallbackSuccess = useCallback((password: string) => {

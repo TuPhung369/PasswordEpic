@@ -270,7 +270,6 @@ export const downloadFromGoogleDrive = async (
   destinationPath: string,
 ): Promise<{ success: boolean; error?: string }> => {
   try {
-    console.log('🔵 [GoogleDrive] Downloading file:', fileId);
 
     let accessToken = await getAccessToken();
 
@@ -324,8 +323,6 @@ export const downloadFromGoogleDrive = async (
     try {
       // First try to read as text (most backups are JSON/text)
       fileContent = await response.text();
-      console.log('🔵 [GoogleDrive] Downloaded content as text, length:', fileContent.length);
-      console.log('🔵 [GoogleDrive] First 100 chars:', fileContent.substring(0, 100));
     } catch (textError) {
       console.warn('⚠️ [GoogleDrive] Failed to read as text, trying as blob');
       const blob = await response.blob();

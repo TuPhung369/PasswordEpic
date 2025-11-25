@@ -41,12 +41,65 @@ export const LoginScreen: React.FC = () => {
   const [buttonPressed, setButtonPressed] = useState(false);
   const [isAutoLoggingIn, setIsAutoLoggingIn] = useState(false);
   const [cachedUsername, setCachedUsername] = useState<string | null>(null);
-  const googleSignInAvailable = isGoogleSignInModuleAvailable();
+  const [googleSignInAvailable, setGoogleSignInAvailable] = useState(
+    isGoogleSignInModuleAvailable(),
+  );
 
   // Use ref to track loading state immediately
   const isLoadingRef = React.useRef(false);
   const buttonPressedRef = React.useRef(false);
   const autoLoginAttemptedRef = React.useRef(false);
+
+  // Reset button state on focus (critical for hot reload fix)
+  // useFocusEffect runs even after hot reload when component is in focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log(
+        '✅ LoginScreen focused - resetting button state for hot reload',
+      );
+
+      // CRITICAL: Reset all button state immediately on focus
+      isLoadingRef.current = false;
+      buttonPressedRef.current = false;
+      setIsLoading(false);
+      setButtonPressed(false);
+      setIsAutoLoggingIn(false);
+
+      // Re-check Google Sign-In availability on focus
+      const available = isGoogleSignInModuleAvailable();
+      setGoogleSignInAvailable(available);
+      console.log('🔄 GoogleSignInAvailable on focus:', available);
+
+      // CRITICAL: Reset Google Sign-In initialization on focus
+      // This handles hot reload case where native module state becomes stale
+      (async () => {
+        try {
+          const { __resetInitializationState, initializeGoogleSignIn } =
+            await import('../../services/googleAuthNative');
+          __resetInitializationState();
+          await initializeGoogleSignIn();
+          console.log('🔄 Google Sign-In re-initialized on focus');
+        } catch (error) {
+          console.log('⚠️ Failed to reset Google Sign-In on focus:', error);
+        }
+      })();
+
+      return () => {
+        // Cleanup on unfocus if needed
+      };
+    }, []),
+  );
+
+  // Log button state changes for debugging
+  useEffect(() => {
+    const isDisabled = isLoading || buttonPressed || !googleSignInAvailable;
+    console.log('📋 [LoginScreen] Button state updated:', {
+      isLoading,
+      buttonPressed,
+      googleSignInAvailable,
+      isDisabled,
+    });
+  }, [isLoading, buttonPressed, googleSignInAvailable]);
 
   // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -133,15 +186,18 @@ export const LoginScreen: React.FC = () => {
             console.log(
               '🔐 [LoginScreen] Existing credentials found - showing options',
             );
-            
+
             // CRITICAL: Check if already on CredentialOptions to prevent navigation loop
-            const currentRoute = navigation.getState()?.routes[navigation.getState()?.index || 0];
+            const currentRoute =
+              navigation.getState()?.routes[navigation.getState()?.index || 0];
             if (currentRoute?.name === 'CredentialOptions') {
-              console.log('🔍 [LoginScreen] Already on CredentialOptions - skipping navigation');
+              console.log(
+                '🔍 [LoginScreen] Already on CredentialOptions - skipping navigation',
+              );
               setIsAutoLoggingIn(false);
               return;
             }
-            
+
             // Set isInSetupFlow=true to keep Auth stack visible
             // and reset shouldNavigateToUnlock to prevent auto-navigation to unlock
             console.log(
@@ -149,6 +205,7 @@ export const LoginScreen: React.FC = () => {
             );
             dispatch(setIsInSetupFlow(true)); // Keep Auth stack visible
             dispatch(setShouldNavigateToUnlock(false)); // Don't auto-navigate to unlock
+            setIsAutoLoggingIn(false);
             navigation.navigate('CredentialOptions');
           } else {
             console.log(
@@ -217,6 +274,14 @@ export const LoginScreen: React.FC = () => {
   }, []);
 
   const handleGoogleSignIn = React.useCallback(async () => {
+    console.log('📲 [LoginScreen] handleGoogleSignIn called - start', {
+      isLoading,
+      isLoadingRef: isLoadingRef.current,
+      buttonPressed,
+      buttonPressedRef: buttonPressedRef.current,
+      googleSignInAvailable,
+    });
+
     // Triple protection: check state, ref, and button pressed
     if (
       isLoading ||
@@ -240,6 +305,7 @@ export const LoginScreen: React.FC = () => {
 
     try {
       if (!googleSignInAvailable) {
+        console.log('❌ Google Sign-In not available, showing error dialog');
         setConfirmDialog({
           visible: true,
           title: 'Google Sign-In Unavailable',
@@ -256,7 +322,24 @@ export const LoginScreen: React.FC = () => {
         return;
       }
 
-      if (!isGoogleSignInReady()) {
+      // CRITICAL: Always attempt reinitialize on button click to handle hot reload
+      // Hot reload doesn't unmount the component, so we need to reset initialization state
+      try {
+        console.log('🔄 Attempting to reinitialize Google Sign-In...');
+        const googleAuthModule = await import(
+          '../../services/googleAuthNative'
+        );
+        googleAuthModule.__resetInitializationState();
+        const initialized = await googleAuthModule.initializeGoogleSignIn();
+        console.log('✅ Google Sign-In reinitialized:', initialized);
+      } catch (error) {
+        console.log('⚠️ Failed to reinitialize Google Sign-In:', error);
+      }
+
+      // Now check if it's ready
+      let readyCheck = isGoogleSignInReady();
+      if (!readyCheck) {
+        console.log('❌ Google Sign-In still not ready after reinit attempt');
         setConfirmDialog({
           visible: true,
           title: 'Google Sign-In Not Ready',
@@ -457,11 +540,14 @@ export const LoginScreen: React.FC = () => {
             (isLoading || buttonPressed || !googleSignInAvailable) &&
               styles.disabledButton,
           ]}
-          onPress={
-            isLoading || buttonPressed || !googleSignInAvailable
-              ? () => {}
-              : handleGoogleSignIn
-          }
+          onPress={() => {
+            console.log('🔘 [LoginScreen] Button onPress fired', {
+              isLoading,
+              buttonPressed,
+              googleSignInAvailable,
+            });
+            handleGoogleSignIn();
+          }}
           disabled={isLoading || buttonPressed || !googleSignInAvailable}
           activeOpacity={
             isLoading || buttonPressed || !googleSignInAvailable ? 1 : 0.7

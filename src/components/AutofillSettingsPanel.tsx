@@ -113,6 +113,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
               }
             }
             isCheckingAutofillRef.current = false;
+            setBiometricVerifying(false);
           }
 
           if (isCheckingAccessibilityRef.current) {
@@ -135,10 +136,13 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
           }
         } catch (error) {
           console.error('Error checking settings status on app return:', error);
+          setBiometricVerifying(false);
           setAccessibilityLoading(false);
         } finally {
           isCheckingAutofillRef.current = false;
           isCheckingAccessibilityRef.current = false;
+          setBiometricVerifying(false);
+          setAccessibilityLoading(false);
         }
       }
     },
@@ -337,6 +341,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                     "Failed to open autofill settings. Please manually enable it following the instructions above.",
                   );
                   isCheckingAutofillRef.current = false;
+                  setBiometricVerifying(false);
                 }
               } catch (bridgeError) {
                 console.error(
@@ -348,6 +353,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                   'Failed to open autofill settings. Please manually enable it following the instructions above.',
                 );
                 isCheckingAutofillRef.current = false;
+                setBiometricVerifying(false);
               }
             },
           },
@@ -356,6 +362,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
             onPress: () => {
               console.log('❌ User cancelled autofill setup');
               isCheckingAutofillRef.current = false;
+              setBiometricVerifying(false);
             },
             style: 'cancel',
           },
@@ -364,8 +371,6 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
       );
     } catch (error) {
       console.error('Error in handleEnableAutofillFlow:', error);
-      throw error;
-    } finally {
       setBiometricVerifying(false);
     }
   };
@@ -815,7 +820,15 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                     '5️⃣ Toggle "Use PasswordEpic" ON\n\n' +
                     '✓ We\'ll auto-detect when you return',
                     [
-                      { text: 'Cancel', style: 'cancel', onPress: () => {} },
+                      {
+                        text: 'Cancel',
+                        style: 'cancel',
+                        onPress: () => {
+                          console.log('❌ User cancelled accessibility setup');
+                          isCheckingAccessibilityRef.current = false;
+                          setAccessibilityLoading(false);
+                        },
+                      },
                       {
                         text: 'Open Settings',
                         onPress: async () => {

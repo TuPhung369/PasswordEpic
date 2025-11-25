@@ -9,6 +9,7 @@ import {
   ScrollView,
   Alert,
   BackHandler,
+  InteractionManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -83,7 +84,9 @@ type MasterPasswordScreenNavigationProp = NativeStackNavigationProp<
   'MasterPassword'
 >;
 
-export const MasterPasswordScreen: React.FC = () => {
+export const MasterPasswordScreen: React.FC<{
+  onUnlock?: () => void;
+}> = ({ onUnlock }) => {
   const { theme } = useTheme();
   const dispatch = useAppDispatch();
   const shouldAutoTriggerBiometric = useAppSelector(
@@ -136,6 +139,28 @@ export const MasterPasswordScreen: React.FC = () => {
   // Auto-trigger biometric on mount when in unlock mode
   const [waitingForBiometric, setWaitingForBiometric] = useState(false);
   const [autoTriggeredBiometric, setAutoTriggeredBiometric] = useState(false);
+
+  // ===== FREEZE FIX: Defer heavy form rendering =====
+  // In unlock mode, start with form NOT ready (will be ready after biometric completes)
+  // In setup mode, start with form ready immediately
+  const [isFormReady, setIsFormReady] = useState(!isUnlockMode);
+
+  // Defer form rendering until after biometric completes and interactions finish
+  useEffect(() => {
+    // Only defer if:
+    // 1. In unlock mode (isUnlockMode = true)
+    // 2. Not waiting for biometric (user cancelled/failed)
+    // 3. Form not ready yet
+    if (isUnlockMode && !waitingForBiometric && !isFormReady) {
+      console.log('🎨 [MasterPassword] Biometric completed, preparing form...');
+      // Use InteractionManager to defer rendering until animations complete
+      const handle = InteractionManager.runAfterInteractions(() => {
+        console.log('🎨 [MasterPassword] Form ready to render');
+        setIsFormReady(true);
+      });
+      return () => handle.cancel();
+    }
+  }, [isUnlockMode, waitingForBiometric, isFormReady]);
 
   useEffect(() => {
     if (!isUnlockMode) {
@@ -194,26 +219,47 @@ export const MasterPasswordScreen: React.FC = () => {
               if (result.success) {
                 // Biometric successful - unlock without waiting for master password generation
                 // Master password will be generated on-demand when user views/decrypts passwords
-                console.log('✅ [MasterPassword] Biometric authentication succeeded');
-                
+                console.log(
+                  '✅ [MasterPassword] Biometric authentication succeeded',
+                );
+
                 // Mark session as authenticated immediately (non-blocking transition)
                 dispatch(setHasCompletedSessionAuth(true));
                 dispatch(setShouldNavigateToUnlock(false));
                 dispatch(setShouldAutoTriggerBiometric(false));
-                console.log('✅ [MasterPassword] Session marked as authenticated - UI will transition now');
+                console.log(
+                  '✅ [MasterPassword] Session marked as authenticated - UI will transition now',
+                );
+
+                // Call onUnlock callback to update AppNavigator's local state
+                if (onUnlock) {
+                  onUnlock();
+                }
               } else {
                 // Biometric failed/cancelled, show form for manual input
                 console.log(
                   '❌ [MasterPassword] Biometric authentication failed/cancelled',
                 );
+                console.log(
+                  '🎨 [MasterPassword] Setting waitingForBiometric=false to show form...',
+                );
                 dispatch(setShouldAutoTriggerBiometric(false));
                 setWaitingForBiometric(false);
+                console.log(
+                  '🎨 [MasterPassword] Form will render after InteractionManager completes',
+                );
               }
             } catch (error) {
               console.error('Auto biometric authentication error:', error);
+              console.log(
+                '🎨 [MasterPassword] Error - setting waitingForBiometric=false...',
+              );
               dispatch(setShouldAutoTriggerBiometric(false));
               // Show form for manual input
               setWaitingForBiometric(false);
+              console.log(
+                '🎨 [MasterPassword] Form will render after InteractionManager completes',
+              );
             }
           }, 300);
         } else {
@@ -221,8 +267,14 @@ export const MasterPasswordScreen: React.FC = () => {
             '🔍 [MasterPassword] ❌ Biometric sensor not available on device',
           );
           console.log('🔍 [MasterPassword] Showing Master Password + PIN form');
+          console.log(
+            '🎨 [MasterPassword] Setting waitingForBiometric=false...',
+          );
           dispatch(setShouldAutoTriggerBiometric(false));
           setWaitingForBiometric(false);
+          console.log(
+            '🎨 [MasterPassword] Form will render after InteractionManager completes',
+          );
         }
       } catch (error) {
         console.error('❌ [MasterPassword] Auto biometric check error:', error);
@@ -239,6 +291,7 @@ export const MasterPasswordScreen: React.FC = () => {
     shouldAutoTriggerBiometric,
     dispatch,
     navigation,
+    onUnlock,
   ]);
 
   // Track if we just navigated back from Face ID setup
@@ -303,7 +356,7 @@ export const MasterPasswordScreen: React.FC = () => {
     password === confirmPassword && confirmPassword.length > 0;
 
   // PIN validation
-  const isPinValid = pin.length >= 4 && pin.length <= 6 && /^\d+$/.test(pin);
+  const isPinValid = pin.length >= 6 && pin.length <= 8 && /^\d+$/.test(pin);
   const doPinsMatch = pin === confirmPin && confirmPin.length > 0;
   const areBothSetupsValid = isUnlockMode
     ? isPinValid
@@ -554,8 +607,8 @@ export const MasterPasswordScreen: React.FC = () => {
       // Validate old PIN format
       if (
         !oldPin ||
-        oldPin.length < 4 ||
-        oldPin.length > 6 ||
+        oldPin.length < 6 ||
+        oldPin.length > 8 ||
         !/^\d+$/.test(oldPin)
       ) {
         setConfirmDialog({
@@ -683,6 +736,11 @@ export const MasterPasswordScreen: React.FC = () => {
             // Mark session as authenticated - this will trigger AppNavigator to show Main stack
             dispatch(setHasCompletedSessionAuth(true));
             dispatch(setShouldNavigateToUnlock(false)); // Reset unlock flag
+
+            // Call onUnlock callback to update AppNavigator's local state
+            if (onUnlock) {
+              onUnlock();
+            }
 
             // Show success message
             setConfirmDialog({
@@ -851,8 +909,8 @@ export const MasterPasswordScreen: React.FC = () => {
     }, 0);
   };
 
-  // Show loading screen while waiting for biometric in unlock mode
-  if (isUnlockMode && waitingForBiometric) {
+  // Show loading screen while waiting for biometric in unlock mode OR form not ready
+  if (isUnlockMode && (waitingForBiometric || !isFormReady)) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: theme.background }]}
@@ -862,7 +920,9 @@ export const MasterPasswordScreen: React.FC = () => {
             <ActivityIndicator size="large" color={theme.primary} />
           </View>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Authenticating with biometric...
+            {waitingForBiometric
+              ? 'Authenticating with biometric...'
+              : 'Preparing unlock screen...'}
           </Text>
         </View>
       </SafeAreaView>
@@ -1131,35 +1191,6 @@ export const MasterPasswordScreen: React.FC = () => {
                 </View>
               )}
 
-              {/* PIN Input Section */}
-              <View style={styles.dividerContainer}>
-                <View
-                  style={[styles.divider, { backgroundColor: theme.border }]}
-                />
-                <Text
-                  style={[styles.dividerText, { color: theme.textSecondary }]}
-                >
-                  Security PIN
-                </Text>
-                <View
-                  style={[styles.divider, { backgroundColor: theme.border }]}
-                />
-              </View>
-
-              <View style={styles.pinInfoContainer}>
-                <Ionicons
-                  name="information-circle-outline"
-                  size={16}
-                  color={theme.primary}
-                />
-                <Text
-                  style={[styles.pinInfoText, { color: theme.textSecondary }]}
-                >
-                  Set a 6-8 digit PIN for quick daily unlock. This is different
-                  from your master password.
-                </Text>
-              </View>
-
               {/* PIN Input */}
               <View style={styles.inputSection}>
                 <Text style={[styles.inputLabel, { color: theme.text }]}>
@@ -1213,7 +1244,7 @@ export const MasterPasswordScreen: React.FC = () => {
                       ]}
                     >
                       {pin.length} digit{pin.length !== 1 ? 's' : ''} (
-                      {isPinValid ? 'valid' : 'need 4-6'})
+                      {isPinValid ? 'valid' : 'need 6-8'})
                     </Text>
                   </View>
                 )}
@@ -1528,35 +1559,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginLeft: 12,
   },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 24,
-  },
-  divider: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginHorizontal: 12,
-    letterSpacing: 0.5,
-  },
-  pinInfoContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    backgroundColor: 'rgba(33, 150, 243, 0.1)',
-  },
-  pinInfoText: {
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 18,
-    marginLeft: 8,
-  },
+
   pinLengthContainer: {
     flexDirection: 'row',
     alignItems: 'center',

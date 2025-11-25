@@ -21,12 +21,10 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordGenerator } from '../../hooks/usePasswordGenerator';
 import { PasswordStrengthMeter } from '../../components/PasswordStrengthMeter';
-import { GeneratorPresets } from '../../components/GeneratorPresets';
 import {
   PasswordTemplate,
   DEFAULT_TEMPLATES,
 } from '../../components/PasswordTemplates';
-import { GeneratorPreset } from '../../services/passwordGeneratorService';
 import { MainTabParamList } from '../../navigation/MainNavigator';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
 
@@ -43,29 +41,24 @@ export const GeneratorScreen: React.FC = () => {
   const {
     currentPassword: generatedPassword,
     generatePassword: generatePasswordAsync,
-    usePreset: applyPreset,
+    generatePassphrase: generatePassphraseAsync,
+    generatePinPassword: generatePinPasswordAsync,
+    generateBankingPassword: generateBankingPasswordAsync,
+    generateSocialPassword: generateSocialPasswordAsync,
+    generateEmailPassword: generateEmailPasswordAsync,
+    generateBusinessPassword: generateBusinessPasswordAsync,
+    generateGamingPassword: generateGamingPasswordAsync,
+    generateShoppingPassword: generateShoppingPasswordAsync,
+    generateWiFiPassword: generateWiFiPasswordAsync,
     copyToClipboard,
   } = usePasswordGenerator();
 
   const [length, setLength] = useState(generator.defaultLength);
-  const [selectedPreset, setSelectedPreset] = useState<GeneratorPreset | null>(
-    null,
-  );
   const [selectedTemplate, setSelectedTemplate] =
     useState<PasswordTemplate | null>(null);
 
-  const handleSelectPreset = async (preset: GeneratorPreset) => {
-    setSelectedPreset(preset);
-    // Reset selected template when choosing a preset
-    setSelectedTemplate(null);
-    await applyPreset(preset.id);
-  };
-
   const handleSelectTemplate = async (template: PasswordTemplate) => {
     setSelectedTemplate(template);
-    // Reset selected preset when choosing a template
-    setSelectedPreset(null);
-    // Apply template settings to generator
     dispatch(
       updateGeneratorSettings({
         defaultLength: template.settings.length,
@@ -80,17 +73,56 @@ export const GeneratorScreen: React.FC = () => {
 
   const handleGeneratePassword = async () => {
     try {
-      await generatePasswordAsync({
-        length,
-        includeUppercase: generator.includeUppercase,
-        includeLowercase: generator.includeLowercase,
-        includeNumbers: generator.includeNumbers,
-        includeSymbols: generator.includeSymbols,
-        excludeSimilar: true,
-        excludeAmbiguous: false,
-      });
-      // Reset selections when manually generating password
-      setSelectedPreset(null);
+      switch (selectedTemplate?.id) {
+        case 'banking':
+          await generateBankingPasswordAsync(length);
+          break;
+        case 'social':
+          await generateSocialPasswordAsync(length);
+          break;
+        case 'email':
+          await generateEmailPasswordAsync(length);
+          break;
+        case 'work':
+          await generateBusinessPasswordAsync(length);
+          break;
+        case 'gaming':
+          await generateGamingPasswordAsync(length);
+          break;
+        case 'shopping':
+          await generateShoppingPasswordAsync(length);
+          break;
+        case 'wifi':
+          await generateWiFiPasswordAsync(length);
+          break;
+        case 'memorable':
+          await generatePasswordAsync({
+            length,
+            includeUppercase: generator.includeUppercase,
+            includeLowercase: generator.includeLowercase,
+            includeNumbers: generator.includeNumbers,
+            includeSymbols: generator.includeSymbols,
+            excludeSimilar: true,
+            excludeAmbiguous: false,
+          }, selectedTemplate?.id);
+          break;
+        case 'passphrase':
+          await generatePassphraseAsync(length);
+          break;
+        case 'pin':
+          await generatePinPasswordAsync(length);
+          break;
+        default:
+          await generatePasswordAsync({
+            length,
+            includeUppercase: generator.includeUppercase,
+            includeLowercase: generator.includeLowercase,
+            includeNumbers: generator.includeNumbers,
+            includeSymbols: generator.includeSymbols,
+            excludeSimilar: true,
+            excludeAmbiguous: false,
+          });
+      }
       setSelectedTemplate(null);
     } catch (error) {
       console.error('Error generating password:', error);
@@ -116,8 +148,6 @@ export const GeneratorScreen: React.FC = () => {
   const updateLength = (newLength: number) => {
     setLength(newLength);
     dispatch(updateGeneratorSettings({ defaultLength: newLength }));
-    // Reset selections when manually changing settings
-    setSelectedPreset(null);
     setSelectedTemplate(null);
   };
 
@@ -141,7 +171,6 @@ export const GeneratorScreen: React.FC = () => {
 
   const toggleUppercase = () => {
     if (!canToggleOff('includeUppercase')) {
-      // TODO: Show toast/alert "At least one option must be enabled"
       return;
     }
     dispatch(
@@ -149,8 +178,6 @@ export const GeneratorScreen: React.FC = () => {
         includeUppercase: !generator.includeUppercase,
       }),
     );
-    // Reset selections when manually changing settings
-    setSelectedPreset(null);
     setSelectedTemplate(null);
   };
 
@@ -163,8 +190,6 @@ export const GeneratorScreen: React.FC = () => {
         includeLowercase: !generator.includeLowercase,
       }),
     );
-    // Reset selections when manually changing settings
-    setSelectedPreset(null);
     setSelectedTemplate(null);
   };
 
@@ -175,8 +200,6 @@ export const GeneratorScreen: React.FC = () => {
     dispatch(
       updateGeneratorSettings({ includeNumbers: !generator.includeNumbers }),
     );
-    // Reset selections when manually changing settings
-    setSelectedPreset(null);
     setSelectedTemplate(null);
   };
 
@@ -187,8 +210,6 @@ export const GeneratorScreen: React.FC = () => {
     dispatch(
       updateGeneratorSettings({ includeSymbols: !generator.includeSymbols }),
     );
-    // Reset selections when manually changing settings
-    setSelectedPreset(null);
     setSelectedTemplate(null);
   };
 
@@ -251,7 +272,7 @@ export const GeneratorScreen: React.FC = () => {
                 <Text
                   style={[styles.passwordLabel, { color: theme.textSecondary }]}
                 >
-                  Generated Password
+                  {`Generated ${selectedTemplate ? selectedTemplate.name : 'Custom'} Template`}
                 </Text>
               </View>
               <View style={styles.passwordDisplay}>
@@ -318,12 +339,6 @@ export const GeneratorScreen: React.FC = () => {
                 </TouchableOpacity>
               )}
             </View>
-
-            <GeneratorPresets
-              onSelectPreset={handleSelectPreset}
-              currentPreset={selectedPreset}
-              grid={true}
-            />
 
             {/* Templates Section - Improved Layout */}
             <View style={styles.templatesSection}>

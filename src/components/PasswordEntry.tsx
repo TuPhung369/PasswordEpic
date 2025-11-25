@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,12 +18,10 @@ import {
 import { BiometricPrompt } from './BiometricPrompt';
 import { BiometricFallbackPrompt } from './BiometricFallbackPrompt';
 import { PinPromptModal } from './PinPromptModal';
-import { useBiometric } from '../hooks/useBiometric';
 import Toast from './Toast';
 import { useAppDispatch } from '../hooks/redux';
 import { decryptPasswordField } from '../store/slices/passwordsSlice';
-import { AuditHistoryService } from '../services/auditHistoryService';
-import { AuditHistoryEntry } from '../types/password';
+import { perfLogger } from '../utils/performanceLogger';
 
 interface PasswordEntryComponentProps {
   password: PasswordEntry;
@@ -38,6 +36,7 @@ interface PasswordEntryComponentProps {
   selected?: boolean;
   onSelect?: (selected: boolean) => void;
   showPassword?: boolean;
+  isBiometricAvailable?: boolean;
 }
 
 // const { width } = Dimensions.get('window'); // Not used yet
@@ -146,10 +145,11 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   selected = false,
   onSelect,
   showPassword = false,
+  isBiometricAvailable = false,
 }) => {
   const { theme } = useTheme();
   const dispatch = useAppDispatch();
-  const { isAvailable: isBiometricAvailable } = useBiometric();
+  const renderCountRef = useRef(0);
   const [isPasswordVisible, setIsPasswordVisible] = useState(showPassword);
   const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
   const [showFallbackModal, setShowFallbackModal] = useState(false);
@@ -158,7 +158,6 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   const [decryptedPassword, setDecryptedPassword] = useState<string | null>(
     null,
   );
-  const [latestAudit, setLatestAudit] = useState<AuditHistoryEntry | null>(null);
   const [toast, setToast] = useState({
     visible: false,
     message: '',
@@ -167,19 +166,29 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
 
   const styles = createStyles(theme);
 
+  // Performance tracking - detect render loops
   useEffect(() => {
-    const fetchLatestAudit = async () => {
-      try {
-        const audit = await AuditHistoryService.getLatestAudit(password.id);
-        setLatestAudit(audit);
-        console.log('✅ [PasswordEntry] Latest audit loaded for:', password.id, 'Score:', audit?.score);
-      } catch (error) {
-        console.error('Error fetching latest audit:', error);
-      }
-    };
+    renderCountRef.current++;
+    perfLogger.logRender(
+      `PasswordEntry-${password.title}`,
+      `#${renderCountRef.current}`,
+    );
+  }, [password.id, password.title]);
 
-    fetchLatestAudit();
-  }, [password.id, password.updatedAt]);
+  const auditLabel = password.auditData?.passwordStrength?.label;
+  const auditColor = password.auditData?.passwordStrength?.color ?? '#999';
+  const securityScore = password.auditData?.securityScore;
+
+  // Reset modal states on mount to fix hot reload state stuck issue
+  useEffect(() => {
+    return () => {
+      console.log('🔄 [PasswordEntry] Cleaning up modal states on unmount');
+      setShowBiometricPrompt(false);
+      setShowFallbackModal(false);
+      setShowPinPrompt(false);
+      setIsDecrypting(false);
+    };
+  }, []);
 
   // Check if password is encrypted (lazy loaded)
 
@@ -269,37 +278,33 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   };
 
   const handleBiometricSuccess = async () => {
+    console.log('✅ [PasswordEntry] handleBiometricSuccess called');
     setShowBiometricPrompt(false);
+    setShowPinPrompt(true);
 
     setToast({
       visible: true,
       message: 'Biometric verified',
       type: 'success',
     });
-
-    setTimeout(() => {
-      setShowPinPrompt(true);
-    }, 500);
   };
 
   const handleBiometricError = (error: string) => {
+    console.log('❌ [PasswordEntry] handleBiometricError called:', error);
     setShowBiometricPrompt(false);
+    setShowFallbackModal(true);
+
     setToast({
       visible: true,
       message: error || 'Authentication failed',
       type: 'error',
     });
-
-    setTimeout(() => {
-      setShowFallbackModal(true);
-    }, 500);
   };
 
   const handleBiometricClose = () => {
+    console.log('🔐 [PasswordEntry] handleBiometricClose called');
     setShowBiometricPrompt(false);
-    setTimeout(() => {
-      setShowFallbackModal(true);
-    }, 500);
+    setShowFallbackModal(true);
   };
 
   const handleFallbackSuccess = async (masterPassword: string) => {
@@ -404,10 +409,6 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
     }
   };
 
-
-
-
-
   const getCategoryData = () => {
     // console.log('🔍 Password category debug:', {
     //   passwordId: password.id,
@@ -439,14 +440,9 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
     };
   };
 
-  const getLastUsedText = () => {
-    console.log(
-      '⏰ [PasswordEntry] getLastUsedText called for:',
-      password.id,
-      'lastUsed:',
-      password.lastUsed,
-    );
-    const dateToUse = password.lastUsed || password.updatedAt || password.createdAt;
+  const lastUsedText = useMemo(() => {
+    const dateToUse =
+      password.lastUsed || password.updatedAt || password.createdAt;
     if (!dateToUse) return 'No date available';
 
     const now = new Date();
@@ -463,7 +459,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
 
     const diffInMonths = Math.floor(diffInDays / 30);
     return `${diffInMonths}mo ago`;
-  };
+  }, [password.lastUsed, password.updatedAt, password.createdAt]);
 
   const handleMainPress = () => {
     onPress?.();
@@ -478,32 +474,35 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
         onPress={handleMainPress}
         activeOpacity={0.7}
       >
-        {/* Selection Checkbox */}
-        {selectable && (
-          <TouchableOpacity
-            style={styles.checkbox}
-            onPress={() => onSelect?.(!selected)}
+        {/* Icon and Checkbox Container */}
+        <View style={styles.iconAndCheckboxContainer}>
+          {/* Category Icon */}
+          <View
+            style={[
+              styles.iconContainer,
+              { backgroundColor: categoryData.color + '20' },
+            ]}
           >
             <Icon
-              name={selected ? 'checkbox' : 'checkbox-outline'}
-              size={24}
-              color={selected ? theme.primary : theme.textSecondary}
+              name={getCategoryIcon(password.category)}
+              size={28}
+              color={categoryData.color}
             />
-          </TouchableOpacity>
-        )}
+          </View>
 
-        {/* Category Icon */}
-        <View
-          style={[
-            styles.iconContainer,
-            { backgroundColor: categoryData.color + '20' },
-          ]}
-        >
-          <Icon
-            name={getCategoryIcon(password.category)}
-            size={28}
-            color={categoryData.color}
-          />
+          {/* Selection Checkbox */}
+          {selectable && (
+            <TouchableOpacity
+              style={styles.checkbox}
+              onPress={() => onSelect?.(!selected)}
+            >
+              <Icon
+                name={selected ? 'checkbox' : 'checkbox-outline'}
+                size={20}
+                color={selected ? theme.primary : theme.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Main Content */}
@@ -653,22 +652,17 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
           {/* Footer Row - Last Used + Audit Score + Action Icons */}
           <View style={styles.footerRow}>
             <View style={styles.footerLeftContent}>
-              <Text style={styles.lastUsedText}>{getLastUsedText()}</Text>
-              {latestAudit && (
+              <Text style={styles.lastUsedText}>{lastUsedText}</Text>
+              {securityScore !== undefined && (
                 <View style={styles.auditScoreContainer}>
                   <Icon
-                    name="checkmark-circle"
+                    name="shield-checkmark"
                     size={14}
-                    color={latestAudit.passwordStrength.color}
+                    color={auditColor}
                     style={styles.auditScoreIcon}
                   />
-                  <Text
-                    style={[
-                      styles.auditScoreText,
-                      { color: latestAudit.passwordStrength.color },
-                    ]}
-                  >
-                    {latestAudit.score}
+                  <Text style={[styles.auditScoreText, { color: auditColor }]}>
+                    {`${securityScore} • ${auditLabel || 'Unknown'}`}
                   </Text>
                 </View>
               )}
@@ -751,9 +745,14 @@ const createStyles = (theme: Theme) =>
       borderWidth: 2,
       borderColor: theme.primary,
     },
-    checkbox: {
+    iconAndCheckboxContainer: {
+      flexDirection: 'column',
+      alignItems: 'center',
       marginRight: 12,
-      alignSelf: 'center',
+    },
+    checkbox: {
+      marginTop: 6,
+      padding: 2,
     },
     iconContainer: {
       width: 40,
@@ -761,7 +760,6 @@ const createStyles = (theme: Theme) =>
       borderRadius: 20,
       justifyContent: 'center',
       alignItems: 'center',
-      marginRight: 12,
     },
     content: {
       flex: 1,
@@ -863,4 +861,16 @@ const createStyles = (theme: Theme) =>
     },
   });
 
-export default PasswordEntryComponent;
+export default memo(PasswordEntryComponent, (prevProps, nextProps) => {
+  // Return true if props are equal (don't re-render)
+  // Return false if props changed (re-render)
+
+  // Critical props that require re-render
+  if (prevProps.password.id !== nextProps.password.id) return false;
+  if (prevProps.selected !== nextProps.selected) return false;
+  if (prevProps.selectable !== nextProps.selectable) return false;
+  if (prevProps.showPassword !== nextProps.showPassword) return false;
+
+  // All other props equal, skip re-render
+  return true;
+});

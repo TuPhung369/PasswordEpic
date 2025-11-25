@@ -63,11 +63,15 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
             if (success) {
               // console.log('🔐 BiometricPrompt: Authentication SUCCESS');
               retryCountRef.current = 0; // Reset retry count on success
-              onSuccessRef.current();
+              setTimeout(() => {
+                onSuccessRef.current();
+              }, 100);
             } else {
               // console.log('🔐 BiometricPrompt: Authentication FAILED');
               retryCountRef.current = 0; // Reset retry count
-              onErrorRef.current('Authentication failed');
+              setTimeout(() => {
+                onErrorRef.current('Authentication failed');
+              }, 100);
             }
           } catch (error: any) {
             // console.error('🔐 BiometricPrompt: Authentication ERROR:', error);
@@ -83,7 +87,10 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
               // console.log('🔐 BiometricPrompt: User CANCELLED authentication');
               retryCountRef.current = 0; // Reset retry count
               // Only call onClose for user cancellation (which triggers logout)
-              onCloseRef.current();
+              // Use setTimeout to ensure Modal state updates complete before opening next modal
+              setTimeout(() => {
+                onCloseRef.current();
+              }, 100);
             } else {
               // Check if this is a FragmentActivity timing issue (Android)
               const isActivityNotReady =
@@ -110,7 +117,9 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
               } else {
                 // Max retries reached or different error - report to user
                 retryCountRef.current = 0; // Reset retry count
-                onErrorRef.current(error.message || 'Authentication failed');
+                setTimeout(() => {
+                  onErrorRef.current(error.message || 'Authentication failed');
+                }, 100);
               }
             }
           } finally {

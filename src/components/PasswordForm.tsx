@@ -186,19 +186,19 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
 
   // Sync form state with password prop ONLY on initial load or when password ID changes
   useEffect(() => {
-    console.log('🔍 PasswordForm useEffect triggered:', {
-      hasPassword: !!password,
-      passwordId: password?.id,
-      passwordValue: password?.isDecrypted
-        ? '[DECRYPTED]'
-        : password?.password
-        ? '[ENCRYPTED]'
-        : '[EMPTY]',
-      currentPasswordValue: passwordValue ? '[HAS_VALUE]' : '[EMPTY]',
-      isInitialized: isInitializedRef.current,
-      lastPasswordId: lastPasswordIdRef.current,
-      isPasswordVisible,
-    });
+    // console.log('🔍 PasswordForm useEffect triggered:', {
+    //   hasPassword: !!password,
+    //   passwordId: password?.id,
+    //   passwordValue: password?.isDecrypted
+    //     ? '[DECRYPTED]'
+    //     : password?.password
+    //     ? '[ENCRYPTED]'
+    //     : '[EMPTY]',
+    //   currentPasswordValue: passwordValue ? '[HAS_VALUE]' : '[EMPTY]',
+    //   isInitialized: isInitializedRef.current,
+    //   lastPasswordId: lastPasswordIdRef.current,
+    //   isPasswordVisible,
+    // });
 
     // Sync if:
     // 1. First time initialization, OR
@@ -216,18 +216,18 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
           password.password &&
           password.password !== passwordValue));
 
-    console.log('🔍 PasswordForm shouldSync:', shouldSync, {
-      condition1_firstTime: !isInitializedRef.current,
-      condition2_idChanged: password?.id !== lastPasswordIdRef.current,
-      condition3_newEntry:
-        !password?.id &&
-        password?.password &&
-        password?.password !== passwordValue,
-      condition4_decrypted:
-        password?.isDecrypted &&
-        password?.password &&
-        password?.password !== passwordValue,
-    });
+    // console.log('🔍 PasswordForm shouldSync:', shouldSync, {
+    //   condition1_firstTime: !isInitializedRef.current,
+    //   condition2_idChanged: password?.id !== lastPasswordIdRef.current,
+    //   condition3_newEntry:
+    //     !password?.id &&
+    //     password?.password &&
+    //     password?.password !== passwordValue,
+    //   condition4_decrypted:
+    //     password?.isDecrypted &&
+    //     password?.password &&
+    //     password?.password !== passwordValue,
+    // });
 
     if (shouldSync) {
       console.log('🔄 PasswordForm: Syncing with password prop:', {

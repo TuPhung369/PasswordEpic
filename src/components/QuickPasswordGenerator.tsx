@@ -10,20 +10,14 @@ import {
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { generateSecurePassword } from '../utils/passwordUtils';
-import { DEFAULT_PRESETS } from './GeneratorPresets';
+import { DEFAULT_TEMPLATES, PasswordTemplate } from './PasswordTemplates';
 import { passwordGeneratorService } from '../services/passwordGeneratorService';
-import type { GeneratorPreset } from '../services/passwordGeneratorService';
 
 interface QuickPasswordGeneratorProps {
   visible: boolean;
   onClose: () => void;
   onSelectPassword: (password: string) => void;
-
-  // Remove PresetOption, use GeneratorPreset everywhere
-  // Removed PresetOption, use GeneratorPreset everywhere
 }
-
-// Use DEFAULT_PRESETS from GeneratorPresets
 
 export const QuickPasswordGenerator: React.FC<QuickPasswordGeneratorProps> = ({
   visible,
@@ -31,31 +25,36 @@ export const QuickPasswordGenerator: React.FC<QuickPasswordGeneratorProps> = ({
   onSelectPassword,
 }) => {
   const { theme } = useTheme();
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 
-  const handleSelectPreset = (preset: GeneratorPreset) => {
-    setSelectedPreset(preset.id);
+  const handleSelectTemplate = (template: PasswordTemplate) => {
+    setSelectedTemplate(template.id);
     try {
-      let password = '';
-      if (preset.id === 'memorable') {
-        password = passwordGeneratorService.generateMemorablePassword(
-          preset.options.length,
+      let password: string;
+
+      // Use specialized generators for specific template types
+      if (template.id === 'passphrase') {
+        password = passwordGeneratorService.generatePassphrase(
+          template.settings.length,
+          template.settings.includeNumbers,
         );
-      } else if (preset.id === 'passphrase') {
-        password = passwordGeneratorService.generatePatternPassword('WwNwY');
-      } else if (preset.id === 'wifi') {
-        password = passwordGeneratorService.generatePatternPassword('ZNNY');
+      } else if (template.id === 'memorable') {
+        password = passwordGeneratorService.generateMemorablePassword(
+          template.settings.length,
+        );
       } else {
-        password = generateSecurePassword(preset.options);
+        // Generic password generator for all other templates
+        password = generateSecurePassword(template.settings);
       }
+
       onSelectPassword(password);
       setTimeout(() => {
-        setSelectedPreset(null);
+        setSelectedTemplate(null);
         onClose();
       }, 300);
     } catch (error) {
       console.error('Failed to generate password:', error);
-      setSelectedPreset(null);
+      setSelectedTemplate(null);
     }
   };
 
@@ -91,30 +90,30 @@ export const QuickPasswordGenerator: React.FC<QuickPasswordGeneratorProps> = ({
             style={styles.presetsList}
             showsVerticalScrollIndicator={false}
           >
-            {DEFAULT_PRESETS.map((preset: GeneratorPreset) => (
+            {DEFAULT_TEMPLATES.map((template: PasswordTemplate) => (
               <TouchableOpacity
-                key={preset.id}
+                key={template.id}
                 style={[
                   styles.presetButton,
                   { backgroundColor: theme.card, borderColor: theme.border },
-                  selectedPreset === preset.id && {
-                    borderColor: preset.color,
-                    backgroundColor: `${preset.color}10`,
+                  selectedTemplate === template.id && {
+                    borderColor: template.color,
+                    backgroundColor: `${template.color}10`,
                   },
                 ]}
-                onPress={() => handleSelectPreset(preset)}
+                onPress={() => handleSelectTemplate(template)}
                 activeOpacity={0.7}
               >
                 <View
                   style={[
                     styles.presetIcon,
-                    { backgroundColor: `${preset.color}20` },
+                    { backgroundColor: `${template.color}20` },
                   ]}
                 >
                   <Ionicons
-                    name={preset.icon as any}
+                    name={template.icon as any}
                     size={24}
-                    color={preset.color}
+                    color={template.color}
                   />
                 </View>
                 <View style={styles.presetInfo}>
@@ -122,10 +121,10 @@ export const QuickPasswordGenerator: React.FC<QuickPasswordGeneratorProps> = ({
                     style={[
                       styles.presetName,
                       { color: theme.text },
-                      selectedPreset === preset.id && { color: preset.color },
+                      selectedTemplate === template.id && { color: template.color },
                     ]}
                   >
-                    {preset.name}
+                    {template.name}
                   </Text>
                   <Text
                     style={[
@@ -133,7 +132,7 @@ export const QuickPasswordGenerator: React.FC<QuickPasswordGeneratorProps> = ({
                       { color: theme.textSecondary },
                     ]}
                   >
-                    {preset.description}
+                    {template.description}
                   </Text>
                 </View>
                 <Ionicons

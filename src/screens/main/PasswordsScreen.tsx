@@ -1,10 +1,4 @@
-import React, {
-  useState,
-  useMemo,
-  useCallback,
-  useEffect,
-  useRef,
-} from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +9,7 @@ import {
   ActivityIndicator,
   Share,
   Platform,
+  InteractionManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -29,6 +24,7 @@ import { PasswordEntry as Password } from '../../types/password';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordManagement } from '../../hooks/usePasswordManagement';
 import { getEffectiveMasterPassword } from '../../services/staticMasterPasswordService';
+import { sessionCache } from '../../utils/sessionCache';
 import { useBiometric } from '../../hooks/useBiometric';
 import {
   loadPasswordsLazy,
@@ -39,10 +35,11 @@ import { restoreSettings as restoreSettingsAction } from '../../store/slices/set
 import PasswordEntryComponent from '../../components/PasswordEntry';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
 import Toast from '../../components/Toast';
-import {
-  recalculatePasswordStrengths,
-  needsStrengthRecalculation,
-} from '../../utils/passwordStrengthMigration';
+// DISABLED - Password strength recalculation causes freeze
+// import {
+//   recalculatePasswordStrengths,
+//   needsStrengthRecalculation,
+// } from '../../utils/passwordStrengthMigration';
 import SortDropdown from '../../components/SortDropdown';
 import FilterDropdown, {
   MultipleFilterOptions,
@@ -72,6 +69,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { autofillService } from '../../services/autofillService';
 import RNFS from 'react-native-fs';
+import { ConcurrentQueueManager } from '../../utils/concurrentQueueManager';
 
 // Define local types for PasswordsScreen string-based filtering
 type SortOption =
@@ -109,7 +107,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   );
   const { deletePassword, updatePassword } = usePasswordManagement();
   const { onScroll: trackScrollActivity } = useActivityTracking();
-  const { authenticate: authenticateBiometric } = useBiometric();
+  const { isAvailable: isBiometricAvailable } = useBiometric();
 
   // 🔐 Password authentication hook for import/export
   const {
@@ -140,6 +138,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
   // Autofill setup tracking - only check once on first load
   const autofillPromptShownRef = React.useRef(false);
+
+  // 🔥 Autofill preparation tracking - only prepare once per session to avoid blocking JS thread
+  const autofillPreparedInSessionRef = React.useRef(false);
 
   // Toast state
   const [showToast, setShowToast] = useState(false);
@@ -233,8 +234,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   >([]);
   const [isLoadingImportFiles, setIsLoadingImportFiles] = useState(false);
 
+  // DISABLED - Password strength recalculation causes freeze
   // Track recalculated password IDs to prevent infinite loop
-  const recalculatedPasswordIds = useRef<Set<string>>(new Set());
+  // const recalculatedPasswordIds = useRef<Set<string>>(new Set());
 
   // Memoize toast hide callback to prevent re-renders from resetting the timer
   const handleHideToast = useCallback(() => {
@@ -278,67 +280,44 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           );
 
           // Convert Google Drive files to BackupInfo format (WITH metadata extraction)
-          const backups = await Promise.all(
-            driveResult.files
-              .filter(
-                file =>
-                  file.name.endsWith('.bak') || file.name.endsWith('.backup'),
-              )
-              .map(async file => {
-                try {
-                  // Download file to extract metadata (using already imported functions)
-                  const tempPath =
-                    RNFS.CachesDirectoryPath || RNFS.TemporaryDirectoryPath;
-                  const tempFile = `${tempPath}/backup_${file.id}.tmp`;
+          // Use concurrent queue to limit simultaneous downloads (max 3 at a time)
+          const filteredFiles = driveResult.files.filter(
+            file => file.name.endsWith('.bak') || file.name.endsWith('.backup'),
+          );
 
-                  const downloadResult = await downloadFromGoogleDrive(
-                    file.id,
-                    tempFile,
+          const queueManager = new ConcurrentQueueManager({
+            concurrency: 3,
+            onProgress: (current, total) => {
+              console.log(
+                `🔵 [PasswordsScreen] Download progress: ${current}/${total}`,
+              );
+            },
+            onError: (error, taskId) => {
+              console.warn(
+                `⚠️ [PasswordsScreen] Failed to process backup ${taskId}:`,
+                error.message,
+              );
+            },
+          });
+
+          const queueTasks = filteredFiles.map(file => ({
+            id: file.id,
+            execute: async () => {
+              try {
+                // Download file to extract metadata
+                const tempPath =
+                  RNFS.CachesDirectoryPath || RNFS.TemporaryDirectoryPath;
+                const tempFile = `${tempPath}/backup_${file.id}.tmp`;
+
+                const downloadResult = await downloadFromGoogleDrive(
+                  file.id,
+                  tempFile,
+                );
+
+                if (!downloadResult.success) {
+                  console.warn(
+                    `Failed to download backup metadata for ${file.name}`,
                   );
-
-                  if (!downloadResult.success) {
-                    console.warn(
-                      `Failed to download backup metadata for ${file.name}`,
-                    );
-                    return {
-                      id: file.id,
-                      filename: file.name,
-                      createdAt: new Date(file.createdTime),
-                      size: parseInt(file.size || '0', 10),
-                      entryCount: 0,
-                      categoryCount: 0,
-                      encrypted: true,
-                      version: '1.0',
-                      appVersion: '1.0.0',
-                    };
-                  }
-
-                  // Extract metadata from downloaded file
-                  const fileContent = await RNFS.readFile(tempFile, 'utf8');
-                  const metadata = await backupService.extractBackupMetadata(
-                    fileContent,
-                  );
-
-                  // Clean up temp file
-                  try {
-                    await RNFS.unlink(tempFile);
-                  } catch (e) {
-                    console.warn('Failed to cleanup temp file:', e);
-                  }
-
-                  return {
-                    id: file.id,
-                    filename: file.name,
-                    createdAt: new Date(file.createdTime),
-                    size: parseInt(file.size || '0', 10),
-                    entryCount: metadata?.entryCount || 0,
-                    categoryCount: metadata?.categoryCount || 0,
-                    encrypted: true,
-                    version: metadata?.appVersion || '1.0',
-                    appVersion: metadata?.appVersion || '1.0.0',
-                  };
-                } catch (error) {
-                  console.error(`Error processing backup ${file.name}:`, error);
                   return {
                     id: file.id,
                     filename: file.name,
@@ -351,7 +330,50 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
                     appVersion: '1.0.0',
                   };
                 }
-              }),
+
+                // Extract metadata from downloaded file
+                const fileContent = await RNFS.readFile(tempFile, 'utf8');
+                const metadata = await backupService.extractBackupMetadata(
+                  fileContent,
+                );
+
+                // Clean up temp file
+                try {
+                  await RNFS.unlink(tempFile);
+                } catch (e) {
+                  console.warn('Failed to cleanup temp file:', e);
+                }
+
+                return {
+                  id: file.id,
+                  filename: file.name,
+                  createdAt: new Date(file.createdTime),
+                  size: parseInt(file.size || '0', 10),
+                  entryCount: metadata?.entryCount || 0,
+                  categoryCount: metadata?.categoryCount || 0,
+                  encrypted: true,
+                  version: metadata?.appVersion || '1.0',
+                  appVersion: metadata?.appVersion || '1.0.0',
+                };
+              } catch (error) {
+                console.error(`Error processing backup ${file.name}:`, error);
+                return {
+                  id: file.id,
+                  filename: file.name,
+                  createdAt: new Date(file.createdTime),
+                  size: parseInt(file.size || '0', 10),
+                  entryCount: 0,
+                  categoryCount: 0,
+                  encrypted: true,
+                  version: '1.0',
+                  appVersion: '1.0.0',
+                };
+              }
+            },
+          }));
+
+          const { results: backups } = await queueManager.executeAll(
+            queueTasks,
           );
 
           console.log(
@@ -383,7 +405,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     console.log('🔵 [PasswordsScreen] loadAvailableBackups completed');
   }, []);
 
-  // Handle success message from navigation params
+  // Handle success message from navigation params and refresh password list
   useFocusEffect(
     React.useCallback(() => {
       if (route.params?.successMessage) {
@@ -393,8 +415,44 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
         // Clear the success message from params to prevent showing again
         navigation.setParams({ successMessage: undefined });
+
+        // 🔄 Force refresh the password list to ensure newly added password appears
+        console.log(
+          '🔄 [PasswordsScreen] Refreshing password list after successful operation',
+        );
+        dispatch(loadPasswordsLazy('')).catch(err => {
+          console.warn('Failed to refresh password list:', err);
+        });
       }
-    }, [route.params?.successMessage, navigation]),
+    }, [route.params?.successMessage, navigation, dispatch]),
+  );
+
+  // Reset authentication modals on screen blur (fix hot reload state stuck issue)
+  useFocusEffect(
+    React.useCallback(() => {
+      return () => {
+        // Cleanup: reset auth states to prevent stuck modals after hot reload
+        console.log(
+          '🔄 [PasswordsScreen] Cleaning up auth state on screen blur',
+        );
+        if (showBiometricPrompt) {
+          handleBiometricClose();
+        }
+        if (showPinPrompt) {
+          handlePinPromptCancel();
+        }
+        if (showFallbackModal) {
+          handleFallbackCancel();
+        }
+      };
+    }, [
+      showBiometricPrompt,
+      showPinPrompt,
+      showFallbackModal,
+      handleBiometricClose,
+      handlePinPromptCancel,
+      handleFallbackCancel,
+    ]),
   );
 
   // Load passwords when screen mounts or comes into focus
@@ -402,7 +460,12 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     React.useCallback(() => {
       const loadPasswordsData = async () => {
         const screenStartTime = Date.now();
-        //console.log('🔐 [PasswordsScreen] Starting password load...');
+
+        // DEBUG: Log ref states on every focus
+        console.log('[PasswordsScreen] Screen focused - ref states:', {
+          autofillPromptShown: autofillPromptShownRef.current,
+          autofillPreparedInSession: autofillPreparedInSessionRef.current,
+        });
 
         try {
           setIsLoadingPasswords(true);
@@ -416,31 +479,75 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           await dispatch(loadPasswordsLazy('')).unwrap();
           console.log('✅ [PasswordsScreen] Password list loaded');
 
-          // Prepare autofill in background (non-blocking)
-          // Try to get master password if available, but don't fail if not
-          try {
-            const mpResult = await getEffectiveMasterPassword();
-            if (mpResult.success && mpResult.password) {
-              console.log(
-                '🔄 [PasswordsScreen] Preparing autofill with cached master password...',
+          // 🔥 Prepare autofill in background (non-blocking)
+          // Only prepare ONCE per session to avoid heavy crypto blocking JS thread on every screen focus
+          if (!autofillPreparedInSessionRef.current) {
+            autofillPreparedInSessionRef.current = true;
+            try {
+              // Try to get master password from session cache first (faster)
+              let masterPasswordForAutofill: string | null = null;
+
+              // Check session cache (set after PIN/biometric unlock)
+              const cachedStaticMP = sessionCache.get<string>(
+                'staticMasterPassword',
               );
-              dispatch(decryptAllAndPrepareAutofill(mpResult.password))
-                .unwrap()
-                .then(() =>
-                  console.log(
-                    '✅ [PasswordsScreen] Autofill preparation completed',
-                  ),
-                )
-                .catch((err: any) =>
-                  console.warn(
-                    '⚠️ [PasswordsScreen] Autofill preparation failed:',
-                    err,
-                  ),
+              const cachedDynamicMP = sessionCache.get<string>(
+                'dynamicMasterPassword',
+              );
+
+              if (cachedStaticMP) {
+                masterPasswordForAutofill = cachedStaticMP;
+                console.log(
+                  '✅ [PasswordsScreen] Got master password from static session cache',
                 );
+              } else if (cachedDynamicMP) {
+                masterPasswordForAutofill = cachedDynamicMP;
+                console.log(
+                  '✅ [PasswordsScreen] Got master password from dynamic session cache',
+                );
+              } else {
+                // Fallback to getEffectiveMasterPassword
+                const mpResult = await getEffectiveMasterPassword();
+                if (mpResult.success && mpResult.password) {
+                  masterPasswordForAutofill = mpResult.password;
+                  console.log(
+                    '✅ [PasswordsScreen] Got master password from getEffectiveMasterPassword',
+                  );
+                }
+              }
+
+              if (masterPasswordForAutofill) {
+                console.log(
+                  '🔄 [PasswordsScreen] Preparing autofill with master password (ONE-TIME per session)...',
+                );
+                dispatch(
+                  decryptAllAndPrepareAutofill(masterPasswordForAutofill),
+                )
+                  .unwrap()
+                  .then(() =>
+                    console.log(
+                      '✅ [PasswordsScreen] Autofill preparation completed (session)',
+                    ),
+                  )
+                  .catch((err: any) =>
+                    console.warn(
+                      '⚠️ [PasswordsScreen] Autofill preparation failed:',
+                      err,
+                    ),
+                  );
+              } else {
+                console.log(
+                  'ℹ️ [PasswordsScreen] No master password available for autofill prep',
+                );
+              }
+            } catch (mpError) {
+              console.log(
+                'ℹ️ [PasswordsScreen] Master password not available (OK - will decrypt on-demand)',
+              );
             }
-          } catch (mpError) {
+          } else {
             console.log(
-              'ℹ️ [PasswordsScreen] Master password not available (OK - will decrypt on-demand)',
+              '⏭️ [PasswordsScreen] Autofill already prepared this session, skipping heavy crypto',
             );
           }
         } catch (error) {
@@ -459,6 +566,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   );
 
   // Check autofill status on first load and navigate to setup if needed
+  // DEFERRED with InteractionManager to prevent blocking UI on cold start
   useFocusEffect(
     React.useCallback(() => {
       const checkAndPromptAutofillSetup = async () => {
@@ -487,36 +595,52 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
         autofillPromptShownRef.current = true;
 
-        try {
-          console.log('🔍 Checking autofill status on first login...');
-          const isEnabled = await autofillService.isEnabled();
-
-          if (!isEnabled) {
+        // DEFER autofill check to prevent blocking main thread
+        InteractionManager.runAfterInteractions(async () => {
+          try {
             console.log(
-              '⚠️ Autofill not enabled - navigating directly to setup',
+              '🔍 [DEFERRED] Checking autofill status on first login...',
             );
+            const isEnabled = await autofillService.isEnabled();
 
-            // Don't set isInSetupFlow - we're already in Main stack
-            // This is just a settings navigation, not initial setup flow
+            if (!isEnabled) {
+              console.log(
+                '⚠️ Autofill not enabled - navigating directly to setup',
+              );
 
-            // Add a small delay to let the UI settle
-            await new Promise(resolve => setTimeout(resolve, 500));
+              // Don't set isInSetupFlow - we're already in Main stack
+              // This is just a settings navigation, not initial setup flow
 
-            // Navigate directly to Autofill Management screen (skip the prompt)
-            (navigation as any).navigate('Settings', {
-              screen: 'AutofillManagement',
-            });
-          } else {
-            console.log('✅ Autofill already enabled - no setup needed');
+              // Add a small delay to let the UI settle
+              await new Promise(resolve => setTimeout(resolve, 500));
+
+              // Navigate directly to Autofill Management screen (skip the prompt)
+              (navigation as any).navigate('Settings', {
+                screen: 'AutofillManagement',
+              });
+            } else {
+              console.log('✅ Autofill already enabled - no setup needed');
+            }
+          } catch (error) {
+            console.warn('⚠️ Failed to check autofill status:', error);
           }
-        } catch (error) {
-          console.warn('⚠️ Failed to check autofill status:', error);
-        }
+        });
       };
 
       checkAndPromptAutofillSetup();
     }, [navigation, isInSetupFlow, hasCompletedSessionAuth]),
   );
+
+  // 🔥 Reset autofill preparation flag when session auth status changes
+  // This allows re-preparing autofill if user re-authenticates with biometric
+  useEffect(() => {
+    if (!hasCompletedSessionAuth) {
+      console.log(
+        '🔄 [PasswordsScreen] Session auth cleared - resetting autofill prep flag',
+      );
+      autofillPreparedInSessionRef.current = false;
+    }
+  }, [hasCompletedSessionAuth]);
 
   // Initialize export folder on mount
   useEffect(() => {
@@ -539,42 +663,50 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     initializeExportFolder();
   }, []);
 
-  // Recalculate password strengths when passwords change
+  // ===== FREEZE FIX: Disable password strength recalculation =====
+  // This useEffect was blocking main thread by updating 5 passwords sequentially
+  // Each updatePassword() writes to AsyncStorage/Firebase → 70s freeze!
+  // TODO: Move to background worker or batch update
   useEffect(() => {
     const recalculateStrengths = async () => {
       if (passwords.length === 0) return;
 
-      // Filter out passwords that need recalculation AND haven't been recalculated yet
-      const passwordsNeedingUpdate = passwords.filter(
-        p =>
-          needsStrengthRecalculation(p) &&
-          !recalculatedPasswordIds.current.has(p.id),
+      // DISABLED - Causes freeze by blocking main thread with sequential AsyncStorage writes
+      console.log(
+        '⚠️ [PasswordsScreen] Password strength recalculation DISABLED to prevent freeze',
       );
 
-      if (passwordsNeedingUpdate.length > 0) {
-        // console.log(
-        //   `🔄 PasswordsScreen: Recalculating strength for ${passwordsNeedingUpdate.length} passwords...`,
-        // );
+      // // Filter out passwords that need recalculation AND haven't been recalculated yet
+      // const passwordsNeedingUpdate = passwords.filter(
+      //   p =>
+      //     needsStrengthRecalculation(p) &&
+      //     !recalculatedPasswordIds.current.has(p.id),
+      // );
 
-        // Mark these passwords as being recalculated
-        passwordsNeedingUpdate.forEach(p =>
-          recalculatedPasswordIds.current.add(p.id),
-        );
+      // if (passwordsNeedingUpdate.length > 0) {
+      //   console.log(
+      //     `🔄 PasswordsScreen: Recalculating strength for ${passwordsNeedingUpdate.length} passwords...`,
+      //   );
 
-        const updatedPasswords = recalculatePasswordStrengths(
-          passwordsNeedingUpdate,
-        );
+      //   // Mark these passwords as being recalculated
+      //   passwordsNeedingUpdate.forEach(p =>
+      //     recalculatedPasswordIds.current.add(p.id),
+      //   );
 
-        // Update passwords with recalculated strengths (in background)
-        for (const updatedPassword of updatedPasswords) {
-          await updatePassword(updatedPassword.id, updatedPassword);
-        }
-        // console.log('✅ PasswordsScreen: Password strengths recalculated');
-      }
+      //   const updatedPasswords = recalculatePasswordStrengths(
+      //     passwordsNeedingUpdate,
+      //   );
+
+      //   // Update passwords with recalculated strengths (in background)
+      //   for (const updatedPassword of updatedPasswords) {
+      //     await updatePassword(updatedPassword.id, updatedPassword);
+      //   }
+      //   console.log('✅ PasswordsScreen: Password strengths recalculated');
+      // }
     };
 
     recalculateStrengths();
-  }, [passwords, updatePassword]);
+  }, [passwords]);
 
   // Reload backups when modal opens
   useEffect(() => {
@@ -802,69 +934,67 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     };
   }, [filteredPasswords]);
 
-  // Handlers
-  const handlePasswordPress = (password: Password) => {
-    if (bulkMode) {
-      togglePasswordSelection(password.id);
-    } else {
-      // Navigate to password details
-      // navigation.navigate('PasswordDetails', { passwordId: password.id });
-    }
-  };
-
-  const handlePasswordEdit = (password: Password) => {
-    navigation.navigate('EditPassword', { passwordId: password.id });
-  };
-
-  const handlePasswordDelete = async (password: Password) => {
-    // 🔐 SECURITY: Require biometric authentication before delete
-    // 🔑 IMPORTANT: Enable PIN fallback (allowDeviceCredentials=true) for delete operations
-    try {
-      console.log('🔒 [Delete] Requesting biometric authentication...');
-      const biometricResult = await authenticateBiometric(
-        'Authenticate to delete password',
-      );
-
-      if (!biometricResult) {
-        console.log('❌ [Delete] Biometric authentication failed or cancelled');
-        showAlert(
-          'Authentication Failed',
-          'Biometric authentication is required to delete passwords',
-        );
-        return;
-      }
-
-      console.log('✅ [Delete] Biometric authentication successful');
-
-      // Show confirmation dialog after biometric success
-      showDestructive(
-        'Delete Password',
-        `Are you sure you want to delete "${password.title}"?`,
-        async () => {
-          try {
-            // console.log('Delete password:', password.id);
-            await deletePassword(password.id);
-            // console.log('✅ Password deleted successfully:', password.id);
-          } catch (error) {
-            console.error('❌ Failed to delete password:', error);
-            showAlert('Error', 'Failed to delete password');
-          }
-        },
-        'Delete',
-      );
-    } catch (error) {
-      console.error('❌ [Delete] Biometric authentication error:', error);
-      showAlert('Error', 'Failed to authenticate. Please try again.');
-    }
-  };
-
-  const togglePasswordSelection = (passwordId: string) => {
+  const togglePasswordSelection = useCallback((passwordId: string) => {
     setSelectedPasswords(prev =>
       prev.includes(passwordId)
         ? prev.filter(id => id !== passwordId)
         : [...prev, passwordId],
     );
-  };
+  }, []);
+
+  const handlePasswordPress = useCallback(
+    (password: Password) => {
+      if (bulkMode) {
+        togglePasswordSelection(password.id);
+      } else {
+        // Navigate to password details
+        // navigation.navigate('PasswordDetails', { passwordId: password.id });
+      }
+    },
+    [bulkMode, togglePasswordSelection],
+  );
+
+  const handlePasswordEdit = useCallback(
+    (password: Password) => {
+      navigation.navigate('EditPassword', { passwordId: password.id });
+    },
+    [navigation],
+  );
+
+  const handlePasswordDelete = useCallback(
+    async (password: Password) => {
+      // 🔐 SECURITY: Require authentication (biometric + fallback PIN) before delete
+      try {
+        console.log('🔒 [Delete] Requesting authentication with fallback...');
+        const masterPassword = await triggerPasswordAuthentication();
+
+        if (!masterPassword) {
+          console.log('❌ [Delete] Authentication failed or cancelled');
+          return;
+        }
+
+        console.log('✅ [Delete] Authentication successful');
+
+        // Show confirmation dialog after authentication success
+        showDestructive(
+          'Delete Password',
+          `Are you sure you want to delete "${password.title}"?`,
+          async () => {
+            try {
+              await deletePassword(password.id);
+            } catch (error) {
+              console.error('❌ Failed to delete password:', error);
+              showAlert('Error', 'Failed to delete password');
+            }
+          },
+          'Delete',
+        );
+      } catch (error) {
+        console.log('❌ [Delete] Authentication cancelled by user');
+      }
+    },
+    [triggerPasswordAuthentication, showAlert, showDestructive, deletePassword],
+  );
 
   const selectAllPasswords = () => {
     setSelectedPasswords(filteredPasswords.map(p => p.id));
@@ -879,6 +1009,12 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   };
 
   const toggleBulkMode = () => {
+    console.log(
+      '🔄 [PasswordsScreen] toggleBulkMode:',
+      bulkMode,
+      '→',
+      !bulkMode,
+    );
     setBulkMode(!bulkMode);
     if (!bulkMode) {
       clearSelection();
@@ -889,40 +1025,28 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     if (selectedPasswords.length === 0) return;
 
     try {
-      console.log('🔒 [Bulk Delete] Requesting biometric authentication...');
-      const biometricResult = await authenticateBiometric(
-        'Authenticate to delete passwords',
+      console.log(
+        '🔒 [Bulk Delete] Requesting authentication with fallback...',
       );
+      const masterPassword = await triggerPasswordAuthentication();
 
-      if (!biometricResult) {
-        console.log(
-          '❌ [Bulk Delete] Biometric authentication failed or cancelled',
-        );
-        showAlert(
-          'Authentication Failed',
-          'Biometric authentication is required to delete passwords',
-        );
+      if (!masterPassword) {
+        console.log('❌ [Bulk Delete] Authentication failed or cancelled');
         return;
       }
 
-      console.log('✅ [Bulk Delete] Biometric authentication successful');
+      console.log('✅ [Bulk Delete] Authentication successful');
 
-      // Show confirmation dialog after biometric success
+      // Show confirmation dialog after authentication success
       showDestructive(
         'Delete Passwords',
         `Are you sure you want to delete ${selectedPasswords.length} password(s)?`,
         async () => {
           try {
-            // console.log('🗑️ Bulk deleting passwords:', selectedPasswords);
-
-            // Delete all selected passwords
-            const deletePromises = selectedPasswords.map(passwordId =>
-              deletePassword(passwordId),
-            );
-
-            await Promise.all(deletePromises);
-
-            // console.log('✅ Bulk delete completed successfully');
+            // Delete sequentially to avoid race conditions in AsyncStorage
+            for (const passwordId of selectedPasswords) {
+              await deletePassword(passwordId);
+            }
 
             // Show success toast
             setToastMessage(
@@ -942,31 +1066,32 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         'Delete',
       );
     } catch (error) {
-      console.error('❌ [Bulk Delete] Biometric authentication error:', error);
-      showAlert('Error', 'Failed to authenticate. Please try again.');
+      console.log('❌ [Bulk Delete] Authentication cancelled by user');
     }
   };
 
-  // Toggle favorite handler
-  const handleToggleFavorite = async (password: Password) => {
-    try {
-      const updatedPassword = {
-        ...password,
-        isFavorite: !password.isFavorite,
-      };
-      await updatePassword(password.id, updatedPassword);
-      setToastMessage(
-        password.isFavorite ? 'Removed from favorites' : 'Added to favorites',
-      );
-      setToastType('success');
-      setShowToast(true);
-    } catch (error) {
-      console.error('❌ Failed to toggle favorite:', error);
-      setToastMessage('Failed to update favorite status');
-      setToastType('error');
-      setShowToast(true);
-    }
-  };
+  const handleToggleFavorite = useCallback(
+    async (password: Password) => {
+      try {
+        const updatedPassword = {
+          ...password,
+          isFavorite: !password.isFavorite,
+        };
+        await updatePassword(password.id, updatedPassword);
+        setToastMessage(
+          password.isFavorite ? 'Removed from favorites' : 'Added to favorites',
+        );
+        setToastType('success');
+        setShowToast(true);
+      } catch (error) {
+        console.error('❌ Failed to toggle favorite:', error);
+        setToastMessage('Failed to update favorite status');
+        setToastType('error');
+        setShowToast(true);
+      }
+    },
+    [updatePassword],
+  );
 
   // Sort and Filter handlers
   const handleSortChange = (sort: SortOption | any) => {
@@ -1551,28 +1676,20 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     destination: 'local' | 'google' | 'google-hidden',
     filePath: string,
   ): Promise<boolean> => {
-    // 🔐 SECURITY: Require biometric authentication before delete
-    // 🔑 IMPORTANT: Enable PIN fallback (allowDeviceCredentials=true) for delete operations
+    // 🔐 SECURITY: Require authentication (biometric + fallback PIN) before delete
     try {
-      console.log('🔒 [Delete File] Requesting biometric authentication...');
-      const biometricResult = await authenticateBiometric(
-        'Authenticate to delete file',
+      console.log(
+        '🔒 [Delete File] Requesting authentication with fallback...',
       );
+      const masterPassword = await triggerPasswordAuthentication();
 
-      if (!biometricResult) {
-        console.log(
-          '❌ [Delete File] Biometric authentication failed or cancelled',
-        );
-        showAlert(
-          'Authentication Failed',
-          'Biometric authentication is required to delete files',
-        );
+      if (!masterPassword) {
+        console.log('❌ [Delete File] Authentication failed or cancelled');
         return false;
       }
 
-      console.log('✅ [Delete File] Biometric authentication successful');
+      console.log('✅ [Delete File] Authentication successful');
 
-      // Proceed with deletion after biometric success
       if (destination === 'local') {
         console.log('🔵 [Delete] Deleting local file:', filePath);
         await RNFS.unlink(filePath);
@@ -1618,12 +1735,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       }
       return false;
     } catch (error) {
-      console.error('❌ [Delete] Error deleting file:', error);
-      setToastMessage(
-        error instanceof Error ? error.message : 'Failed to delete file',
-      );
-      setToastType('error');
-      setShowToast(true);
+      console.log('❌ [Delete File] Authentication cancelled by user');
       return false;
     }
   };
@@ -2907,27 +3019,21 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   };
 
   const handleDeleteBackup = async (backupId: string) => {
-    // 🔐 SECURITY: Require biometric authentication before delete
-    // 🔑 IMPORTANT: Enable PIN fallback (allowDeviceCredentials=true) for delete operations
+    // 🔐 SECURITY: Require authentication (biometric + fallback PIN) before delete
     try {
-      console.log('🔒 [Delete Backup] Requesting biometric authentication...');
-      const biometricResult = await authenticateBiometric(
-        'Authenticate to delete backup',
+      console.log(
+        '🔒 [Delete Backup] Requesting authentication with fallback...',
       );
+      const masterPassword = await triggerPasswordAuthentication();
 
-      if (!biometricResult) {
-        console.log(
-          '❌ [Delete Backup] Biometric authentication failed or cancelled',
-        );
-        throw new Error(
-          'Biometric authentication is required to delete backups',
-        );
+      if (!masterPassword) {
+        console.log('❌ [Delete Backup] Authentication failed or cancelled');
+        throw new Error('Authentication is required to delete backups');
       }
 
-      console.log('✅ [Delete Backup] Biometric authentication successful');
+      console.log('✅ [Delete Backup] Authentication successful');
       console.log('🗑️ [PasswordsScreen] Deleting backup:', backupId);
 
-      // Delete from Google Drive
       const deleteResult = await deleteFromGoogleDrive(backupId);
 
       if (!deleteResult.success) {
@@ -2938,11 +3044,10 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
       console.log('✅ [PasswordsScreen] Backup deleted successfully');
 
-      // Reload available backups
       await loadAvailableBackups();
     } catch (error: any) {
       console.error('❌ Delete backup failed:', error);
-      throw error; // Re-throw to be handled by the modal
+      throw error;
     }
   };
 
@@ -2991,67 +3096,85 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     return folderUri;
   };
 
-  const renderPasswordItem = ({ item }: { item: Password }) => {
-    console.log('🎯 [FlatList] Rendering item:', item.id, item.title);
-    return (
-      <PasswordEntryComponent
-        password={item}
-        onPress={() => handlePasswordPress(item)}
-        onEdit={() => handlePasswordEdit(item)}
-        onDelete={() => handlePasswordDelete(item)}
-        onToggleFavorite={() => handleToggleFavorite(item)}
-        onPasswordUsed={async () => {
-          console.log(
-            '👁️ [PasswordsScreen] onPasswordUsed callback triggered for:',
-            item.id,
-          );
+  const flatListExtraData = useMemo(
+    () => ({ bulkMode, selectedPasswords }),
+    [bulkMode, selectedPasswords],
+  );
 
-          // 1️⃣ Update Redux state immediately
-          dispatch(updatePasswordLastUsed(item.id));
+  const renderPasswordItem = useCallback(
+    ({ item }: { item: Password }) => {
+      return (
+        <PasswordEntryComponent
+          password={item}
+          onPress={() => handlePasswordPress(item)}
+          onEdit={() => handlePasswordEdit(item)}
+          onDelete={() => handlePasswordDelete(item)}
+          onToggleFavorite={() => handleToggleFavorite(item)}
+          onPasswordUsed={async () => {
+            console.log(
+              '👁️ [PasswordsScreen] onPasswordUsed callback triggered for:',
+              item.id,
+            );
 
-          // 2️⃣ Also persist to storage
-          try {
-            const masterPasswordResult = await getEffectiveMasterPassword();
-            if (
-              !masterPasswordResult.success ||
-              !masterPasswordResult.password
-            ) {
-              console.warn(
-                '⚠️ [PasswordsScreen] Cannot get master password for persistence',
+            // 1️⃣ Update Redux state immediately
+            dispatch(updatePasswordLastUsed(item.id));
+
+            // 2️⃣ Also persist to storage
+            try {
+              const masterPasswordResult = await getEffectiveMasterPassword();
+              if (
+                !masterPasswordResult.success ||
+                !masterPasswordResult.password
+              ) {
+                console.warn(
+                  '⚠️ [PasswordsScreen] Cannot get master password for persistence',
+                );
+                return;
+              }
+
+              // Update the item directly (it's already in memory)
+              const updatedPassword = {
+                ...item,
+                lastUsed: new Date(),
+              };
+
+              console.log(
+                '💾 [PasswordsScreen] Saving password with updated lastUsed to storage...',
               );
-              return;
+              await encryptedDatabase.savePasswordEntry(
+                updatedPassword,
+                masterPasswordResult.password,
+              );
+              console.log(
+                '✅ [PasswordsScreen] Password with lastUsed saved to storage',
+              );
+            } catch (error) {
+              console.error(
+                '❌ [PasswordsScreen] Failed to persist password usage:',
+                error,
+              );
             }
-
-            // Update the item directly (it's already in memory)
-            const updatedPassword = {
-              ...item,
-              lastUsed: new Date(),
-            };
-
-            console.log(
-              '💾 [PasswordsScreen] Saving password with updated lastUsed to storage...',
-            );
-            await encryptedDatabase.savePasswordEntry(
-              updatedPassword,
-              masterPasswordResult.password,
-            );
-            console.log(
-              '✅ [PasswordsScreen] Password with lastUsed saved to storage',
-            );
-          } catch (error) {
-            console.error(
-              '❌ [PasswordsScreen] Failed to persist password usage:',
-              error,
-            );
-          }
-        }}
-        selectable={bulkMode}
-        selected={selectedPasswords.includes(item.id)}
-        onSelect={_selected => togglePasswordSelection(item.id)}
-        showActions={!bulkMode}
-      />
-    );
-  };
+          }}
+          selectable={bulkMode}
+          selected={selectedPasswords.includes(item.id)}
+          onSelect={_selected => togglePasswordSelection(item.id)}
+          showActions={!bulkMode}
+          isBiometricAvailable={isBiometricAvailable}
+        />
+      );
+    },
+    [
+      handlePasswordPress,
+      handlePasswordEdit,
+      handlePasswordDelete,
+      handleToggleFavorite,
+      dispatch,
+      bulkMode,
+      selectedPasswords,
+      togglePasswordSelection,
+      isBiometricAvailable,
+    ],
+  );
 
   const renderSearchBar = () => {
     if (!showSearch) return null;
@@ -3531,25 +3654,6 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
     );
   };
 
-  console.log('🎨 [Render] Rendering PasswordsScreen:', {
-    passwordsCount: passwords.length,
-    filteredCount: filteredPasswords.length,
-    isLoadingPasswords,
-    showEmptyState: filteredPasswords.length === 0,
-  });
-
-  // Debug: Log filtered passwords data
-  console.log('📋 [FlatList Debug] Filtered passwords:', {
-    count: filteredPasswords.length,
-    firstItem: filteredPasswords[0]
-      ? {
-          id: filteredPasswords[0].id,
-          title: filteredPasswords[0].title,
-          hasPassword: !!filteredPasswords[0].password,
-        }
-      : null,
-  });
-
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.background }]}
@@ -3571,6 +3675,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           showsVerticalScrollIndicator={false}
           onScroll={trackScrollActivity}
           scrollEventThrottle={400}
+          extraData={flatListExtraData}
         />
       )}
 

@@ -68,6 +68,14 @@ export class PasswordValidationService {
         color: '#FF3B30',
         feedback: ['Password is required'],
         crackTime: 'Instant',
+        factors: {
+          length: 0,
+          hasUppercase: false,
+          hasLowercase: false,
+          hasNumbers: false,
+          hasSpecialChars: false,
+          hasCommonPatterns: false,
+        },
       };
     }
 
@@ -78,12 +86,22 @@ export class PasswordValidationService {
     const feedback = this.generateFeedback(analysis);
     const crackTime = this.estimateCrackTime(analysis);
 
+    const factors = {
+      length: password.length,
+      hasUppercase: /[A-Z]/.test(password),
+      hasLowercase: /[a-z]/.test(password),
+      hasNumbers: /\d/.test(password),
+      hasSpecialChars: SYMBOLS_REGEX.test(password),
+      hasCommonPatterns: !this.hasWeakPatterns(password).length,
+    };
+
     return {
       score,
       label,
       color,
       feedback,
       crackTime,
+      factors,
     };
   }
 

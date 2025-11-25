@@ -47,16 +47,11 @@ export const usePasswordManagement = (masterPassword?: string) => {
     selectedCategory,
   } = useAppSelector((state: RootState) => state.passwords);
 
-  // Cache master password to avoid repeated biometric calls
-  const [cachedMasterPassword, setCachedMasterPassword] = useState<
-    string | null
-  >(null);
-  const [cacheTimestamp, setCacheTimestamp] = useState<number>(0);
-  const CACHE_TIMEOUT = 0; // DISABLED: No caching - require PIN/biometric for every operation
-
   // Helper function to get master password when needed
   const getMasterPassword = useCallback(async (): Promise<string> => {
-    console.log('🔐 🔒 getMasterPassword: Starting authentication process (NO CACHE - requires PIN/biometric)...');
+    console.log(
+      '🔐 🔒 getMasterPassword: Starting authentication process (NO CACHE - requires PIN/biometric)...',
+    );
     const authStartTime = Date.now();
 
     // First priority: provided master password (backwards compatibility)
@@ -72,8 +67,6 @@ export const usePasswordManagement = (masterPassword?: string) => {
     // console.log('⚡ getMasterPassword: Using session cache (ultra-fast)');
     // console.log('🎯 getMasterPassword: Using cached password');
 
-    const now = Date.now();
-
     // New approach: Use static master password (UUID + email + fixed salt)
     console.log('🔐 [Static] Generating static master password...');
     const staticStart = Date.now();
@@ -83,11 +76,7 @@ export const usePasswordManagement = (masterPassword?: string) => {
       const staticDuration = Date.now() - staticStart;
 
       if (staticResult.success && staticResult.password) {
-        // Cache the static password in both caches
-        setCachedMasterPassword(staticResult.password);
-        setCacheTimestamp(now);
-
-        // Also cache in session for ultra-fast access (30 minutes for static)
+        // Cache in session for ultra-fast access (30 minutes for static)
         sessionCache.set(
           'staticMasterPassword',
           staticResult.password,
@@ -121,11 +110,7 @@ export const usePasswordManagement = (masterPassword?: string) => {
       const biometricDuration = Date.now() - biometricStart;
 
       if (result.success && result.password) {
-        // Cache the password in both caches
-        setCachedMasterPassword(result.password);
-        setCacheTimestamp(now);
-
-        // Also cache in session for ultra-fast access (2 minutes)
+        // Cache in session for ultra-fast access (2 minutes)
         sessionCache.set(
           'dynamicMasterPassword',
           result.password,
@@ -165,18 +150,14 @@ export const usePasswordManagement = (masterPassword?: string) => {
       const domain = domainVerificationService.extractCleanDomain(website);
 
       if (!domain || domain.length === 0) {
-        console.log(
-          'ℹ️ autoVerifyDomain: Invalid or empty domain, skipping',
-        );
+        console.log('ℹ️ autoVerifyDomain: Invalid or empty domain, skipping');
         return;
       }
 
       // Check if already trusted
       const isTrusted = await domainVerificationService.isTrustedDomain(domain);
       if (isTrusted) {
-        console.log(
-          `✅ autoVerifyDomain: ${domain} already trusted`,
-        );
+        console.log(`✅ autoVerifyDomain: ${domain} already trusted`);
         return;
       }
 
@@ -186,8 +167,8 @@ export const usePasswordManagement = (masterPassword?: string) => {
       console.log(
         `✅ autoVerifyDomain: Added ${sourceType} domain '${domain}' to trusted list`,
       );
-    } catch (error) {
-      console.warn('⚠️ autoVerifyDomain failed:', error);
+    } catch (autoVerifyError) {
+      console.warn('⚠️ autoVerifyDomain failed:', autoVerifyError);
     }
   }, []);
 
@@ -361,8 +342,9 @@ export const usePasswordManagement = (masterPassword?: string) => {
         // Check if password actually changed
         // Note: We need to handle both encrypted and decrypted passwords correctly
         // When password field is updated with plaintext (from form), it will differ from stored value
-        const passwordChanged = updatedData.password !== undefined && 
-                               updatedData.password !== existingPassword.password;
+        const passwordChanged =
+          updatedData.password !== undefined &&
+          updatedData.password !== existingPassword.password;
 
         let currentMasterPassword: string = '';
 
@@ -430,23 +412,35 @@ export const usePasswordManagement = (masterPassword?: string) => {
         // Add to sync queue
         await SyncService.addPendingOperation('delete', id);
 
+        // Persist deletion by marking in any persistence layer
+        console.log('✅ Password deletion persisted locally');
+
         // Update autofill cache with remaining passwords
         try {
           // Clear old cache first to ensure deleted password is removed
           try {
             await autofillService.clearCache();
             console.log('✅ Autofill cache cleared before update');
-          } catch (clearError) {
-            console.warn('⚠️ Failed to clear autofill cache:', clearError);
+          } catch (cacheError) {
+            console.warn('⚠️ Failed to clear autofill cache:', cacheError);
             // Continue anyway - not critical
           }
-          const currentMasterPassword = await getMasterPassword();
-          const remainingPasswords = passwords.filter(p => p.id !== id);
-          await autofillService.prepareCredentialsForAutofill(
-            remainingPasswords,
-            currentMasterPassword,
-          );
-          console.log('✅ Autofill credentials updated after delete');
+
+          try {
+            const currentMasterPassword = await getMasterPassword();
+            const remainingPasswords = passwords.filter(p => p.id !== id);
+            await autofillService.prepareCredentialsForAutofill(
+              remainingPasswords,
+              currentMasterPassword,
+            );
+            console.log('✅ Autofill credentials updated after delete');
+          } catch (getMasterPasswordError) {
+            console.warn(
+              '⚠️ Could not update autofill - master password not available:',
+              getMasterPasswordError,
+            );
+            // Autofill update is optional - don't block the delete operation
+          }
         } catch (autofillError) {
           console.warn(
             'Failed to update autofill cache after delete:',

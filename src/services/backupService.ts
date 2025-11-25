@@ -804,6 +804,7 @@ class BackupService {
               iv: encryptedEntry.iv,
               authTag: encryptedEntry.authTag,
               isPasswordEncrypted: true,
+              auditData: entry.auditData,
             };
 
             console.log(
@@ -1263,6 +1264,15 @@ class BackupService {
         createdAt: new Date(entry.createdAt),
         updatedAt: new Date(entry.updatedAt),
         lastUsed: entry.lastUsed ? new Date(entry.lastUsed) : undefined,
+        auditData: entry.auditData ? {
+          ...entry.auditData,
+          lastPasswordChange: entry.auditData.lastPasswordChange ? new Date(entry.auditData.lastPasswordChange) : entry.auditData.lastPasswordChange,
+          lastAuditDate: entry.auditData.lastAuditDate ? new Date(entry.auditData.lastAuditDate) : entry.auditData.lastAuditDate,
+          auditHistory: entry.auditData.auditHistory?.map(history => ({
+            ...history,
+            date: new Date(history.date),
+          })) || undefined,
+        } : undefined,
       } as PasswordEntry;
     });
   }

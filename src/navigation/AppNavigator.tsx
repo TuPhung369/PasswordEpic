@@ -29,7 +29,11 @@ import { useSession } from '../hooks/useSession';
 import { useTheme } from '../contexts/ThemeContext';
 import { useUserActivity } from '../hooks/useUserActivity';
 import { NavigationPersistenceService } from '../services/navigationPersistenceService';
-import { cacheEncryptedMasterPasswordToAsyncStorage } from '../services/staticMasterPasswordService';
+import {
+  cacheEncryptedMasterPasswordToAsyncStorage,
+  generateStaticMasterPassword,
+} from '../services/staticMasterPasswordService';
+import { sessionCache } from '../utils/sessionCache';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -357,10 +361,39 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
                       '✅ [AppNavigator] Biometric authentication successful',
                     );
 
-                    // 🔥 CRITICAL: Update all auth flags FIRST before any async operations
-                    // This ensures navigation stack updates immediately
+                    // 🔥 CRITICAL: Generate and cache static master password FIRST
+                    // This ensures PasswordsScreen can access it for autofill prep
                     console.log(
-                      '� [AppNavigator] Updating auth flags to return to Main stack...',
+                      '🔐 [AppNavigator] Generating static master password after biometric...',
+                    );
+                    try {
+                      const mpResult = await generateStaticMasterPassword();
+                      if (mpResult.success && mpResult.password) {
+                        // Cache in sessionCache for PasswordsScreen autofill prep
+                        sessionCache.set(
+                          'staticMasterPassword',
+                          mpResult.password,
+                          30 * 60 * 1000, // 30 minutes
+                        );
+                        console.log(
+                          '✅ [AppNavigator] Static master password cached in session',
+                        );
+                      } else {
+                        console.warn(
+                          '⚠️ [AppNavigator] Failed to generate static MP:',
+                          mpResult.error,
+                        );
+                      }
+                    } catch (mpError) {
+                      console.error(
+                        '❌ [AppNavigator] Error generating static MP:',
+                        mpError,
+                      );
+                    }
+
+                    // Update all auth flags
+                    console.log(
+                      '🎯 [AppNavigator] Updating auth flags to return to Main stack...',
                     );
                     setHasAuthenticatedInSession(true);
                     dispatch(setHasCompletedSessionAuth(true));
@@ -542,10 +575,41 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
                   {...props}
                   needsUnlock={needsUnlock}
                   biometricEnabled={biometricEnabled}
-                  onUnlock={() => {
+                  onUnlock={async () => {
                     console.log(
                       '🔍 [DEBUG_NAV STEP 7] Unlock successful - setting session flags',
                     );
+
+                    // 🔥 CRITICAL: Generate and cache static master password
+                    // This ensures PasswordsScreen can access it for autofill prep
+                    console.log(
+                      '🔐 [AppNavigator] Generating static master password after unlock...',
+                    );
+                    try {
+                      const mpResult = await generateStaticMasterPassword();
+                      if (mpResult.success && mpResult.password) {
+                        // Cache in sessionCache for PasswordsScreen autofill prep
+                        sessionCache.set(
+                          'staticMasterPassword',
+                          mpResult.password,
+                          30 * 60 * 1000, // 30 minutes
+                        );
+                        console.log(
+                          '✅ [AppNavigator] Static master password cached in session (onUnlock)',
+                        );
+                      } else {
+                        console.warn(
+                          '⚠️ [AppNavigator] Failed to generate static MP (onUnlock):',
+                          mpResult.error,
+                        );
+                      }
+                    } catch (mpError) {
+                      console.error(
+                        '❌ [AppNavigator] Error generating static MP (onUnlock):',
+                        mpError,
+                      );
+                    }
+
                     setHasAuthenticatedInSession(true);
                     dispatch(setHasCompletedSessionAuth(true));
                     dispatch(setShouldNavigateToUnlock(false)); // Reset navigation flag

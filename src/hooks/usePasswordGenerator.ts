@@ -4,9 +4,8 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import {
   passwordGeneratorService,
   GenerationHistory,
-  PasswordTemplate,
-  GeneratorPreset,
 } from '../services/passwordGeneratorService';
+import { PasswordTemplate, DEFAULT_TEMPLATES } from '../components/PasswordTemplates';
 import {
   PasswordGeneratorOptions,
   PasswordStrengthResult,
@@ -33,8 +32,16 @@ export interface UsePasswordGeneratorReturn {
   ) => Promise<Array<{ password: string; strength: PasswordStrengthResult }>>;
   generatePronounceablePassword: (length?: number) => Promise<void>;
   generateMemorablePassword: (length?: number) => Promise<void>;
+  generatePassphrase: (length?: number) => Promise<void>;
+  generatePinPassword: (length?: number) => Promise<void>;
+  generateBankingPassword: (length?: number) => Promise<void>;
+  generateSocialPassword: (length?: number) => Promise<void>;
+  generateEmailPassword: (length?: number) => Promise<void>;
+  generateBusinessPassword: (length?: number) => Promise<void>;
+  generateGamingPassword: (length?: number) => Promise<void>;
+  generateShoppingPassword: (length?: number) => Promise<void>;
+  generateWiFiPassword: (length?: number) => Promise<void>;
   generatePatternPassword: (pattern: string) => Promise<void>;
-  usePreset: (presetId: string) => Promise<void>;
   useTemplate: (templateId: string) => Promise<void>;
 
   // History management
@@ -45,9 +52,8 @@ export interface UsePasswordGeneratorReturn {
   removeFromHistory: (entryId: string) => void;
   clearHistory: () => void;
 
-  // Templates and presets
+  // Templates
   templates: PasswordTemplate[];
-  presets: GeneratorPreset[];
 
   // Settings
   generatorOptions: PasswordGeneratorOptions;
@@ -87,8 +93,7 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
   const [favorites, setFavorites] = useState<GenerationHistory[]>([]);
 
   // Static data
-  const templates = passwordGeneratorService.getTemplates();
-  const presets = passwordGeneratorService.getPresets();
+  const templates = DEFAULT_TEMPLATES;
 
   // Current generator options from Redux store
   const generatorOptions: PasswordGeneratorOptions = useMemo(
@@ -298,6 +303,321 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
     [generatorOptions.length],
   );
 
+  // Generate passphrase password
+  const generatePassphrase = useCallback(
+    async (length?: number): Promise<void> => {
+      setIsGenerating(true);
+      setGenerationError(null);
+
+      try {
+        const targetLength = length || generatorOptions.length;
+        console.log(
+          `📝 Generating passphrase with length: ${targetLength}`,
+        );
+
+        const password = passwordGeneratorService.generatePassphrase(
+          targetLength,
+          generatorOptions.includeNumbers,
+        );
+        setCurrentPassword(password);
+
+        const { calculatePasswordStrength } = await import(
+          '../utils/passwordUtils'
+        );
+        const strength = calculatePasswordStrength(password);
+        setPasswordStrength(strength);
+
+        console.log(`✅ Generated passphrase:`, {
+          password: password,
+          length: password.length,
+          strength: strength.score,
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Failed to generate passphrase';
+        setGenerationError(errorMessage);
+        console.error('Error generating passphrase:', error);
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [generatorOptions.length, generatorOptions.includeNumbers],
+  );
+
+  // Generate PIN password
+  const generatePinPassword = useCallback(
+    async (length?: number): Promise<void> => {
+      setIsGenerating(true);
+      setGenerationError(null);
+
+      try {
+        const targetLength = length || 6;
+        console.log(
+          `🔐 Generating PIN password with length: ${targetLength}`,
+        );
+
+        const password = passwordGeneratorService.generatePassword(
+          {
+            length: targetLength,
+            includeUppercase: false,
+            includeLowercase: false,
+            includeNumbers: true,
+            includeSymbols: false,
+            excludeSimilar: true,
+            excludeAmbiguous: false,
+          },
+          'pin',
+        );
+
+        const result = await password;
+        setCurrentPassword(result.password);
+        setPasswordStrength(result.strength);
+
+        console.log(`✅ Generated PIN:`, {
+          password: result.password,
+          length: result.password.length,
+          strength: result.strength.score,
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Failed to generate PIN';
+        setGenerationError(errorMessage);
+        console.error('Error generating PIN:', error);
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [],
+  );
+
+  // Generate Banking password
+  const generateBankingPassword = useCallback(
+    async (length?: number): Promise<void> => {
+      setIsGenerating(true);
+      setGenerationError(null);
+
+      try {
+        const targetLength = length || 50;
+        const password = passwordGeneratorService.generateBankingPassword(
+          targetLength,
+        );
+        setCurrentPassword(password);
+
+        const { calculatePasswordStrength } = await import(
+          '../utils/passwordUtils'
+        );
+        const strength = calculatePasswordStrength(password);
+        setPasswordStrength(strength);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Failed to generate Banking password';
+        setGenerationError(errorMessage);
+        console.error('Error generating Banking password:', error);
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [],
+  );
+
+  // Generate Social password
+  const generateSocialPassword = useCallback(
+    async (length?: number): Promise<void> => {
+      setIsGenerating(true);
+      setGenerationError(null);
+
+      try {
+        const targetLength = length || 40;
+        const password = passwordGeneratorService.generateSocialPassword(
+          targetLength,
+        );
+        setCurrentPassword(password);
+
+        const { calculatePasswordStrength } = await import(
+          '../utils/passwordUtils'
+        );
+        const strength = calculatePasswordStrength(password);
+        setPasswordStrength(strength);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Failed to generate Social password';
+        setGenerationError(errorMessage);
+        console.error('Error generating Social password:', error);
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [],
+  );
+
+  // Generate Email password
+  const generateEmailPassword = useCallback(
+    async (length?: number): Promise<void> => {
+      setIsGenerating(true);
+      setGenerationError(null);
+
+      try {
+        const targetLength = length || 38;
+        const password = passwordGeneratorService.generateEmailPassword(
+          targetLength,
+        );
+        setCurrentPassword(password);
+
+        const { calculatePasswordStrength } = await import(
+          '../utils/passwordUtils'
+        );
+        const strength = calculatePasswordStrength(password);
+        setPasswordStrength(strength);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Failed to generate Email password';
+        setGenerationError(errorMessage);
+        console.error('Error generating Email password:', error);
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [],
+  );
+
+  // Generate Business password
+  const generateBusinessPassword = useCallback(
+    async (length?: number): Promise<void> => {
+      setIsGenerating(true);
+      setGenerationError(null);
+
+      try {
+        const targetLength = length || 46;
+        const password = passwordGeneratorService.generateBusinessPassword(
+          targetLength,
+        );
+        setCurrentPassword(password);
+
+        const { calculatePasswordStrength } = await import(
+          '../utils/passwordUtils'
+        );
+        const strength = calculatePasswordStrength(password);
+        setPasswordStrength(strength);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Failed to generate Business password';
+        setGenerationError(errorMessage);
+        console.error('Error generating Business password:', error);
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [],
+  );
+
+  // Generate Gaming password
+  const generateGamingPassword = useCallback(
+    async (length?: number): Promise<void> => {
+      setIsGenerating(true);
+      setGenerationError(null);
+
+      try {
+        const targetLength = length || 24;
+        const password = passwordGeneratorService.generateGamingPassword(
+          targetLength,
+        );
+        setCurrentPassword(password);
+
+        const { calculatePasswordStrength } = await import(
+          '../utils/passwordUtils'
+        );
+        const strength = calculatePasswordStrength(password);
+        setPasswordStrength(strength);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Failed to generate Gaming password';
+        setGenerationError(errorMessage);
+        console.error('Error generating Gaming password:', error);
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [],
+  );
+
+  // Generate Shopping password
+  const generateShoppingPassword = useCallback(
+    async (length?: number): Promise<void> => {
+      setIsGenerating(true);
+      setGenerationError(null);
+
+      try {
+        const targetLength = length || 26;
+        const password = passwordGeneratorService.generateShoppingPassword(
+          targetLength,
+        );
+        setCurrentPassword(password);
+
+        const { calculatePasswordStrength } = await import(
+          '../utils/passwordUtils'
+        );
+        const strength = calculatePasswordStrength(password);
+        setPasswordStrength(strength);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Failed to generate Shopping password';
+        setGenerationError(errorMessage);
+        console.error('Error generating Shopping password:', error);
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [],
+  );
+
+  // Generate WiFi password
+  const generateWiFiPassword = useCallback(
+    async (length?: number): Promise<void> => {
+      setIsGenerating(true);
+      setGenerationError(null);
+
+      try {
+        const targetLength = length || 34;
+        const password = passwordGeneratorService.generateWiFiPassword(
+          targetLength,
+        );
+        setCurrentPassword(password);
+
+        const { calculatePasswordStrength } = await import(
+          '../utils/passwordUtils'
+        );
+        const strength = calculatePasswordStrength(password);
+        setPasswordStrength(strength);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Failed to generate WiFi password';
+        setGenerationError(errorMessage);
+        console.error('Error generating WiFi password:', error);
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [],
+  );
+
   // Generate pattern-based password
   const generatePatternPassword = useCallback(
     async (pattern: string): Promise<void> => {
@@ -340,68 +660,6 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
     [],
   );
 
-  // Use a preset
-  const usePreset = useCallback(
-    async (presetId: string): Promise<void> => {
-      const preset = presets.find(p => p.id === presetId);
-      if (preset) {
-        console.log(
-          `🔐 Generating password for preset: ${preset.name} (${presetId})`,
-        );
-
-        // Handle special preset types with custom generation logic
-        switch (presetId) {
-          case 'memorable':
-            console.log(
-              '🧠 Using memorable password generation for memorable preset',
-            );
-            // Generate truly memorable password using real words
-            await generateMemorablePassword(preset.options.length);
-            break;
-          case 'passphrase':
-            console.log(
-              '🗣️ Using pattern generation (WwYW) for passphrase preset',
-            );
-            // Generate readable passphrase like "BlueSky2024Fast" or "GreenMoon2023Quick"
-            await generatePatternPassword('WwYW');
-            break;
-          case 'wifi':
-            console.log('📡 Using pattern generation (WZY) for WiFi preset');
-            // Generate WiFi password like "HomeNet2024" or "FastWiFi2024"
-            await generatePatternPassword('WZY');
-            break;
-          case 'pin':
-            console.log(
-              `🔢 Using numeric pattern generation for PIN preset (${preset.options.length} digits)`,
-            );
-            // Generate numeric PIN
-            await generatePatternPassword('N'.repeat(preset.options.length));
-            break;
-          default:
-            console.log(
-              `⚙️ Using standard generation for ${preset.name} preset`,
-            );
-            // Use standard generation for other presets
-            await generatePassword(preset.options);
-            break;
-        }
-
-        console.log(
-          `✅ Successfully generated password for ${preset.name} preset`,
-        );
-        // Update store with preset options
-        dispatch(updateGeneratorSettings(preset.options));
-      }
-    },
-    [
-      presets,
-      generatePassword,
-      generateMemorablePassword,
-      generatePatternPassword,
-      dispatch,
-    ],
-  );
-
   // Use a template
   const useTemplate = useCallback(
     async (templateId: string): Promise<void> => {
@@ -410,10 +668,9 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
         console.log(
           `📋 Using password template: ${template.name} (${templateId})`,
         );
-        console.log(`📋 Template category: ${template.category}`);
-        await generatePassword(template.options, templateId);
-        // Update store with template options
-        dispatch(updateGeneratorSettings(template.options));
+        await generatePassword(template.settings, templateId);
+        // Update store with template settings
+        dispatch(updateGeneratorSettings(template.settings));
       }
     },
     [templates, generatePassword, dispatch],
@@ -536,8 +793,16 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
     generateMultiple,
     generatePronounceablePassword,
     generateMemorablePassword,
+    generatePassphrase,
+    generatePinPassword,
+    generateBankingPassword,
+    generateSocialPassword,
+    generateEmailPassword,
+    generateBusinessPassword,
+    generateGamingPassword,
+    generateShoppingPassword,
+    generateWiFiPassword,
     generatePatternPassword,
-    usePreset,
     useTemplate,
 
     // History management
@@ -548,9 +813,8 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
     removeFromHistory,
     clearHistory,
 
-    // Templates and presets
+    // Templates
     templates,
-    presets,
 
     // Settings
     generatorOptions,

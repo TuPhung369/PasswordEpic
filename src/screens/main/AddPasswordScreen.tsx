@@ -9,6 +9,7 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -24,15 +25,14 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { PinPromptModal } from '../../components/PinPromptModal';
 import { BiometricPrompt } from '../../components/BiometricPrompt';
 import { BiometricFallbackPrompt } from '../../components/BiometricFallbackPrompt';
+import { LoadingScreen } from '../../components/LoadingScreen';
 import { PasswordEntry } from '../../types/password';
 import { PasswordsStackParamList } from '../../navigation/PasswordsNavigator';
 import { PasswordValidationService } from '../../services/passwordValidationService';
 import { AuditHistoryService } from '../../services/auditHistoryService';
 import { NavigationPersistenceService } from '../../services/navigationPersistenceService';
-import {
-  calculateSecurityScore,
-  isValidDomain,
-} from '../../utils/passwordUtils';
+import { isValidDomain } from '../../utils/passwordUtils';
+import { calculateSecurityScore } from '../../utils/passwordMigration';
 import {
   unlockMasterPasswordWithPin,
   getEffectiveMasterPassword,
@@ -58,7 +58,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 }) => {
   const { theme } = useTheme();
   const navigation = useNavigation<AddPasswordScreenNavigationProp>();
-  const { createPassword, isLoading } = usePasswordManagement();
+  const { createPassword } = usePasswordManagement();
 
   const [formData, setFormData] = useState<Partial<PasswordEntry>>({
     title: '',
@@ -110,6 +110,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   }, [navigationPersistence]);
 
   const [isSaving, setIsSaving] = useState(false);
+  const [showLoadingScreen, setShowLoadingScreen] = useState(false);
   const [_isDataRestored, setIsDataRestored] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -413,15 +414,14 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 
       console.log('✅ PIN unlock successful, creating password...');
 
-      // Close PIN dialog
-      setShowPinDialog(false);
-      setPin('');
+      // Delay closing PIN dialog to let LoadingScreen settle
+      setTimeout(() => {
+        setShowPinDialog(false);
+        setPin('');
+      }, 100);
 
       // Now try to save the password with the unlocked master password
-      await createPassword(
-        pendingSaveData,
-        unlockResult.password,
-      );
+      await createPassword(pendingSaveData, unlockResult.password);
 
       // 🔒 SECURITY: Clear master password cache immediately after use
       await clearStaticMasterPasswordData();
@@ -433,6 +433,9 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       } catch (error) {
         console.error('Failed to clear temp form data:', error);
       }
+
+      // Hide loading screen
+      setShowLoadingScreen(false);
 
       // Reset navigation stack to PasswordsList with success message
       navigation.reset({
@@ -455,6 +458,8 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
           : 'Incorrect PIN. Please try again.',
       );
       setShowToast(true);
+      setIsSaving(false);
+      setShowLoadingScreen(false);
     } finally {
       setPinLoading(false);
     }
@@ -465,6 +470,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     setPin('');
     setPendingSaveData(null);
     setIsSaving(false);
+    setShowLoadingScreen(false);
   };
 
   const handleCancel = async () => {
@@ -546,6 +552,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     }
 
     setIsSaving(true);
+    setShowLoadingScreen(true);
 
     try {
       // 🔐 PROACTIVE PIN CHECK: Verify authentication BEFORE creating password
@@ -579,7 +586,6 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
         };
 
         setPendingSaveData(newPasswordEntry);
-        setIsSaving(false);
         setShowPinDialog(true);
         return; // Stop here and wait for PIN
       }
@@ -587,26 +593,6 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       console.log(
         '✅ AddPasswordScreen: Authentication verified - proceeding with creation',
       );
-
-      // Create temporary password entry for security score calculation
-      const tempPasswordEntry: PasswordEntry = {
-        id: 'temp',
-        title: formData.title!.trim(),
-        username: formData.username || '',
-        password: formData.password || '',
-        website: formData.website || '',
-        notes: formData.notes || '',
-        category: formData.category || '',
-        tags: formData.tags || [],
-        customFields: formData.customFields || [],
-        isFavorite: formData.isFavorite || false,
-        accessCount: 0,
-        frequencyScore: 0,
-        passwordHistory: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        lastUsed: undefined, // 🔥 Initialize lastUsed for new passwords
-      };
 
       const newPasswordEntry: Omit<
         PasswordEntry,
@@ -628,22 +614,40 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
         passwordHistory: [],
         // Initialize audit data if password is provided
         auditData: formData.password
-          ? {
-              passwordStrength:
+          ? (() => {
+              const strengthResult =
                 PasswordValidationService.analyzePasswordStrength(
                   formData.password,
-                ),
-              duplicateCount: 0,
-              compromisedCount: 0,
-              lastPasswordChange: new Date(),
-              securityScore: calculateSecurityScore(tempPasswordEntry),
-              recommendedAction:
-                PasswordValidationService.analyzePasswordStrength(
-                  formData.password,
-                ).score < 2
-                  ? 'change_password'
-                  : 'none',
-            }
+                );
+              const now = new Date();
+              const tempEntry: PasswordEntry = {
+                ...formData,
+                password: formData.password,
+                createdAt: now,
+                updatedAt: now,
+                breachStatus: {
+                  isBreached: false,
+                  breachCount: 0,
+                  lastChecked: now,
+                  breachSources: [],
+                  severity: 'low',
+                },
+              } as PasswordEntry;
+              const securityScore = calculateSecurityScore(
+                tempEntry,
+                strengthResult.score,
+              );
+
+              return {
+                passwordStrength: strengthResult,
+                duplicateCount: 0,
+                compromisedCount: 0,
+                lastPasswordChange: new Date(),
+                securityScore,
+                recommendedAction:
+                  strengthResult.score < 2 ? 'change_password' : 'none',
+              };
+            })()
           : undefined,
       };
 
@@ -651,14 +655,16 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 
       // 🔍 Run security audit and save audit result after password is created
       try {
-        console.log('🔍 AddPasswordScreen: Running security audit for new password...');
-        
+        console.log(
+          '🔍 AddPasswordScreen: Running security audit for new password...',
+        );
+
         const securityScore = createdPassword.auditData?.securityScore || 0;
         let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
         if (securityScore < 40) riskLevel = 'critical';
         else if (securityScore < 60) riskLevel = 'high';
         else if (securityScore < 75) riskLevel = 'medium';
-        
+
         const auditData = {
           date: new Date(),
           score: securityScore,
@@ -667,18 +673,39 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
           vulnerabilities: [],
           passwordStrength: {
             score: createdPassword.auditData?.passwordStrength?.score || 0,
-            label: createdPassword.auditData?.passwordStrength?.label || 'Unknown',
+            label:
+              createdPassword.auditData?.passwordStrength?.label || 'Unknown',
             color: '#9E9E9E',
-            feedback: createdPassword.auditData?.passwordStrength?.feedback || [],
-            crackTime: createdPassword.auditData?.passwordStrength?.crackTime || 'Unknown',
+            feedback:
+              createdPassword.auditData?.passwordStrength?.feedback || [],
+            crackTime:
+              createdPassword.auditData?.passwordStrength?.crackTime ||
+              'Unknown',
+            factors:
+              createdPassword.auditData?.passwordStrength?.factors || {
+                length: false,
+                hasUppercase: false,
+                hasLowercase: false,
+                hasNumbers: false,
+                hasSpecialChars: false,
+                hasCommonPatterns: false,
+              },
           },
           changes: ['Password created'],
         };
 
-        await AuditHistoryService.saveAuditResult(createdPassword.id, auditData);
-        console.log('✅ AddPasswordScreen: Audit result saved for new password');
+        await AuditHistoryService.saveAuditResult(
+          createdPassword.id,
+          auditData,
+        );
+        console.log(
+          '✅ AddPasswordScreen: Audit result saved for new password',
+        );
       } catch (auditError) {
-        console.warn('⚠️ AddPasswordScreen: Failed to save audit result:', auditError);
+        console.warn(
+          '⚠️ AddPasswordScreen: Failed to save audit result:',
+          auditError,
+        );
         // Don't throw - audit is a secondary feature
       }
 
@@ -688,6 +715,9 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       } catch (error) {
         console.error('Failed to clear temp form data:', error);
       }
+
+      // Hide loading screen
+      setShowLoadingScreen(false);
 
       // Reset navigation stack to PasswordsList with success message
       // Don't set isSaving(false) here as navigation.reset will unmount the component
@@ -769,9 +799,9 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
         };
 
         setPendingSaveData(newPasswordEntry);
-        setIsSaving(false);
         setShowPinDialog(true);
       } else {
+        setShowLoadingScreen(false);
         setToastType('error');
         setToastMessage('Failed to create password entry. Please try again.');
         setShowToast(true);
@@ -782,8 +812,10 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 
   // Authentication flow for eye icon - decrypt password
   const handleDecryptPassword = useCallback(async () => {
-    console.log('🔐 AddPasswordScreen: Starting biometric authentication flow...');
-    
+    console.log(
+      '🔐 AddPasswordScreen: Starting biometric authentication flow...',
+    );
+
     return new Promise<string>((resolve, reject) => {
       setPinPromptResolver({ resolve, reject });
       // Trigger biometric flow - will lead to PinPrompt or FallbackModal
@@ -823,7 +855,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   // Biometric fallback (Master Password + PIN) success
   const handleFallbackSuccess = async (masterPassword: string) => {
     setShowFallbackModal(false);
-    
+
     if (pinPromptResolver) {
       pinPromptResolver.resolve(masterPassword);
       setPinPromptResolver(null);
@@ -838,7 +870,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   // PIN verification success (for eye icon - view password)
   const handlePinPromptSuccess = async (masterPassword: string) => {
     setShowPinPrompt(false);
-    
+
     if (pinPromptResolver) {
       pinPromptResolver.resolve(masterPassword);
       setPinPromptResolver(null);
@@ -847,40 +879,15 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 
   const handlePinPromptCancel = () => {
     setShowPinPrompt(false);
-    
+
     if (pinPromptResolver) {
       pinPromptResolver.reject();
       setPinPromptResolver(null);
     }
   };
 
-  if (isLoading || isSaving) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.headerButton} onPress={handleCancel}>
-            <Ionicons name="close-outline" size={24} color={theme.text} />
-          </TouchableOpacity>
-          <View style={styles.headerTitleContainer}>
-            <Text style={styles.headerTitle}>Add Password</Text>
-          </View>
-          <View style={styles.headerButton} />
-        </View>
-        <View style={styles.loadingContainer}>
-          <Ionicons
-            name="lock-closed-outline"
-            size={48}
-            color={theme.primary}
-          />
-          <Text style={styles.loadingText}>
-            {isSaving ? 'Saving password...' : 'Loading...'}
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
+    <>
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
@@ -933,11 +940,11 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
           onPress={handleSave}
           disabled={!isFormValid() || isSaving}
         >
-          <Ionicons
-            name={isSaving ? 'timer-outline' : 'save-outline'}
-            size={20}
-            color="#FFFFFF"
-          />
+          {isSaving ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Ionicons name="save-outline" size={20} color="#FFFFFF" />
+          )}
           <Text style={styles.saveButtonText}>
             {isSaving ? 'Saving...' : 'Save Password'}
           </Text>
@@ -968,7 +975,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       <Modal
         visible={showPinDialog}
         transparent={true}
-        animationType="fade"
+        animationType="none"
         onRequestClose={handlePinCancel}
       >
         <KeyboardAvoidingView
@@ -1092,6 +1099,10 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
         subtitle="Enter your PIN to view password"
       />
     </SafeAreaView>
+
+    {/* Loading Screen - Outside SafeAreaView for full screen */}
+    <LoadingScreen visible={showLoadingScreen} />
+    </>
   );
 };
 

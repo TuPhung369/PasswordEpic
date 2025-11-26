@@ -2095,38 +2095,28 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       setShowImportConfirmModal(false);
       setIsImportLoading(true);
 
-      // Get current master password for decryption
-      let masterPasswordResult = await getEffectiveMasterPassword();
+      // 🔐 Always require authentication for import (Biometric → PIN → Fallback)
+      console.log('🔐 [Import] Requiring authentication for import...');
 
-      // If static password fails, try PIN/biometric authentication
-      if (!masterPasswordResult.success) {
-        console.log(
-          '🔐 [Import] Static password failed, triggering PIN/biometric authentication...',
-        );
+      let masterPassword: string | null = null;
 
-        try {
-          const authenticatedPassword = await triggerPasswordAuthentication();
+      try {
+        masterPassword = await triggerPasswordAuthentication();
 
-          if (authenticatedPassword) {
-            masterPasswordResult = {
-              success: true,
-              password: authenticatedPassword,
-            };
-            console.log('✅ [Import] Authentication successful');
-          } else {
-            throw new Error('Authentication cancelled');
-          }
-        } catch (authError) {
-          console.error('❌ [Import] Authentication failed:', authError);
-          setToastMessage('Authentication required to import passwords');
-          setToastType('error');
-          setShowToast(true);
-          setIsImportLoading(false);
-          return;
+        if (!masterPassword) {
+          throw new Error('Authentication cancelled');
         }
+        console.log('✅ [Import] Authentication successful');
+      } catch (authError) {
+        console.error('❌ [Import] Authentication failed:', authError);
+        setToastMessage('Authentication required to import passwords');
+        setToastType('error');
+        setShowToast(true);
+        setIsImportLoading(false);
+        return;
       }
 
-      if (!masterPasswordResult.success || !masterPasswordResult.password) {
+      if (!masterPassword) {
         setToastMessage(
           'Master password not found. Please log out and log back in.',
         );
@@ -2142,12 +2132,9 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       const isExportFile = importedFilePath.endsWith('.json');
 
       if (isBackupFile) {
-        handleRestoreBackupFile(
-          importedFilePath,
-          masterPasswordResult.password,
-        );
+        handleRestoreBackupFile(importedFilePath, masterPassword);
       } else if (isExportFile) {
-        handleImportExportFile(importedFilePath, masterPasswordResult.password);
+        handleImportExportFile(importedFilePath, masterPassword);
       } else {
         setToastMessage(
           'Invalid file format. Please select a .backup, .bak, or .json file.',

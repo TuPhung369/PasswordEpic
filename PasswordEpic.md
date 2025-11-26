@@ -658,7 +658,7 @@ This section summarizes the implementation of the Autofill Authentication Flow, 
   - `verifyMasterPasswordAndPinThenProceed()`: Verifies the master password hash and then decrypts the master password using the PIN.
 - **Cryptography Implementation:**
   - `decryptMasterPasswordWithPin()`:
-    - Uses `PBKDF2-HMAC-SHA256` (100,000 iterations) to derive a key from the PIN and a stored salt.
+    - Uses `PBKDF2-HMAC-SHA256` (10,000 iterations) to derive a key from the PIN and a stored salt.
     - Performs `HMAC-SHA256` tag verification to ensure data integrity.
     - Uses `AES-256-CTR` to decrypt the master password.
   - `computeHmacSHA256Tag()`: Calculates the authentication tag for verification.
@@ -669,7 +669,7 @@ This section summarizes the implementation of the Autofill Authentication Flow, 
 - **Double Authentication:** Biometric + PIN or Master Password + PIN.
 - **Encrypted Storage:** The master password is encrypted with the PIN and stored in `AsyncStorage` for quick access by the autofill service.
 - **Tag Verification:** `HMAC-SHA256` ensures data integrity against tampering.
-- **PBKDF2 Key Derivation:** 100,000 iterations protect against brute-force attacks on the PIN.
+- **PBKDF2 Key Derivation:** 10,000 iterations protect against brute-force attacks on the PIN.
 - **AES-256-CTR Encryption:** Industry-standard symmetric encryption.
 - **No Plaintext Storage:** The master password is never stored in plaintext on the device.
 

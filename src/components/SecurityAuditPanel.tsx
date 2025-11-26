@@ -1,12 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import PasswordValidationService from '../services/passwordValidationService';
 import { AuditHistoryService } from '../services/auditHistoryService';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { PasswordEntry } from '../types/password';
@@ -286,12 +281,12 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
 
     // Use stored security score if available, otherwise calculate from strength
     let securityScore = passwordEntry.auditData?.securityScore;
-    
+
     if (securityScore === undefined || securityScore === null) {
       // Fallback: Calculate from strength if no stored score
       const strengthScore = strengthResult.score;
       securityScore = Math.round((strengthScore / 4) * 70);
-      
+
       const lastChange =
         passwordEntry.auditData?.lastPasswordChange ||
         passwordEntry.updatedAt ||
@@ -311,7 +306,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
         securityScore -= 10;
       }
 
-      if ((passwordEntry.breachStatus?.isBreached || false)) {
+      if (passwordEntry.breachStatus?.isBreached || false) {
         securityScore -= 15;
       }
 
@@ -405,6 +400,15 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
     if (score >= 40) return '#FFC107'; // Poor - Yellow
     if (score >= 20) return '#FF9800'; // Weak - Orange
     return '#F44336'; // Critical - Red
+  }, []);
+
+  const getScoreLabel = useCallback((score: number): string => {
+    if (score >= 90) return 'EXCELLENT';
+    if (score >= 75) return 'GOOD';
+    if (score >= 60) return 'FAIR';
+    if (score >= 40) return 'POOR';
+    if (score >= 20) return 'WEAK';
+    return 'CRITICAL';
   }, []);
 
   const getScoreDescription = useCallback((score: number): string => {
@@ -517,9 +521,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
           },
         }),
       );
-      console.log(
-        '✅ SecurityAuditPanel: Redux updated with new audit data',
-      );
+      console.log('✅ SecurityAuditPanel: Redux updated with new audit data');
     } catch (error) {
       console.error(
         '❌ SecurityAuditPanel: Failed to save audit result:',
@@ -756,7 +758,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                   ]}
                 >
                   <Text style={styles.riskText}>
-                    {(auditDataToShow?.riskLevel || 'low').toUpperCase()}
+                    {getScoreLabel(auditDataToShow?.securityScore || 0)}
                   </Text>
                 </View>
               </View>
@@ -886,9 +888,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                 <Ionicons
                   name="shield-outline"
                   size={20}
-                  color={getScoreColor(
-                    auditDataToShow?.securityScore || 0,
-                  )}
+                  color={getScoreColor(auditDataToShow?.securityScore || 0)}
                 />
                 <Text style={styles.analysisTitle}>Strength Assessment</Text>
               </View>
@@ -911,7 +911,8 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
               </View>
               <View style={styles.factorsGrid}>
                 {(() => {
-                  const factors = auditDataToShow?.passwordAnalysis.strength.factors || {};
+                  const factors =
+                    auditDataToShow?.passwordAnalysis.strength.factors || {};
                   const factorLabels: Record<string, string> = {
                     length: 'Length >= 12',
                     hasUppercase: 'Uppercase',
@@ -920,7 +921,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                     hasSpecialChars: 'Special',
                     hasCommonPatterns: 'No Common Patterns',
                   };
-                  
+
                   return Object.entries(factors).map(([key, value]) => (
                     <View key={key} style={styles.factorItem}>
                       <Ionicons
@@ -929,7 +930,10 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                         color={value ? '#4CAF50' : '#F44336'}
                       />
                       <Text style={styles.factorText}>
-                        {factorLabels[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                        {factorLabels[key] ||
+                          key
+                            .replace(/([A-Z])/g, ' $1')
+                            .replace(/^./, str => str.toUpperCase())}
                       </Text>
                     </View>
                   ));

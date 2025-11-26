@@ -619,25 +619,12 @@ class ImportExportService {
         hasEncryptionPassword: !!options.encryptionPassword,
       });
 
-      // For encrypted entries: just restore as-is, no decryption needed
-      // For plaintext entries: need encryption key to encrypt them on import
-      let masterPasswordResult = await getEffectiveMasterPassword();
-      let masterPassword = masterPasswordResult.success
-        ? masterPasswordResult.password
-        : null;
+      // 🔐 Always require authentication for import (security requirement)
+      // Priority: onRequireAuthentication > encryptionPassword > cached password
+      let masterPassword: string | null = null;
 
-      // 🔐 If master password not in cache, try options.encryptionPassword first
-      if (!masterPassword && options.encryptionPassword) {
-        console.log('🔐 [Import] Using encryptionPassword from import options');
-        masterPassword = options.encryptionPassword;
-      }
-
-      // 🔐 If still no master password and callback provided, trigger authentication
-      // This is needed for plaintext entries that need encryption on import
-      if (!masterPassword && options.onRequireAuthentication) {
-        console.log(
-          '🔐 [Import] Master password not available, triggering authentication callback...',
-        );
+      if (options.onRequireAuthentication) {
+        console.log('🔐 [Import] Requiring authentication for import...');
         try {
           masterPassword = await options.onRequireAuthentication();
           console.log('✅ [Import] Authentication successful');
@@ -645,6 +632,16 @@ class ImportExportService {
           console.error('❌ [Import] Authentication failed or cancelled');
           throw new Error('Authentication required to import passwords');
         }
+      } else if (options.encryptionPassword) {
+        // Use provided encryption password (already authenticated in UI layer)
+        console.log('🔐 [Import] Using encryptionPassword from import options');
+        masterPassword = options.encryptionPassword;
+      } else {
+        // Fallback to cached password only if no other option
+        const masterPasswordResult = await getEffectiveMasterPassword();
+        masterPassword = masterPasswordResult.success
+          ? masterPasswordResult.password
+          : null;
       }
 
       console.log('✅ [Import] Ready to import entries', {
@@ -918,17 +915,11 @@ class ImportExportService {
         );
       }
 
-      // Get master password for secure export key generation
-      let masterPasswordResult = await getEffectiveMasterPassword();
-      let masterPassword = masterPasswordResult.success
-        ? masterPasswordResult.password
-        : null;
+      // 🔐 Always require authentication for export (security requirement)
+      let masterPassword: string | null = null;
 
-      // 🔐 If master password not cached and callback provided, trigger authentication
-      if (!masterPassword && options.onRequireAuthentication) {
-        console.log(
-          '🔐 [Export] Master password not cached, triggering authentication callback...',
-        );
+      if (options.onRequireAuthentication) {
+        console.log('🔐 [Export] Requiring authentication for export...');
         try {
           masterPassword = await options.onRequireAuthentication();
           console.log('✅ [Export] Authentication successful');
@@ -936,6 +927,16 @@ class ImportExportService {
           console.error('❌ [Export] Authentication failed or cancelled');
           throw new Error('Authentication required to export passwords');
         }
+      } else {
+        // Fallback to cached password only if no authentication callback provided
+        const masterPasswordResult = await getEffectiveMasterPassword();
+        masterPassword = masterPasswordResult.success
+          ? masterPasswordResult.password
+          : null;
+      }
+
+      if (!masterPassword) {
+        throw new Error('Master password required for export');
       }
 
       // Generate secure export key (plain text master password only - FIXED, no email/uid)

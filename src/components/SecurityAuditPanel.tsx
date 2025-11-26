@@ -477,25 +477,22 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
           ? '#FF9800'
           : '#F44336';
 
-      const savedAudit = await AuditHistoryService.saveAuditResult(
-        passwordEntry.id,
-        {
-          date: new Date(),
-          score: currentAuditData.securityScore,
-          riskLevel: currentAuditData.riskLevel,
-          vulnerabilityCount: vulnerabilities.length,
-          vulnerabilities,
-          passwordStrength: {
-            score: currentAuditData.passwordAnalysis.strength.score,
-            label: currentAuditData.passwordAnalysis.strength.label,
-            color: scoreColor,
-            feedback: [],
-            crackTime: currentAuditData.passwordAnalysis.crackTime,
-            factors: currentAuditData.passwordAnalysis.strength.factors,
-          },
-          changes: [],
+      await AuditHistoryService.saveAuditResult(passwordEntry.id, {
+        date: new Date(),
+        score: currentAuditData.securityScore,
+        riskLevel: currentAuditData.riskLevel,
+        vulnerabilityCount: vulnerabilities.length,
+        vulnerabilities,
+        passwordStrength: {
+          score: currentAuditData.passwordAnalysis.strength.score,
+          label: currentAuditData.passwordAnalysis.strength.label,
+          color: scoreColor,
+          feedback: [],
+          crackTime: currentAuditData.passwordAnalysis.crackTime,
+          factors: currentAuditData.passwordAnalysis.strength.factors,
         },
-      );
+        changes: [],
+      });
 
       console.log('✅ SecurityAuditPanel: Audit result saved');
 

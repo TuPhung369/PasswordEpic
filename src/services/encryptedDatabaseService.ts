@@ -25,7 +25,7 @@ export class EncryptedDatabaseService {
     string,
     { decrypted: string; timestamp: number }
   >();
-  
+
   private static readonly DECRYPTION_CACHE_TTL = 5 * 60 * 1000; // 5 minutes per entry
 
   private constructor() {}
@@ -84,17 +84,22 @@ export class EncryptedDatabaseService {
         console.log(
           '🔐 [Save] Password unchanged, preserving existing encryption',
         );
-        
+
         // VALIDATION: Verify that the preserved encrypted data has valid encryption metadata
         // In AES-CTR, ciphertext size equals plaintext size, so we only check that metadata exists
-        if (!existingEntry.passwordSalt || !existingEntry.passwordIv || !existingEntry.passwordAuthTag) {
+        if (
+          !existingEntry.passwordSalt ||
+          !existingEntry.passwordIv ||
+          !existingEntry.passwordAuthTag
+        ) {
           console.error(
             `🚨 [Save] CORRUPTION DETECTED: Entry "${entry.title}" has missing encryption metadata!`,
             {
               hasSalt: !!existingEntry.passwordSalt,
               hasIv: !!existingEntry.passwordIv,
               hasTag: !!existingEntry.passwordAuthTag,
-              recommendation: 'This entry should be re-created or updated to fix the corruption',
+              recommendation:
+                'This entry should be re-created or updated to fix the corruption',
             },
           );
           // Re-encrypt instead of using corrupted metadata
@@ -129,16 +134,18 @@ export class EncryptedDatabaseService {
         console.log('🔐 [Save] Encrypting new/updated password', {
           isNewEntry: !existingEntry,
           passwordLength: entry.password?.length || 0,
-          passwordPreview: entry.password?.substring(0, 20) + (entry.password && entry.password.length > 20 ? '...' : ''),
+          passwordPreview:
+            entry.password?.substring(0, 20) +
+            (entry.password && entry.password.length > 20 ? '...' : ''),
         });
-        
+
         // CRITICAL: Validate master password exists before encryption
         if (!masterPassword || masterPassword.length === 0) {
           throw new Error(
             `Cannot encrypt password "${entry.title}" - master password is required but not provided. This entry would be lost. Please provide the master password to save this password.`,
           );
         }
-        
+
         const salt = generateSecureRandom(32);
         const iv = generateSecureRandom(12);
         const derivedKey = deriveKeyFromPassword(masterPassword, salt);
@@ -241,7 +248,7 @@ export class EncryptedDatabaseService {
       const allEntries = [...existingEntries];
       const existingIndex = allEntries.findIndex(e => e.id === entry.id);
 
-      const optimizedEntry = {
+      const optimizedEntry: OptimizedPasswordEntry = {
         id: entry.id,
         title: entry.title,
         username: entry.username,
@@ -254,11 +261,12 @@ export class EncryptedDatabaseService {
         category: entry.category || 'General',
         tags: entry.tags || [],
         isFavorite: entry.isFavorite || false,
-        createdAt: entry.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        lastUsed: entry.lastUsed || null,
-        auditData: entry.auditData || [],
-        breachStatus: entry.breachStatus || { status: 'unknown' },
+        createdAt: entry.createdAt ? new Date(entry.createdAt) : new Date(),
+        updatedAt: new Date(),
+        lastUsed: entry.lastUsed ? new Date(entry.lastUsed) : undefined,
+        auditData: entry.auditData,
+        breachStatus: entry.breachStatus,
+        storageVersion: 2,
       };
 
       if (existingIndex >= 0) {
@@ -298,7 +306,7 @@ export class EncryptedDatabaseService {
    * Get all password entries
    * When masterPassword provided: Returns with decrypted passwords (isDecrypted=true)
    * When masterPassword empty: Returns with encrypted passwords for lazy loading (isDecrypted=false)
-   * 
+   *
    * RESILIENCE: If some entries fail to decrypt due to tag mismatches or corruption,
    * they are returned with isDecrypted=false and encrypted password intact.
    * This allows duplicate detection using title/username metadata even with corrupted entries.
@@ -321,7 +329,10 @@ export class EncryptedDatabaseService {
       try {
         optimizedEntries = await this.getAllOptimizedEntries();
       } catch (error) {
-        console.error('❌ [Load] Failed to load encrypted entries from storage:', error);
+        console.error(
+          '❌ [Load] Failed to load encrypted entries from storage:',
+          error,
+        );
         return [];
       }
 
@@ -357,9 +368,14 @@ export class EncryptedDatabaseService {
         for (let i = 0; i < entries.length; i++) {
           try {
             const optimizedEntry = optimizedEntries[i];
-            
+
             // Check for missing encryption metadata
-            if (!optimizedEntry.encryptedPassword || !optimizedEntry.passwordSalt || !optimizedEntry.passwordIv || !optimizedEntry.passwordAuthTag) {
+            if (
+              !optimizedEntry.encryptedPassword ||
+              !optimizedEntry.passwordSalt ||
+              !optimizedEntry.passwordIv ||
+              !optimizedEntry.passwordAuthTag
+            ) {
               console.warn(
                 `⚠️ [Load] Entry "${entries[i].title}" (index ${i}) has corrupted encrypted data (missing metadata). Keeping encrypted password for duplicate detection.`,
               );
@@ -367,7 +383,7 @@ export class EncryptedDatabaseService {
               skippedCount++;
               continue;
             }
-            
+
             const decryptedPassword = decryptDataWithRetry(
               optimizedEntry.encryptedPassword,
               masterPassword,
@@ -464,7 +480,12 @@ export class EncryptedDatabaseService {
       }
 
       // Check for missing encryption metadata
-      if (!entry.encryptedPassword || !entry.passwordSalt || !entry.passwordIv || !entry.passwordAuthTag) {
+      if (
+        !entry.encryptedPassword ||
+        !entry.passwordSalt ||
+        !entry.passwordIv ||
+        !entry.passwordAuthTag
+      ) {
         console.error(
           `❌ [Decrypt] Entry "${entry.title}" (${id}) has corrupted encrypted data (missing metadata). Cannot decrypt due to data corruption.`,
         );
@@ -578,9 +599,11 @@ export class EncryptedDatabaseService {
       // Verify deletion was saved
       const verifyEntries = await this.getAllOptimizedEntries();
       const stillExists = verifyEntries.some(e => e.id === id);
-      
+
       if (stillExists) {
-        throw new Error(`Deletion verification failed - entry ${id} still exists after delete`);
+        throw new Error(
+          `Deletion verification failed - entry ${id} still exists after delete`,
+        );
       }
 
       console.log(`✅ [DB] Password ${id} deleted and verified`);
@@ -769,11 +792,17 @@ export class EncryptedDatabaseService {
         createdAt: new Date(entry.createdAt),
         updatedAt: new Date(entry.updatedAt),
         lastUsed: entry.lastUsed ? new Date(entry.lastUsed) : undefined,
-        auditData: entry.auditData ? {
-          ...entry.auditData,
-          lastPasswordChange: entry.auditData.lastPasswordChange ? new Date(entry.auditData.lastPasswordChange) : new Date(),
-          lastAuditDate: entry.auditData.lastAuditDate ? new Date(entry.auditData.lastAuditDate) : undefined,
-        } : undefined,
+        auditData: entry.auditData
+          ? {
+              ...entry.auditData,
+              lastPasswordChange: entry.auditData.lastPasswordChange
+                ? new Date(entry.auditData.lastPasswordChange)
+                : new Date(),
+              lastAuditDate: entry.auditData.lastAuditDate
+                ? new Date(entry.auditData.lastAuditDate)
+                : undefined,
+            }
+          : undefined,
       }));
     } catch (error) {
       console.error('Failed to get optimized entries:', error);
@@ -957,11 +986,16 @@ export class EncryptedDatabaseService {
     try {
       console.log('🔧 [Repair] Starting corrupted entries repair...');
       const entries = await this.getAllOptimizedEntries();
-      
+
       let needsUpdate = false;
       const repairedEntries = entries.map(entry => {
         // Check for corrupted encryption metadata
-        if (!entry.passwordSalt || !entry.passwordIv || !entry.passwordAuthTag || !entry.encryptedPassword) {
+        if (
+          !entry.passwordSalt ||
+          !entry.passwordIv ||
+          !entry.passwordAuthTag ||
+          !entry.encryptedPassword
+        ) {
           console.warn(
             `🔧 [Repair] Found corrupted entry: "${entry.title}" - missing encryption metadata`,
           );
@@ -974,7 +1008,7 @@ export class EncryptedDatabaseService {
               // Generate new encryption metadata
               const salt = generateSecureRandom(32);
               const iv = generateSecureRandom(12);
-              
+
               // Keep the existing ciphertext as-is since we can't decrypt without metadata
               // But generate new metadata for future decryption attempts
               return {
@@ -985,8 +1019,13 @@ export class EncryptedDatabaseService {
                 updatedAt: new Date(),
               };
             } catch (error) {
-              console.error(`🔧 [Repair] Failed to repair entry "${entry.title}":`, error);
-              result.errors.push(`Failed to repair entry "${entry.title}": ${error}`);
+              console.error(
+                `🔧 [Repair] Failed to repair entry "${entry.title}":`,
+                error,
+              );
+              result.errors.push(
+                `Failed to repair entry "${entry.title}": ${error}`,
+              );
               result.repairedCount--;
               result.skippedCount++;
               return entry; // Return unchanged
@@ -999,12 +1038,16 @@ export class EncryptedDatabaseService {
 
       // Save repaired entries if needed
       if (needsUpdate && result.repairedCount > 0) {
-        console.log(`🔧 [Repair] Saving ${result.repairedCount} repaired entries...`);
+        console.log(
+          `🔧 [Repair] Saving ${result.repairedCount} repaired entries...`,
+        );
         await AsyncStorage.setItem(
           PASSWORDS_STORAGE_KEY,
           JSON.stringify(repairedEntries),
         );
-        console.log(`✅ [Repair] Successfully repaired ${result.repairedCount} entries`);
+        console.log(
+          `✅ [Repair] Successfully repaired ${result.repairedCount} entries`,
+        );
       }
 
       return result;

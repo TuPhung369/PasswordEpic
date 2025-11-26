@@ -2253,7 +2253,27 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
 
           for (const entry of result.data.entries) {
             try {
-              await encryptedDatabase.savePasswordEntry(entry, masterPassword);
+              // Check if entry has encryption metadata (from backup)
+              const entryWithMeta = entry as any;
+              if (entryWithMeta.encryptionMetadata) {
+                // Use savePasswordEntryWithEncryptedData to avoid double encryption
+                console.log(
+                  `♻️ [BACKUP/RESTORE] Using pre-encrypted data for: ${entry.title}`,
+                );
+                await encryptedDatabase.savePasswordEntryWithEncryptedData(
+                  entry,
+                  entryWithMeta.encryptionMetadata,
+                );
+              } else {
+                // Fallback: entry doesn't have encryption metadata, encrypt normally
+                console.log(
+                  `♻️ [BACKUP/RESTORE] No encryption metadata, encrypting: ${entry.title}`,
+                );
+                await encryptedDatabase.savePasswordEntry(
+                  entry,
+                  masterPassword,
+                );
+              }
               savedCount++;
             } catch (error) {
               console.warn(
@@ -2353,7 +2373,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       // Get categories for backup
       const backupCategories = Array.from(
         new Set(passwords.map(p => p.category).filter(Boolean)),
-      ).map(categoryName => ({
+      ).map((categoryName: string) => ({
         id: categoryName,
         name: categoryName,
         icon: 'folder',
@@ -2700,6 +2720,30 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           let skippedCount = 0;
           let overwrittenCount = 0;
 
+          // Helper function to save entry with encryption metadata if available
+          const saveRestoredEntry = async (entryToSave: any) => {
+            const entryWithMeta = entryToSave as any;
+            if (entryWithMeta.encryptionMetadata) {
+              // Use pre-encrypted data to avoid double encryption
+              console.log(
+                `♻️ [RESTORE] Using pre-encrypted data for: ${entryToSave.title}`,
+              );
+              await encryptedDatabase.savePasswordEntryWithEncryptedData(
+                entryToSave,
+                entryWithMeta.encryptionMetadata,
+              );
+            } else {
+              // Fallback: encrypt normally (for old backups without metadata)
+              console.log(
+                `♻️ [RESTORE] No encryption metadata, encrypting: ${entryToSave.title}`,
+              );
+              await encryptedDatabase.savePasswordEntry(
+                entryToSave,
+                masterPassword,
+              );
+            }
+          };
+
           for (const entry of result.data.entries) {
             try {
               // The entry is now decrypted by the backupService, so we can use it directly.
@@ -2708,9 +2752,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
                 '🔵 [DEBUG_RESTORE STEP 3] Processing entry to save:',
                 {
                   title: entryToSave.title,
-                  password: `(plaintext, length: ${
-                    entryToSave.password?.length || 0
-                  })`,
+                  hasEncryptionMetadata: !!(entryToSave as any)
+                    .encryptionMetadata,
                 },
               );
 
@@ -2749,10 +2792,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
                   console.log(
                     `🔵 [DEBUG_RESTORE STEP 5] Saving (overwrite) entry: ${entryToSave.title}`,
                   );
-                  await encryptedDatabase.savePasswordEntry(
-                    entryToSave,
-                    masterPassword,
-                  );
+                  await saveRestoredEntry(entryToSave);
                   overwrittenCount++;
                 } else {
                   // Skip duplicate
@@ -2767,10 +2807,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
                 console.log(
                   `🔵 [DEBUG_RESTORE STEP 5] Saving (new) entry: ${entryToSave.title}`,
                 );
-                await encryptedDatabase.savePasswordEntry(
-                  entryToSave,
-                  masterPassword,
-                );
+                await saveRestoredEntry(entryToSave);
                 savedCount++;
               }
             } catch (saveError) {
@@ -2995,12 +3032,52 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       if (result.result.success) {
         console.log('✅ [PasswordsScreen] Restore successful');
 
-        // Get master password for reloading passwords
+        // Get master password for saving/reloading passwords
         const masterPasswordResult = await getEffectiveMasterPassword();
         if (masterPasswordResult.success && masterPasswordResult.password) {
-          await dispatch(
-            loadPasswordsLazy(masterPasswordResult.password),
-          ).unwrap();
+          const masterPwd = masterPasswordResult.password;
+
+          // Save restored entries to database
+          if (result.data && result.data.entries) {
+            let savedCount = 0;
+            let skippedCount = 0;
+
+            for (const entry of result.data.entries) {
+              try {
+                // Check if entry has encryption metadata (from backup)
+                const entryWithMeta = entry as any;
+                if (entryWithMeta.encryptionMetadata) {
+                  // Use savePasswordEntryWithEncryptedData to avoid double encryption
+                  console.log(
+                    `♻️ [RestoreWithPassword] Using pre-encrypted data for: ${entry.title}`,
+                  );
+                  await encryptedDatabase.savePasswordEntryWithEncryptedData(
+                    entry,
+                    entryWithMeta.encryptionMetadata,
+                  );
+                } else {
+                  // Fallback: entry doesn't have encryption metadata, encrypt normally
+                  console.log(
+                    `♻️ [RestoreWithPassword] No encryption metadata, encrypting: ${entry.title}`,
+                  );
+                  await encryptedDatabase.savePasswordEntry(entry, masterPwd);
+                }
+                savedCount++;
+              } catch (error) {
+                console.warn(
+                  `⚠️ [RestoreWithPassword] Failed to save entry: ${entry.title}`,
+                  error,
+                );
+                skippedCount++;
+              }
+            }
+
+            console.log(
+              `✅ [RestoreWithPassword] Saved ${savedCount} entries, skipped ${skippedCount}`,
+            );
+          }
+
+          await dispatch(loadPasswordsLazy(masterPwd)).unwrap();
         }
 
         setToastMessage('Backup restored successfully');

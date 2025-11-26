@@ -793,6 +793,18 @@ class ImportExportService {
             const entry = processedEntries[i];
             const rawEntry = parsedData[i];
 
+            // Debug: Log rawEntry fields to check encryption metadata
+            console.log(`🔍 [Import] Entry ${i} rawEntry fields:`, {
+              title: rawEntry.title,
+              hasSalt: !!rawEntry.salt,
+              hasIv: !!rawEntry.iv,
+              hasAuthTag: !!rawEntry.authTag,
+              hasPassword: !!rawEntry.password,
+              isPasswordEncrypted: rawEntry.isPasswordEncrypted,
+              saltPreview: rawEntry.salt?.substring(0, 20),
+              ivPreview: rawEntry.iv?.substring(0, 20),
+            });
+
             // Check if this entry has encrypted data from export
             if (
               rawEntry.salt &&

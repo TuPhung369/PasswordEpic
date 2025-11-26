@@ -1039,6 +1039,30 @@ export const SettingsScreen: React.FC = () => {
           let skippedCount = 0;
           let overwrittenCount = 0;
 
+          // Helper function to save entry with encryption metadata if available
+          const saveRestoredEntry = async (entryToSave: any) => {
+            const entryWithMeta = entryToSave as any;
+            if (entryWithMeta.encryptionMetadata) {
+              // Use pre-encrypted data to avoid double encryption
+              console.log(
+                `♻️ [RESTORE] Using pre-encrypted data for: ${entryToSave.title}`,
+              );
+              await encryptedDatabase.savePasswordEntryWithEncryptedData(
+                entryToSave,
+                entryWithMeta.encryptionMetadata,
+              );
+            } else {
+              // Fallback: encrypt normally (for old backups without metadata)
+              console.log(
+                `♻️ [RESTORE] No encryption metadata, encrypting: ${entryToSave.title}`,
+              );
+              await encryptedDatabase.savePasswordEntry(
+                entryToSave,
+                masterPassword,
+              );
+            }
+          };
+
           for (const entry of result.data.entries) {
             try {
               const isDuplicate = existingPasswords.some(
@@ -1068,32 +1092,7 @@ export const SettingsScreen: React.FC = () => {
                     );
                   }
 
-                  // Check if entry has encryption metadata - restore as-is
-                  if (
-                    (entry as any).salt &&
-                    (entry as any).iv &&
-                    (entry as any).authTag &&
-                    (entry as any).isPasswordEncrypted
-                  ) {
-                    console.log(
-                      `✅ [SettingsScreen] Restoring encrypted entry as-is: ${entry.title}`,
-                    );
-                    await encryptedDatabase.savePasswordEntryWithEncryptedData(
-                      entry,
-                      {
-                        ciphertext: entry.password,
-                        salt: (entry as any).salt,
-                        iv: (entry as any).iv,
-                        tag: (entry as any).authTag,
-                      },
-                    );
-                  } else {
-                    // Plaintext entry - encrypt normally
-                    await encryptedDatabase.savePasswordEntry(
-                      entry,
-                      masterPassword,
-                    );
-                  }
+                  await saveRestoredEntry(entry);
                   overwrittenCount++;
                 } else {
                   // Skip duplicate
@@ -1104,32 +1103,8 @@ export const SettingsScreen: React.FC = () => {
                   continue;
                 }
               } else {
-                // Not a duplicate - check if entry has encryption metadata
-                if (
-                  (entry as any).salt &&
-                  (entry as any).iv &&
-                  (entry as any).authTag &&
-                  (entry as any).isPasswordEncrypted
-                ) {
-                  console.log(
-                    `✅ [SettingsScreen] Restoring encrypted entry as-is: ${entry.title}`,
-                  );
-                  await encryptedDatabase.savePasswordEntryWithEncryptedData(
-                    entry,
-                    {
-                      ciphertext: entry.password,
-                      salt: (entry as any).salt,
-                      iv: (entry as any).iv,
-                      tag: (entry as any).authTag,
-                    },
-                  );
-                } else {
-                  // Plaintext entry - encrypt normally
-                  await encryptedDatabase.savePasswordEntry(
-                    entry,
-                    masterPassword,
-                  );
-                }
+                // Not a duplicate - save with encryption metadata if available
+                await saveRestoredEntry(entry);
                 savedCount++;
               }
             } catch (saveError) {

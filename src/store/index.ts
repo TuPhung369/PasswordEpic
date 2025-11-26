@@ -21,6 +21,9 @@ const rootReducer = combineReducers({
   settings: settingsReducer,
 });
 
+// Export the root state type from the non-persisted reducer for proper typing
+export type RootState = ReturnType<typeof rootReducer>;
+
 // Create persisted reducer
 const persistedReducer = persistReducer(persistConfig, rootReducer);
 
@@ -54,7 +57,6 @@ const store = configureStore({
 // Create persistor
 export const persistor = persistStore(store);
 
-export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;
 
 export { store };

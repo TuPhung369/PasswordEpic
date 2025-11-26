@@ -1247,8 +1247,26 @@ class BackupService {
   private processRestoredEntries(
     entries: BackupPasswordEntry[],
     _options: RestoreOptions,
-  ): PasswordEntry[] {
+  ): (PasswordEntry & {
+    encryptionMetadata?: {
+      ciphertext: string;
+      salt: string;
+      iv: string;
+      tag: string;
+    };
+  })[] {
     return entries.map(entry => {
+      // Extract encryption metadata before cleaning
+      const encryptionMetadata =
+        entry.isPasswordEncrypted && entry.salt && entry.iv && entry.authTag
+          ? {
+              ciphertext: entry.password, // password field contains encrypted ciphertext
+              salt: entry.salt,
+              iv: entry.iv,
+              tag: entry.authTag,
+            }
+          : undefined;
+
       // Remove backup-specific metadata fields from entry
       const cleanEntry = { ...entry };
       delete cleanEntry._corruptedDuringBackup;
@@ -1264,16 +1282,31 @@ class BackupService {
         createdAt: new Date(entry.createdAt),
         updatedAt: new Date(entry.updatedAt),
         lastUsed: entry.lastUsed ? new Date(entry.lastUsed) : undefined,
-        auditData: entry.auditData ? {
-          ...entry.auditData,
-          lastPasswordChange: entry.auditData.lastPasswordChange ? new Date(entry.auditData.lastPasswordChange) : entry.auditData.lastPasswordChange,
-          lastAuditDate: entry.auditData.lastAuditDate ? new Date(entry.auditData.lastAuditDate) : entry.auditData.lastAuditDate,
-          auditHistory: entry.auditData.auditHistory?.map(history => ({
-            ...history,
-            date: new Date(history.date),
-          })) || undefined,
-        } : undefined,
-      } as PasswordEntry;
+        encryptionMetadata, // Include encryption metadata for caller to use
+        auditData: entry.auditData
+          ? {
+              ...entry.auditData,
+              lastPasswordChange: entry.auditData.lastPasswordChange
+                ? new Date(entry.auditData.lastPasswordChange)
+                : entry.auditData.lastPasswordChange,
+              lastAuditDate: entry.auditData.lastAuditDate
+                ? new Date(entry.auditData.lastAuditDate)
+                : entry.auditData.lastAuditDate,
+              auditHistory:
+                entry.auditData.auditHistory?.map(history => ({
+                  ...history,
+                  date: new Date(history.date),
+                })) || undefined,
+            }
+          : undefined,
+      } as PasswordEntry & {
+        encryptionMetadata?: {
+          ciphertext: string;
+          salt: string;
+          iv: string;
+          tag: string;
+        };
+      };
     });
   }
 

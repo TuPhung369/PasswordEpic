@@ -17,17 +17,17 @@ An ultra-secure mobile password manager built with React Native, featuring end-t
 To use the autofill feature, you need to enable it in your phone's settings.
 
 1.  **Enable Autofill Service:**
-    *   Go to your phone's **Settings**.
-    *   Search for "Autofill service".
-    *   Select **PasswordEpic** as your autofill service.
+    - Go to your phone's **Settings**.
+    - Search for "Autofill service".
+    - Select **PasswordEpic** as your autofill service.
 2.  **Enable in Browser (Chrome or Firefox):**
-    *   Open your web browser's settings.
-    *   Go to "Autofill" or "Passwords".
-    *   Ensure **PasswordEpic Autofill** is selected.
+    - Open your web browser's settings.
+    - Go to "Autofill" or "Passwords".
+    - Ensure **PasswordEpic Autofill** is selected.
 3.  **Enable Accessibility Service:**
-    *   Go to your phone's **Settings > Accessibility**.
-    *   Find **PasswordEpic** in the list of downloaded apps.
-    *   Enable the accessibility service for PasswordEpic. This is required for the autofill feature to work correctly in all apps.
+    - Go to your phone's **Settings > Accessibility**.
+    - Find **PasswordEpic** in the list of downloaded apps.
+    - Enable the accessibility service for PasswordEpic. This is required for the autofill feature to work correctly in all apps.
 
 ### Main Screens
 
@@ -35,31 +35,31 @@ To use the autofill feature, you need to enable it in your phone's settings.
 
 This is the main screen where you can manage all your saved passwords. It provides the following functions:
 
-*   **Search:** Quickly find any password.
-*   **Sort:** Sort your passwords by creation date, last used, or alphabetically.
-*   **Filter:** Filter passwords by category, tags, or security status (weak, compromised).
-*   **Add Password:** Manually add a new password entry.
-*   **Export/Import:** Export your passwords to a JSON file or import from a previous backup.
-*   **Backup & Restore:** Securely back up your encrypted password vault to Google Drive and restore it when needed.
-*   **Bulk Actions:** Select multiple passwords to delete them at once.
-*   **View Details:** Tap on a password to view its details, edit, or delete it.
+- **Search:** Quickly find any password.
+- **Sort:** Sort your passwords by creation date, last used, or alphabetically.
+- **Filter:** Filter passwords by category, tags, or security status (weak, compromised).
+- **Add Password:** Manually add a new password entry.
+- **Export/Import:** Export your passwords to a JSON file or import from a previous backup.
+- **Backup & Restore:** Securely back up your encrypted password vault to Google Drive and restore it when needed.
+- **Bulk Actions:** Select multiple passwords to delete them at once.
+- **View Details:** Tap on a password to view its details, edit, or delete it.
 
 #### Generator Screen
 
 Create strong and unique passwords with the built-in password generator. You can customize:
 
-*   Password length.
-*   Inclusion of uppercase letters, lowercase letters, numbers, and symbols.
-*   Exclusion of similar or ambiguous characters.
+- Password length.
+- Inclusion of uppercase letters, lowercase letters, numbers, and symbols.
+- Exclusion of similar or ambiguous characters.
 
 #### Settings Screen
 
 Configure the app to your preferences:
 
-*   **Security:** Enable biometric authentication (Face ID/Fingerprint), set an auto-lock timer, and manage other security features.
-*   **Appearance:** Choose between light, dark, or system default theme.
-*   **Backup & Restore:** Manage your backups.
-*   **Account:** Manage your account and sign out.
+- **Security:** Enable biometric authentication (Face ID/Fingerprint), set an auto-lock timer, and manage other security features.
+- **Appearance:** Choose between light, dark, or system default theme.
+- **Backup & Restore:** Manage your backups.
+- **Account:** Manage your account and sign out.
 
 ## Developer Guide
 
@@ -78,6 +78,7 @@ Configure the app to your preferences:
     cd PasswordEpic
     ```
 2.  **Install dependencies:**
+
     ```sh
     # Using npm
     npm install
@@ -85,6 +86,7 @@ Configure the app to your preferences:
     # OR using Yarn
     yarn
     ```
+
 3.  **For iOS, install CocoaPods dependencies:**
     ```sh
     cd ios
@@ -93,6 +95,7 @@ Configure the app to your preferences:
     cd ..
     ```
 4.  **Start the Metro server:**
+
     ```sh
     # Using npm
     npm start
@@ -100,8 +103,10 @@ Configure the app to your preferences:
     # OR using Yarn
     yarn start
     ```
+
 5.  **Run the app:**
     Open a new terminal and run one of the following commands:
+
     ```sh
     # For Android
     npm run android
@@ -131,7 +136,128 @@ npm run format          # Format code with Prettier
 - **Native Auto-fill**: Secure password auto-fill for Android and iOS
 - **Multi-layer Security**: Root/jailbreak detection, anti-tampering measures
 
-## 🚀 Development
+## �️ Technical Stack
+
+### Core Framework
+
+| Technology    | Version | Purpose                         |
+| ------------- | ------- | ------------------------------- |
+| React Native  | 0.81.4  | Cross-platform mobile framework |
+| TypeScript    | 5.0+    | Type-safe JavaScript            |
+| Redux Toolkit | 2.x     | State management                |
+| Redux Persist | 6.x     | State persistence               |
+
+### Security & Encryption
+
+| Technology              | Purpose                             |
+| ----------------------- | ----------------------------------- |
+| AES-256-GCM             | Password encryption algorithm       |
+| PBKDF2                  | Key derivation from master password |
+| react-native-keychain   | Secure credential storage           |
+| react-native-biometrics | Fingerprint/Face authentication     |
+
+### Backend & Cloud
+
+| Technology         | Purpose               |
+| ------------------ | --------------------- |
+| Firebase Auth      | User authentication   |
+| Firebase Firestore | Cloud database & sync |
+| Google Sign-In     | OAuth authentication  |
+
+### Native Modules (Android)
+
+| Component            | Purpose                           |
+| -------------------- | --------------------------------- |
+| AutofillService      | Native Android autofill framework |
+| AccessibilityService | Enhanced autofill for all apps    |
+| BiometricPrompt      | Native biometric authentication   |
+
+### UI & Navigation
+
+| Library                      | Purpose                    |
+| ---------------------------- | -------------------------- |
+| React Navigation 7.x         | Screen navigation          |
+| React Native Paper           | Material Design components |
+| React Native Vector Icons    | Icon library               |
+| React Native Gesture Handler | Touch gestures             |
+| React Native Reanimated      | Smooth animations          |
+
+### Development & Testing
+
+| Tool           | Purpose                |
+| -------------- | ---------------------- |
+| Jest           | Unit testing framework |
+| ESLint         | Code linting           |
+| Prettier       | Code formatting        |
+| GitHub Actions | CI/CD pipeline         |
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        User Interface                        │
+│              (React Native + React Navigation)               │
+├─────────────────────────────────────────────────────────────┤
+│                      State Management                        │
+│                  (Redux Toolkit + Persist)                   │
+├─────────────────────────────────────────────────────────────┤
+│                     Service Layer                            │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐   │
+│  │   Crypto    │ │   Auth      │ │   Database          │   │
+│  │   Service   │ │   Service   │ │   Service           │   │
+│  │ (AES-256)   │ │ (Firebase)  │ │ (AsyncStorage)      │   │
+│  └─────────────┘ └─────────────┘ └─────────────────────┘   │
+├─────────────────────────────────────────────────────────────┤
+│                    Native Modules                            │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐   │
+│  │  Autofill   │ │  Biometric  │ │   Keychain          │   │
+│  │  Service    │ │  Auth       │ │   Storage           │   │
+│  └─────────────┘ └─────────────┘ └─────────────────────┘   │
+├─────────────────────────────────────────────────────────────┤
+│                    Platform Layer                            │
+│              Android (Kotlin) / iOS (Swift)                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Encryption Flow
+
+```
+User Password Input
+        │
+        ▼
+┌───────────────────┐
+│ Generate Random   │
+│ Salt (32 bytes)   │
+│ IV (12 bytes)     │
+└─────────┬─────────┘
+          │
+          ▼
+┌───────────────────┐
+│ PBKDF2 Key        │
+│ Derivation        │
+│ (Master Password  │
+│  + Salt)          │
+└─────────┬─────────┘
+          │
+          ▼
+┌───────────────────┐
+│ AES-256-GCM       │
+│ Encryption        │
+│ (Password + Key   │
+│  + IV)            │
+└─────────┬─────────┘
+          │
+          ▼
+┌───────────────────┐
+│ Store:            │
+│ - Ciphertext      │
+│ - Salt            │
+│ - IV              │
+│ - Auth Tag        │
+└───────────────────┘
+```
+
+## �🚀 Development
 
 ### Prerequisites
 

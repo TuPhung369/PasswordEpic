@@ -126,7 +126,18 @@ export const signOut = async (options?: { clearSessionData?: boolean }) => {
     // Import Google Sign-In functions
     const { googleSignOut } = require('./googleAuthNative');
 
-    // Step 1: Optionally clear static master password data
+    // Step 1: Invalidate master password set cache to force re-check on next login
+    try {
+      const { invalidateMasterPasswordCache } = await import(
+        './secureStorageService'
+      );
+      await invalidateMasterPasswordCache();
+      console.log('🧹 [Auth] Master password cache invalidated');
+    } catch (cacheError) {
+      console.warn('⚠️ [Auth] Failed to invalidate cache:', cacheError);
+    }
+
+    // Step 2: Optionally clear static master password data
     // ⚠️ IMPORTANT: Only clear if explicitly requested (e.g., "Delete Account")
     // For normal logout, preserve fixed salt to allow re-login with same passwords
     if (clearSession) {
@@ -146,7 +157,7 @@ export const signOut = async (options?: { clearSessionData?: boolean }) => {
       );
     }
 
-    // Step 2: Sign out from both Google and Firebase
+    // Step 3: Sign out from both Google and Firebase
     const [googleResult, firebaseResult] = await Promise.all([
       googleSignOut(),
       firebaseSignOut(),

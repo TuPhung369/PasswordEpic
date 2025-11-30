@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import {
   listGoogleDriveBackups,
   DriveFile,
@@ -23,10 +24,14 @@ interface GoogleDriveFilePickerModalProps {
   isHidden?: boolean;
 }
 
-const GoogleDriveFilePickerModal: React.FC<
-  GoogleDriveFilePickerModalProps
-> = ({ visible, onClose, onConfirm, isHidden = false }) => {
+const GoogleDriveFilePickerModal: React.FC<GoogleDriveFilePickerModalProps> = ({
+  visible,
+  onClose,
+  onConfirm,
+  isHidden = false,
+}) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const styles = createStyles(theme);
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -40,7 +45,9 @@ const GoogleDriveFilePickerModal: React.FC<
 
       const authResult = await ensureGoogleDriveAuthenticated();
       if (!authResult.success) {
-        setError(authResult.error || 'Failed to authenticate with Google Drive');
+        setError(
+          authResult.error || 'Failed to authenticate with Google Drive',
+        );
         setFiles([]);
         return;
       }
@@ -53,9 +60,7 @@ const GoogleDriveFilePickerModal: React.FC<
         setFiles([]);
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to load files',
-      );
+      setError(err instanceof Error ? err.message : 'Failed to load files');
       setFiles([]);
     } finally {
       setIsLoading(false);
@@ -105,7 +110,9 @@ const GoogleDriveFilePickerModal: React.FC<
         <Icon
           name="document-text-outline"
           size={24}
-          color={selectedFileId === item.id ? theme.primary : theme.textSecondary}
+          color={
+            selectedFileId === item.id ? theme.primary : theme.textSecondary
+          }
         />
       </View>
       <View style={styles.fileInfo}>
@@ -125,11 +132,7 @@ const GoogleDriveFilePickerModal: React.FC<
         </View>
       </View>
       {selectedFileId === item.id && (
-        <Icon
-          name="checkmark-circle"
-          size={24}
-          color={theme.primary}
-        />
+        <Icon name="checkmark-circle" size={24} color={theme.primary} />
       )}
     </TouchableOpacity>
   );
@@ -150,33 +153,31 @@ const GoogleDriveFilePickerModal: React.FC<
               color={theme.primary}
             />
             <Text style={styles.title}>
-              {isHidden ? 'Google Hidden Folder' : 'Google Drive'}
+              {isHidden
+                ? t('google_drive_picker.hidden_files')
+                : t('google_drive_picker.title')}
             </Text>
           </View>
 
           <Text style={styles.description}>
-            Select a file to import from{' '}
-            {isHidden ? 'your hidden folder' : 'Google Drive'}
+            {t('google_drive_picker.select_file')}
           </Text>
 
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={theme.primary} />
-              <Text style={styles.loadingText}>Loading files...</Text>
+              <Text style={styles.loadingText}>
+                {t('google_drive_picker.loading')}
+              </Text>
             </View>
           ) : error ? (
             <View style={styles.errorContainer}>
-              <Icon
-                name="alert-circle-outline"
-                size={32}
-                color={theme.error}
-              />
+              <Icon name="alert-circle-outline" size={32} color={theme.error} />
               <Text style={styles.errorText}>{error}</Text>
-              <TouchableOpacity
-                style={styles.retryButton}
-                onPress={loadFiles}
-              >
-                <Text style={styles.retryButtonText}>Retry</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={loadFiles}>
+                <Text style={styles.retryButtonText}>
+                  {t('google_drive_picker.retry')}
+                </Text>
               </TouchableOpacity>
             </View>
           ) : files.length === 0 ? (
@@ -186,7 +187,9 @@ const GoogleDriveFilePickerModal: React.FC<
                 size={48}
                 color={theme.textSecondary}
               />
-              <Text style={styles.emptyText}>No files found</Text>
+              <Text style={styles.emptyText}>
+                {t('google_drive_picker.no_files')}
+              </Text>
             </View>
           ) : (
             <FlatList
@@ -204,7 +207,9 @@ const GoogleDriveFilePickerModal: React.FC<
               style={[styles.button, styles.cancelButton]}
               onPress={onClose}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={styles.cancelButtonText}>
+                {t('google_drive_picker.cancel')}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -216,7 +221,9 @@ const GoogleDriveFilePickerModal: React.FC<
               onPress={handleConfirm}
               disabled={!selectedFileId}
             >
-              <Text style={styles.confirmButtonText}>Import</Text>
+              <Text style={styles.confirmButtonText}>
+                {t('google_drive_picker.import')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 
 interface ThemeSelectorProps {
   onPress: () => void;
@@ -9,17 +10,20 @@ interface ThemeSelectorProps {
 
 export const ThemeSelector: React.FC<ThemeSelectorProps> = ({ onPress }) => {
   const { theme, themeMode, isDarkMode } = useTheme();
+  const { t } = useTranslation();
 
   const getThemeDisplayName = () => {
     switch (themeMode) {
       case 'light':
-        return 'Light';
+        return t('theme_modal.light');
       case 'dark':
-        return 'Dark';
+        return t('theme_modal.dark');
       case 'system':
-        return `System (${isDarkMode ? 'Dark' : 'Light'})`;
+        return `${t('theme_modal.system')} (${
+          isDarkMode ? t('theme_modal.dark') : t('theme_modal.light')
+        })`;
       default:
-        return 'System';
+        return t('theme_modal.system');
     }
   };
 
@@ -51,7 +55,9 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({ onPress }) => {
           <Ionicons name={getThemeIcon()} size={24} color={theme.primary} />
         </View>
         <View style={styles.textContent}>
-          <Text style={[styles.label, { color: theme.text }]}>Theme</Text>
+          <Text style={[styles.label, { color: theme.text }]}>
+            {t('theme_modal.title')}
+          </Text>
         </View>
       </View>
       <View style={styles.rightContent}>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, Modal, InteractionManager } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useBiometric } from '../hooks/useBiometric';
 
 interface BiometricPromptProps {
@@ -16,10 +17,12 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
   onClose,
   onSuccess,
   onError,
-  title: _title = 'Authenticate to access your passwords',
+  title: _title,
   subtitle: _subtitle,
 }) => {
   const { authenticate, isAvailable } = useBiometric();
+  const { t } = useTranslation();
+  const defaultTitle = _title || t('auth.biometric_prompt_title');
   const hasTriggeredRef = React.useRef(false);
   const isAuthenticatingRef = React.useRef(false);
   const retryCountRef = React.useRef(0);
@@ -58,7 +61,7 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
 
           try {
             // console.log('🔐 BiometricPrompt: Calling authenticate...');
-            const success = await authenticateRef.current(_title);
+            const success = await authenticateRef.current(defaultTitle);
 
             if (success) {
               // console.log('🔐 BiometricPrompt: Authentication SUCCESS');
@@ -138,7 +141,7 @@ export const BiometricPrompt: React.FC<BiometricPromptProps> = ({
     } else if (visible && !isAvailable) {
       // Waiting for biometric availability check
     }
-  }, [visible, isAvailable, retryTrigger, _title]);
+  }, [visible, isAvailable, retryTrigger, defaultTitle]);
 
   // Reset when visibility changes
   React.useEffect(() => {

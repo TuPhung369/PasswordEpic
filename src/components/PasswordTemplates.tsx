@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 
 export interface PasswordTemplate {
   id: string;
@@ -24,6 +25,7 @@ export interface PasswordTemplate {
     includeNumbers: boolean;
     includeSymbols: boolean;
     excludeSimilar?: boolean;
+    excludeAmbiguous?: boolean;
     pattern?: string;
     pronounceable?: boolean;
   };
@@ -202,6 +204,7 @@ export const PasswordTemplates: React.FC<PasswordTemplatesProps> = ({
   currentTemplate,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [selectedTemplate, setSelectedTemplate] =
     useState<PasswordTemplate | null>(currentTemplate || null);
 
@@ -224,7 +227,7 @@ export const PasswordTemplates: React.FC<PasswordTemplatesProps> = ({
             <Ionicons name="close" size={24} color={theme.text} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: theme.text }]}>
-            Password Templates
+            {t('password_templates.title')}
           </Text>
           <View style={styles.spacer} />
         </View>
@@ -235,7 +238,7 @@ export const PasswordTemplates: React.FC<PasswordTemplatesProps> = ({
           showsVerticalScrollIndicator={false}
         >
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Choose a template optimized for specific use cases
+            {t('password_templates.subtitle')}
           </Text>
 
           <View style={styles.templatesGrid}>
@@ -275,7 +278,7 @@ export const PasswordTemplates: React.FC<PasswordTemplatesProps> = ({
                 </View>
 
                 <Text style={[styles.templateName, { color: theme.text }]}>
-                  {template.name}
+                  {t(`password_templates.templates.${template.id}.name`)}
                 </Text>
                 <Text
                   style={[
@@ -283,7 +286,7 @@ export const PasswordTemplates: React.FC<PasswordTemplatesProps> = ({
                     { color: theme.textSecondary },
                   ]}
                 >
-                  {template.description}
+                  {t(`password_templates.templates.${template.id}.description`)}
                 </Text>
 
                 <View style={styles.templateSettings}>
@@ -299,7 +302,9 @@ export const PasswordTemplates: React.FC<PasswordTemplatesProps> = ({
                         { color: theme.textSecondary },
                       ]}
                     >
-                      {template.settings.length} chars
+                      {t('password_templates.chars', {
+                        count: template.settings.length,
+                      })}
                     </Text>
                   </View>
                   <View style={styles.settingItem}>
@@ -315,8 +320,8 @@ export const PasswordTemplates: React.FC<PasswordTemplatesProps> = ({
                       ]}
                     >
                       {template.settings.includeSymbols
-                        ? 'All chars'
-                        : 'No symbols'}
+                        ? t('password_templates.all_chars')
+                        : t('password_templates.no_symbols')}
                     </Text>
                   </View>
                 </View>
@@ -328,7 +333,7 @@ export const PasswordTemplates: React.FC<PasswordTemplatesProps> = ({
                       { color: theme.textSecondary },
                     ]}
                   >
-                    Example:
+                    {t('password_templates.example')}
                   </Text>
                   <Text
                     style={[

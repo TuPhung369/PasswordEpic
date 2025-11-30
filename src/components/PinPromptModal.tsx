@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { unlockMasterPasswordWithPin } from '../services/staticMasterPasswordService';
 import ConfirmDialog from './ConfirmDialog';
@@ -20,16 +21,19 @@ interface PinPromptModalProps {
   onCancel: () => void;
   title?: string;
   subtitle?: string;
+  mode?: 'export' | 'import' | 'backup' | 'restore';
 }
 
 export const PinPromptModal: React.FC<PinPromptModalProps> = ({
   visible,
   onSuccess,
   onCancel,
-  title = 'Enter PIN',
-  subtitle = 'Enter your PIN to decrypt password',
+  title,
+  subtitle,
+  mode,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPin, setShowPin] = useState(false);
@@ -53,9 +57,9 @@ export const PinPromptModal: React.FC<PinPromptModalProps> = ({
     if (!pin.trim()) {
       setConfirmDialog({
         visible: true,
-        title: 'Error',
-        message: 'Please enter your PIN',
-        confirmText: 'OK',
+        title: t('common.error'),
+        message: t('pin_prompt.enter_pin'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -65,9 +69,9 @@ export const PinPromptModal: React.FC<PinPromptModalProps> = ({
     if (!isPinValid) {
       setConfirmDialog({
         visible: true,
-        title: 'Invalid PIN',
-        message: 'PIN must be 6-8 digits',
-        confirmText: 'OK',
+        title: t('pin_prompt.invalid_pin'),
+        message: t('pin_prompt.pin_must_be_digits'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -77,17 +81,16 @@ export const PinPromptModal: React.FC<PinPromptModalProps> = ({
     setLoading(true);
     try {
       const result = await unlockMasterPasswordWithPin(pin.trim());
-      
+
       if (result.success && result.password) {
         setPin('');
         onSuccess(result.password);
       } else {
         setConfirmDialog({
           visible: true,
-          title: 'Failed to Unlock',
-          message:
-            result.error || 'Failed to decrypt master password with PIN',
-          confirmText: 'OK',
+          title: t('pin_prompt.failed_to_unlock'),
+          message: result.error || t('pin_prompt.failed_decrypt_pin'),
+          confirmText: t('common.ok'),
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
@@ -96,9 +99,10 @@ export const PinPromptModal: React.FC<PinPromptModalProps> = ({
       console.error('PIN unlock failed:', error);
       setConfirmDialog({
         visible: true,
-        title: 'Error',
-        message: error instanceof Error ? error.message : 'Failed to unlock',
-        confirmText: 'OK',
+        title: t('common.error'),
+        message:
+          error instanceof Error ? error.message : t('errors.failed_unlock'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -131,15 +135,18 @@ export const PinPromptModal: React.FC<PinPromptModalProps> = ({
                 { backgroundColor: theme.primary + '20' },
               ]}
             >
-              <Ionicons
-                name="keypad-outline"
-                size={32}
-                color={theme.primary}
-              />
+              <Ionicons name="keypad-outline" size={32} color={theme.primary} />
             </View>
-            <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
+            <Text style={[styles.title, { color: theme.text }]}> 
+              {title ||
+                (mode === 'export' && t('backup_restore.export')) ||
+                (mode === 'import' && t('backup_restore.import')) ||
+                (mode === 'backup' && t('backup_restore.backup')) ||
+                (mode === 'restore' && t('backup_restore.restore')) ||
+                t('backup_restore.title')}
+            </Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-              {subtitle}
+              {subtitle || t('backup_restore.enter_pin_to_proceed')}
             </Text>
           </View>
 
@@ -154,7 +161,7 @@ export const PinPromptModal: React.FC<PinPromptModalProps> = ({
               />
               <TextInput
                 style={[styles.input, { color: theme.text }]}
-                placeholder="Enter PIN"
+                placeholder={t('pin_prompt.enter_pin')}
                 placeholderTextColor={theme.textSecondary}
                 value={pin}
                 onChangeText={text => setPin(text.replace(/[^0-9]/g, ''))}
@@ -190,7 +197,7 @@ export const PinPromptModal: React.FC<PinPromptModalProps> = ({
               disabled={loading}
             >
               <Text style={[styles.buttonText, { color: theme.textSecondary }]}>
-                Cancel
+                {t('common.cancel')}
               </Text>
             </TouchableOpacity>
 
@@ -206,11 +213,11 @@ export const PinPromptModal: React.FC<PinPromptModalProps> = ({
             >
               {loading ? (
                 <Text style={[styles.buttonText, { color: theme.background }]}>
-                  Unlocking...
+                  {t('backup_restore.unlocking')}
                 </Text>
               ) : (
                 <Text style={[styles.buttonText, { color: theme.background }]}>
-                  Unlock
+                  {t('backup_restore.unlock')}
                 </Text>
               )}
             </TouchableOpacity>

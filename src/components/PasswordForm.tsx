@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import {
   PasswordEntry,
   CustomField, // Keep for backward compatibility with state typing
@@ -101,6 +102,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
   onDecryptPassword,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const styles = createStyles(theme);
 
   // Form state
@@ -286,7 +288,6 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
         isFavorite: password.isFavorite || false,
       };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [password, passwordValue]); // Re-run when password prop or current passwordValue changes (not visibility - toggling visibility should not reset form)
 
   // Initialize filtered apps when app selector opens
@@ -551,7 +552,9 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
     return (
       <View style={styles.strengthContainer}>
         <View style={styles.strengthHeader}>
-          <Text style={styles.strengthLabel}>Password Strength</Text>
+          <Text style={styles.strengthLabel}>
+            {t('password_form.password_strength')}
+          </Text>
           <Text
             style={[styles.strengthScore, { color: passwordStrength.color }]}
           >
@@ -600,14 +603,16 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
         <View style={styles.form}>
           {/* Title Field */}
           <View style={styles.field}>
-            <Text style={styles.label}>Title *</Text>
+            <Text style={styles.label}>
+              {t('password_form.title_required')}
+            </Text>
             <TextInput
               style={[
                 styles.input,
                 validationErrors.some(e => e.includes('Title')) &&
                   styles.inputError,
               ]}
-              placeholder="Enter title"
+              placeholder={t('password_form.enter_title')}
               value={title}
               onChangeText={text => {
                 setTitle(text);
@@ -623,10 +628,12 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
 
           {/* Username Field */}
           <View style={styles.field}>
-            <Text style={styles.label}>Username / Email</Text>
+            <Text style={styles.label}>
+              {t('password_form.username_email')}
+            </Text>
             <TextInput
               style={styles.input}
-              placeholder="Enter username or email"
+              placeholder={t('password_form.enter_username_email')}
               value={username}
               onChangeText={text => {
                 const trimmedText = text.trim();
@@ -643,7 +650,9 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
 
           {/* Password Field */}
           <View style={styles.field}>
-            <Text style={styles.label}>Password *</Text>
+            <Text style={styles.label}>
+              {t('password_form.password_required')}
+            </Text>
             <View style={styles.passwordContainer}>
               <TextInput
                 style={[
@@ -652,7 +661,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                   validationErrors.some(e => e.includes('Password')) &&
                     styles.inputError,
                 ]}
-                placeholder="Enter password"
+                placeholder={t('password_form.enter_password')}
                 value={passwordValue}
                 onChangeText={text => {
                   const trimmedText = text.trim();
@@ -819,7 +828,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
 
           {/* Domain Type Toggle */}
           <View style={styles.field}>
-            <Text style={styles.label}>Domain Type</Text>
+            <Text style={styles.label}>{t('password_form.domain_type')}</Text>
             <View style={styles.domainTypeContainer}>
               <TouchableOpacity
                 style={[
@@ -848,7 +857,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                     domainType === 'web' && styles.domainTypeButtonTextActive,
                   ]}
                 >
-                  Web
+                  {t('password_form.web')}
                 </Text>
               </TouchableOpacity>
 
@@ -882,7 +891,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                       styles.domainTypeButtonTextActive,
                   ]}
                 >
-                  Mobile App
+                  {t('password_form.mobile_app')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -891,14 +900,16 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
           {/* Website Field - Web Type */}
           {domainType === 'web' && (
             <View style={styles.field}>
-              <Text style={styles.label}>Website Domain</Text>
+              <Text style={styles.label}>
+                {t('password_form.website_domain')}
+              </Text>
               <TextInput
                 style={[
                   styles.input,
                   validationErrors.some(e => e.includes('URL')) &&
                     styles.inputError,
                 ]}
-                placeholder="https://example.com or example.com"
+                placeholder={t('password_form.website_placeholder')}
                 value={website}
                 onChangeText={text => {
                   setWebsite(text);
@@ -916,7 +927,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
           {/* App Selector - Mobile Type */}
           {domainType === 'mobile' && (
             <View style={styles.field}>
-              <Text style={styles.label}>Select App</Text>
+              <Text style={styles.label}>{t('password_form.select_app')}</Text>
               <TouchableOpacity
                 style={styles.appSelectorButton}
                 onPress={async () => {
@@ -948,7 +959,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                       color={theme.textSecondary}
                     />
                     <Text style={styles.appSelectorPlaceholder}>
-                      Tap to select an app
+                      {t('password_form.tap_to_select_app')}
                     </Text>
                   </>
                 )}
@@ -968,7 +979,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
                     color={theme.primary}
                   />
                   <Text style={styles.domainInfoText}>
-                    Domain will be set to:{' '}
+                    {t('password_form.domain_set_to')}{' '}
                     <Text style={styles.domainInfoBold}>
                       {selectedApp.packageName}
                     </Text>
@@ -980,7 +991,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
 
           {/* Category Field */}
           <View style={styles.field}>
-            <Text style={styles.label}>Category</Text>
+            <Text style={styles.label}>{t('password_form.category')}</Text>
             <CategorySelector
               selectedCategory={category}
               onCategorySelect={handleCategorySelect}
@@ -991,7 +1002,9 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
           {/* Favorite Toggle */}
           <View style={styles.field}>
             <View style={styles.favoriteRow}>
-              <Text style={styles.label}>Add to Favorites</Text>
+              <Text style={styles.label}>
+                {t('password_form.add_to_favorites')}
+              </Text>
               <Switch
                 value={isFavorite}
                 onValueChange={value => {
@@ -1009,10 +1022,10 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
 
           {/* Notes Field */}
           <View style={styles.field}>
-            <Text style={styles.label}>Notes</Text>
+            <Text style={styles.label}>{t('password_form.notes')}</Text>
             <TextInput
               style={[styles.input, styles.notesInput]}
-              placeholder="Additional notes (optional)"
+              placeholder={t('password_form.notes_placeholder')}
               value={notes}
               onChangeText={text => {
                 setNotes(text);
@@ -1089,7 +1102,9 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
             <TouchableOpacity onPress={() => setShowAppSelector(false)}>
               <Ionicons name="close-outline" size={24} color={theme.text} />
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Select App</Text>
+            <Text style={styles.modalTitle}>
+              {t('password_form.select_app')}
+            </Text>
             <View style={styles.modalHeaderSpacer} />
           </View>
 
@@ -1104,7 +1119,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
             />
             <RNTextInput
               style={[styles.searchInput, { color: theme.text }]}
-              placeholder="Search apps..."
+              placeholder={t('password_form.search_apps')}
               placeholderTextColor={theme.textSecondary}
               value={appSearchQuery}
               onChangeText={handleAppSearch}
@@ -1118,7 +1133,7 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               <Text
                 style={[styles.loadingText, { color: theme.textSecondary }]}
               >
-                Loading apps...
+                {t('password_form.loading_apps')}
               </Text>
             </View>
           ) : filteredApps.length > 0 ? (
@@ -1126,7 +1141,9 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               <Text
                 style={[styles.appsCountText, { color: theme.textSecondary }]}
               >
-                {filteredApps.length} apps available
+                {t('password_form.apps_available', {
+                  count: filteredApps.length,
+                })}
               </Text>
               <FlatList
                 data={filteredApps}
@@ -1185,10 +1202,10 @@ const PasswordForm: React.FC<PasswordFormProps> = ({
               />
               <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
                 {appsError
-                  ? 'Error loading apps'
+                  ? t('password_form.error_loading_apps')
                   : appSearchQuery
-                  ? 'No apps found'
-                  : 'No apps available'}
+                  ? t('password_form.no_apps_found')
+                  : t('password_form.no_apps_available')}
               </Text>
             </View>
           )}

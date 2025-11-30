@@ -8,6 +8,7 @@ import {
   ScrollView,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import Clipboard from '@react-native-clipboard/clipboard';
 import ConfirmDialog from './ConfirmDialog';
@@ -51,6 +52,7 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
   onClearHistory,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [showPasswords, setShowPasswords] = useState<{
     [key: string]: boolean;
   }>({});
@@ -81,7 +83,7 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
 
   const copyToClipboard = async (password: string) => {
     await Clipboard.setString(password);
-    setToastMessage('Password copied to clipboard');
+    setToastMessage(t('generator.password_copied'));
     setShowToast(true);
   };
 
@@ -92,10 +94,10 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
 
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 7) return `${days}d ago`;
+    if (minutes < 1) return t('generator.just_now');
+    if (minutes < 60) return t('generator.minutes_ago', { count: minutes });
+    if (hours < 24) return t('generator.hours_ago', { count: hours });
+    if (days < 7) return t('generator.days_ago', { count: days });
     return timestamp.toLocaleDateString();
   };
 
@@ -113,10 +115,9 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
   const handleClearHistory = () => {
     setConfirmDialog({
       visible: true,
-      title: 'Clear History',
-      message:
-        'Are you sure you want to clear all generated passwords? This action cannot be undone.',
-      confirmText: 'Clear',
+      title: t('generator.clear_history'),
+      message: t('generator.clear_history_message'),
+      confirmText: t('generator.clear'),
       confirmStyle: 'destructive',
       onConfirm: () => {
         setConfirmDialog(prev => ({ ...prev, visible: false }));
@@ -141,7 +142,7 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
             <Ionicons name="close-outline" size={24} color={theme.text} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: theme.text }]}>
-            Generation History
+            {t('generator.history_title')}
           </Text>
           <TouchableOpacity onPress={handleClearHistory}>
             <Ionicons
@@ -160,12 +161,12 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
               color={theme.textSecondary}
             />
             <Text style={[styles.emptyTitle, { color: theme.text }]}>
-              No Generated Passwords
+              {t('generator.no_history')}
             </Text>
             <Text
               style={[styles.emptySubtitle, { color: theme.textSecondary }]}
             >
-              Passwords you generate will appear here for easy access
+              {t('generator.no_history_subtitle')}
             </Text>
           </View>
         ) : (
@@ -177,7 +178,7 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
             {favoritePasswords.length > 0 && (
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                  ⭐ Favorites
+                  {t('generator.favorites')}
                 </Text>
                 {favoritePasswords.map(item => (
                   <PasswordHistoryItem
@@ -199,7 +200,7 @@ export const GeneratorHistory: React.FC<GeneratorHistoryProps> = ({
             {recentPasswords.length > 0 && (
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                  🕒 Recent
+                  {t('generator.recent')}
                 </Text>
                 {recentPasswords.map(item => (
                   <PasswordHistoryItem

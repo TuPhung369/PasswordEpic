@@ -9,31 +9,32 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 
 interface ThemeOption {
   key: 'light' | 'dark' | 'system';
-  label: string;
-  description: string;
+  labelKey: string;
+  descriptionKey: string;
   icon: string;
 }
 
 const themeOptions: ThemeOption[] = [
   {
     key: 'light',
-    label: 'Light',
-    description: 'Always use light theme',
+    labelKey: 'theme_modal.light',
+    descriptionKey: 'theme_modal.light_description',
     icon: 'sunny-outline',
   },
   {
     key: 'dark',
-    label: 'Dark',
-    description: 'Always use dark theme',
+    labelKey: 'theme_modal.dark',
+    descriptionKey: 'theme_modal.dark_description',
     icon: 'moon-outline',
   },
   {
     key: 'system',
-    label: 'System Default',
-    description: 'Follow system appearance',
+    labelKey: 'theme_modal.system',
+    descriptionKey: 'theme_modal.system_description',
     icon: 'phone-portrait-outline',
   },
 ];
@@ -45,6 +46,7 @@ interface ThemeModalProps {
 
 export const ThemeModal: React.FC<ThemeModalProps> = ({ visible, onClose }) => {
   const { theme, themeMode, setThemeMode } = useTheme();
+  const { t } = useTranslation();
 
   const handleThemeSelect = (selectedTheme: 'light' | 'dark' | 'system') => {
     setThemeMode(selectedTheme);
@@ -65,16 +67,14 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({ visible, onClose }) => {
               <Ionicons name="close" size={24} color={theme.text} />
             </TouchableOpacity>
             <Text style={[styles.title, { color: theme.text }]}>
-              Choose Theme
+              {t('theme_modal.title')}
             </Text>
           </View>
         </View>
 
         <ScrollView style={styles.content}>
           <Text style={[styles.description, { color: theme.textSecondary }]}>
-            Select your preferred theme appearance. System default will
-            automatically switch between light and dark based on your device
-            settings.
+            {t('theme_modal.description')}
           </Text>
 
           <View style={styles.optionsList}>
@@ -117,7 +117,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({ visible, onClose }) => {
                     </View>
                     <View style={styles.optionText}>
                       <Text style={[styles.optionLabel, { color: theme.text }]}>
-                        {option.label}
+                        {t(option.labelKey)}
                       </Text>
                       <Text
                         style={[
@@ -125,7 +125,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({ visible, onClose }) => {
                           { color: theme.textSecondary },
                         ]}
                       >
-                        {option.description}
+                        {t(option.descriptionKey)}
                       </Text>
                     </View>
                   </View>

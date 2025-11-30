@@ -18,6 +18,7 @@ import {
   Pressable,
   AccessibilityInfo,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useChromeAutoFill } from '../hooks/useChromeAutoFill';
 import type { AutofillCredential } from '../services/autofillService';
 
@@ -40,6 +41,7 @@ export const ChromeAutofillIndicator: React.FC<
   autoDetect = true,
   style,
 }) => {
+  const { t } = useTranslation();
   const [animationValue] = useState(new Animated.Value(0));
 
   const { isSupported, isAvailable, isDetecting, formDetected, error } =
@@ -81,8 +83,8 @@ export const ChromeAutofillIndicator: React.FC<
     <Animated.View
       style={[styles.container, { opacity }, style]}
       accessible
-      accessibilityLabel="Chrome Autofill indicator"
-      accessibilityHint="Tap to autofill this form"
+      accessibilityLabel={t('chrome_autofill.indicator_label')}
+      accessibilityHint={t('chrome_autofill.indicator_hint')}
     >
       <View style={styles.content}>
         <View style={styles.iconContainer}>
@@ -94,7 +96,9 @@ export const ChromeAutofillIndicator: React.FC<
         </View>
 
         <Text style={styles.text}>
-          {isDetecting ? 'Detecting form...' : 'Autofill available'}
+          {isDetecting
+            ? t('chrome_autofill.detecting_form')
+            : t('chrome_autofill.autofill_available')}
         </Text>
 
         {error && (

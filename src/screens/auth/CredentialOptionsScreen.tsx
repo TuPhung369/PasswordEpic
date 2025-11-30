@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNavigation } from '@react-navigation/native';
 import { useAppDispatch } from '../../hooks/redux';
@@ -33,6 +34,7 @@ interface CredentialOption {
 }
 
 export const CredentialOptionsScreen: React.FC = () => {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const dispatch = useAppDispatch();
   const navigation = useNavigation<CredentialOptionsNavigationProp>();
@@ -71,16 +73,14 @@ export const CredentialOptionsScreen: React.FC = () => {
   const options: CredentialOption[] = [
     {
       icon: 'checkmark-circle-outline',
-      title: 'Keep My Current Credentials',
-      description:
-        'Use your existing Master Password and PIN to unlock your vault. Your encrypted passwords will remain accessible.',
+      title: t('credential_options.keep_title'),
+      description: t('credential_options.keep_description'),
       action: 'keep',
     },
     {
       icon: 'refresh-circle-outline',
-      title: 'Update My Credentials',
-      description:
-        'Create a new Master Password and PIN. All your encrypted passwords will be updated with the new credentials.',
+      title: t('credential_options.update_title'),
+      description: t('credential_options.update_description'),
       action: 'update',
     },
   ];
@@ -102,9 +102,9 @@ export const CredentialOptionsScreen: React.FC = () => {
       console.error('Error setting unlock flag:', error);
       setConfirmDialog({
         visible: true,
-        title: 'Navigation Error',
-        message: 'Failed to navigate. Please try again.',
-        confirmText: 'OK',
+        title: t('credential_options.navigation_error'),
+        message: t('credential_options.navigation_error_message'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -116,11 +116,10 @@ export const CredentialOptionsScreen: React.FC = () => {
   const handleUpdateCredentials = () => {
     setConfirmDialog({
       visible: true,
-      title: 'Update Credentials',
-      message:
-        'You will create a new Master Password and PIN. All your encrypted passwords will be re-encrypted with the new credentials.',
-      confirmText: 'Continue',
-      cancelText: 'Cancel',
+      title: t('credential_options.update_confirm_title'),
+      message: t('credential_options.update_confirm_message'),
+      confirmText: t('common.continue'),
+      cancelText: t('common.cancel'),
       onConfirm: async () => {
         setConfirmDialog(prev => ({ ...prev, visible: false }));
         setIsLoading(true);
@@ -135,9 +134,9 @@ export const CredentialOptionsScreen: React.FC = () => {
           console.error('Error navigating to update:', error);
           setConfirmDialog({
             visible: true,
-            title: 'Navigation Error',
-            message: 'Failed to navigate. Please try again.',
-            confirmText: 'OK',
+            title: t('credential_options.navigation_error'),
+            message: t('credential_options.navigation_error_message'),
+            confirmText: t('common.ok'),
             onConfirm: () =>
               setConfirmDialog(prev => ({ ...prev, visible: false })),
           });
@@ -195,7 +194,7 @@ export const CredentialOptionsScreen: React.FC = () => {
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <Text style={[styles.headerTitle, { color: theme.text }]}>
-          Credential Options
+          {t('credential_options.title')}
         </Text>
       </View>
 
@@ -211,11 +210,11 @@ export const CredentialOptionsScreen: React.FC = () => {
           </View>
 
           <Text style={[styles.heroTitle, { color: theme.text }]}>
-            How would you like to proceed?
+            {t('credential_options.how_to_proceed')}
           </Text>
 
           <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
-            Choose whether to use your existing credentials or create new ones.
+            {t('credential_options.choose_subtitle')}
           </Text>
         </View>
 
@@ -233,8 +232,7 @@ export const CredentialOptionsScreen: React.FC = () => {
           />
           <View style={styles.infoContent}>
             <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-              Your credentials are encrypted and stored securely. Whether you
-              keep or update, your passwords remain protected.
+              {t('credential_options.info_note')}
             </Text>
           </View>
         </View>

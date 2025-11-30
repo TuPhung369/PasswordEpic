@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useRef } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
@@ -22,10 +23,14 @@ import { useAutofillDecryption } from './src/hooks/useAutofillDecryption';
 import { setShouldNavigateToUnlock } from './src/store/slices/authSlice';
 import { LoadingScreen } from './src/components/LoadingScreen';
 import { LoadingOverlayProvider } from './src/contexts/LoadingOverlayContext';
+import LanguageSynchronizer from './src/components/LanguageSynchronizer';
 
 // Import polyfills for crypto and URL
 import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
+
+// Initialize i18n
+import './src/services/i18n';
 
 /**
  * 🔐 AutofillDecryptionListener
@@ -261,8 +266,14 @@ const App: React.FC = () => {
     initializeServices();
   }, []);
 
+  const styles = StyleSheet.create({
+    flex1: {
+      flex: 1,
+    },
+  });
+
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={styles.flex1}>
       <Provider store={store}>
         {/* 🔐 Setup autofill decryption listener */}
         <AutofillDecryptionListener />
@@ -271,6 +282,9 @@ const App: React.FC = () => {
           loading={<LoadingScreen visible={true} />}
           persistor={persistor}
         >
+          {/* 🌍 Sync i18n language with Redux store after rehydration */}
+          <LanguageSynchronizer />
+
           <LoadingOverlayProvider>
             <BiometricProvider>
               <SafeAreaProvider>

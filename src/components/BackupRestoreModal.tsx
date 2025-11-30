@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import Toast from './Toast';
 import ConfirmDialog from './ConfirmDialog';
 import { useTheme } from '../contexts/ThemeContext';
@@ -41,6 +42,7 @@ interface BackupRestoreModalProps {
   isLoading?: boolean;
   onShowToast?: (message: string, type: 'success' | 'error') => void;
   onRefreshBackups?: () => void;
+  onRequestAuth?: (mode: 'backup' | 'restore') => void;
 }
 
 export interface BackupOptions {
@@ -74,6 +76,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
   availableBackups,
   isLoading = false,
   onRefreshBackups,
+  onRequestAuth,
 }) => {
   // Debug logging
   React.useEffect(() => {
@@ -86,6 +89,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
 
   // Use theme from context
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const styles = createStyles(theme);
 
   // State
@@ -184,11 +188,18 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
         console.log('🔄 [BackupModal] Refreshing backups for restore tab');
         onRefreshBackups();
       }
+      if (typeof onRequestAuth === 'function') {
+        onRequestAuth('restore');
+      }
     } else if (activeTab === 'backup') {
       // Clear selection when switching to backup tab
       setSelectedBackup(null);
+      if (typeof onRequestAuth === 'function') {
+        onRequestAuth('backup');
+      }
     }
-  }, [activeTab, onRefreshBackups]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // Auto-select latest backup when availableBackups updates
   React.useEffect(() => {
@@ -232,6 +243,9 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
   };
 
   const handleCreateBackup = () => {
+    if (typeof onRequestAuth === 'function') {
+      onRequestAuth('backup');
+    }
     console.log('🔵 [BackupModal] handleCreateBackup called');
     console.log('🔵 [BackupModal] Backup options:', backupOptions);
 
@@ -240,9 +254,9 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
       console.log('❌ [BackupModal] Validation failed: Missing filename');
       setConfirmDialog({
         visible: true,
-        title: 'Error',
-        message: 'Please enter a backup filename.',
-        confirmText: 'OK',
+        title: t('backup_restore.error'),
+        message: t('backup_restore.enter_filename'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -255,12 +269,15 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
   };
 
   const handleRestoreBackup = () => {
+    if (typeof onRequestAuth === 'function') {
+      onRequestAuth('restore');
+    }
     if (!selectedBackup) {
       setConfirmDialog({
         visible: true,
-        title: 'Error',
-        message: 'Please select a backup to restore.',
-        confirmText: 'OK',
+        title: t('backup_restore.error'),
+        message: t('backup_restore.select_backup_error'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -271,15 +288,14 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
 
     setConfirmDialog({
       visible: true,
-      title: 'Restore Backup',
-      message: `Are you sure you want to restore the backup "${
-        selectedBackup.filename
-      }"? ${
-        restoreOptions.mergeWithExisting
-          ? 'This will merge with your existing data.'
-          : 'This will replace all your current data.'
-      }`,
-      confirmText: 'Restore',
+      title: t('backup_restore.restore_backup_title'),
+      message: t('backup_restore.restore_backup_confirm', {
+        filename: selectedBackup.filename,
+        mergeInfo: restoreOptions.mergeWithExisting
+          ? t('backup_restore.merge_info')
+          : t('backup_restore.replace_info'),
+      }),
+      confirmText: t('backup_restore.restore'),
       onConfirm: () => {
         setConfirmDialog(prev => ({ ...prev, visible: false }));
         onRestore(selectedBackup.id, restoreOptions);
@@ -292,9 +308,11 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
 
     setConfirmDialog({
       visible: true,
-      title: 'Delete Backup',
-      message: `Are you sure you want to delete "${backup.filename}"? This action cannot be undone.`,
-      confirmText: 'Delete',
+      title: t('backup_restore.delete_backup'),
+      message: t('backup_restore.delete_backup_confirm', {
+        filename: backup.filename,
+      }),
+      confirmText: t('common.delete'),
       confirmStyle: 'destructive',
       onConfirm: async () => {
         setConfirmDialog(prev => ({ ...prev, visible: false }));
@@ -308,14 +326,16 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
           }
 
           // Show success notification via internal toast
-          setToastMessage(`Backup "${backup.filename}" deleted successfully`);
+          setToastMessage(
+            t('backup_restore.delete_success', { filename: backup.filename }),
+          );
           setToastType('success');
           setShowToast(true);
         } catch (error) {
           console.error('Failed to delete backup:', error);
 
           // Show error via internal toast
-          setToastMessage('Failed to delete backup. Please try again.');
+          setToastMessage(t('backup_restore.delete_failed'));
           setToastType('error');
           setShowToast(true);
         } finally {
@@ -343,11 +363,9 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
     const count = selectedBackupsForDeletion.size;
     setConfirmDialog({
       visible: true,
-      title: 'Delete Multiple Backups',
-      message: `Are you sure you want to delete ${count} backup${
-        count > 1 ? 's' : ''
-      }? This action cannot be undone.`,
-      confirmText: 'Delete',
+      title: t('backup_restore.delete_multiple_title'),
+      message: t('backup_restore.delete_multiple_confirm', { count }),
+      confirmText: t('common.delete'),
       confirmStyle: 'destructive',
       onConfirm: async () => {
         setConfirmDialog(prev => ({ ...prev, visible: false }));
@@ -374,7 +392,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
 
           // Show success notification via internal toast
           setToastMessage(
-            `${count} backup${count > 1 ? 's' : ''} deleted successfully`,
+            t('backup_restore.delete_multiple_success', { count }),
           );
           setToastType('success');
           setShowToast(true);
@@ -382,7 +400,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
           console.error('Failed to delete backups:', error);
 
           // Show error via internal toast
-          setToastMessage('Failed to delete some backups. Please try again.');
+          setToastMessage(t('backup_restore.delete_multiple_failed'));
           setToastType('error');
           setShowToast(true);
         } finally {
@@ -406,7 +424,8 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const formatDate = (date: Date): string => {
+  const formatDate = (date: Date | undefined | null): string => {
+    if (!date || typeof date.toLocaleDateString !== 'function') return '';
     return (
       date.toLocaleDateString() +
       ' ' +
@@ -434,7 +453,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             activeTab === 'backup' && styles.activeTabText,
           ]}
         >
-          Backup
+          {t('backup_restore.backup')}
         </Text>
       </TouchableOpacity>
 
@@ -453,7 +472,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             activeTab === 'restore' && styles.activeTabText,
           ]}
         >
-          Restore
+          {t('backup_restore.restore')}
         </Text>
       </TouchableOpacity>
     </View>
@@ -509,15 +528,19 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
           <View style={styles.backupHeaderIcon}>
             <Icon name="cloud-upload-outline" size={32} color={theme.primary} />
           </View>
-          <Text style={styles.backupHeaderTitle}>Backup to Google Drive</Text>
+          <Text style={styles.backupHeaderTitle}>
+            {t('backup_restore.backup_to_google_drive')}
+          </Text>
           <Text style={styles.backupHeaderSubtitle}>
-            Secure your data with end-to-end encryption
+            {t('backup_restore.secure_data_description')}
           </Text>
         </View>
 
         <View style={styles.section}>
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Backup Filename</Text>
+            <Text style={styles.inputLabel}>
+              {t('backup_restore.backup_filename')}
+            </Text>
             <TextInput
               style={styles.textInput}
               value={backupOptions.filename}
@@ -531,37 +554,39 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>What's Included</Text>
+          <Text style={styles.sectionTitle}>
+            {t('backup_restore.whats_included')}
+          </Text>
           <View style={styles.featuresList}>
             {renderBackupFeatureItem(
               'key-outline',
-              'All Passwords',
-              'Your complete password vault',
+              t('backup_restore.all_passwords'),
+              t('backup_restore.complete_password_vault'),
             )}
             {renderBackupFeatureItem(
               'folder-outline',
-              'Categories & Tags',
-              'Custom organization structure',
+              t('backup_restore.categories_tags'),
+              t('backup_restore.custom_organization'),
             )}
             {renderBackupFeatureItem(
               'document-text-outline',
-              'Metadata & Notes',
-              'Details and additional information',
+              t('backup_restore.metadata_notes'),
+              t('backup_restore.details_additional_info'),
             )}
             {renderBackupFeatureItem(
               'image-outline',
-              'Attachments',
-              'Files and images from entries',
+              t('backup_restore.attachments'),
+              t('backup_restore.files_images'),
             )}
             {renderBackupFeatureItem(
               'time-outline',
-              'Change History',
-              'Complete modification records',
+              t('backup_restore.change_history'),
+              t('backup_restore.complete_modification_records'),
             )}
             {renderBackupFeatureItem(
               'settings-outline',
-              'App Settings',
-              'Preferences and configuration',
+              t('backup_restore.app_settings'),
+              t('backup_restore.preferences_configuration'),
             )}
           </View>
         </View>
@@ -569,12 +594,24 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
         <View style={styles.section}>
           <View style={styles.securityBadges}>
             <View style={styles.securityBadge}>
-              <Icon name="lock-closed-outline" size={16} color={theme.success} />
-              <Text style={styles.securityBadgeText}>AES-256 Encrypted</Text>
+              <Icon
+                name="lock-closed-outline"
+                size={16}
+                color={theme.success}
+              />
+              <Text style={styles.securityBadgeText}>
+                {t('backup_restore.aes256_encrypted')}
+              </Text>
             </View>
             <View style={styles.securityBadge}>
-              <Icon name="shield-checkmark-outline" size={16} color={theme.success} />
-              <Text style={styles.securityBadgeText}>Zero-Knowledge</Text>
+              <Icon
+                name="shield-checkmark-outline"
+                size={16}
+                color={theme.success}
+              />
+              <Text style={styles.securityBadgeText}>
+                {t('backup_restore.zero_knowledge')}
+              </Text>
             </View>
           </View>
         </View>
@@ -587,7 +624,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
               color={theme.primary}
             />
             <Text style={styles.infoText}>
-              Your backup is encrypted with your master password and stored securely on Google Drive. Only you can decrypt it.
+              {t('backup_restore.encryption_info')}
             </Text>
           </View>
         </View>
@@ -611,8 +648,8 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
           )}
           <Text style={styles.actionButtonText}>
             {localBackupLoading
-              ? 'Backing up to Google Drive...'
-              : 'Backup Now'}
+              ? t('backup_restore.backing_up')
+              : t('backup_restore.backup_now')}
           </Text>
         </Pressable>
       </ScrollView>
@@ -673,13 +710,15 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
       <View style={styles.backupItemStats}>
         <View style={styles.backupStat}>
           <Icon name="key-outline" size={14} color={theme.textSecondary} />
-          <Text style={styles.backupStatText}>{backup.entryCount} entries</Text>
+          <Text style={styles.backupStatText}>
+            {t('backup_restore.entries', { count: backup.entryCount })}
+          </Text>
         </View>
 
         <View style={styles.backupStat}>
           <Icon name="folder-outline" size={14} color={theme.textSecondary} />
           <Text style={styles.backupStatText}>
-            {backup.categoryCount} categories
+            {t('backup_restore.categories', { count: backup.categoryCount })}
           </Text>
         </View>
 
@@ -773,14 +812,14 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
           <View style={styles.backupStat}>
             <Icon name="key-outline" size={14} color={theme.textSecondary} />
             <Text style={styles.backupStatText}>
-              {backup.entryCount} entries
+              {t('backup_restore.entries', { count: backup.entryCount })}
             </Text>
           </View>
 
           <View style={styles.backupStat}>
             <Icon name="folder-outline" size={14} color={theme.textSecondary} />
             <Text style={styles.backupStatText}>
-              {backup.categoryCount} categories
+              {t('backup_restore.categories', { count: backup.categoryCount })}
             </Text>
           </View>
 
@@ -817,9 +856,11 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                 size={48}
                 color={theme.textSecondary}
               />
-              <Text style={styles.emptyStateTitle}>No Backups Found</Text>
+              <Text style={styles.emptyStateTitle}>
+                {t('backup_restore.no_backups_found')}
+              </Text>
               <Text style={styles.emptyStateSubtitle}>
-                Create a backup first to restore from it later.
+                {t('backup_restore.create_backup_first')}
               </Text>
             </View>
           </View>
@@ -833,16 +874,20 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                   color={theme.primary}
                 />
               </View>
-              <Text style={styles.backupHeaderTitle}>Restore from Backup</Text>
+              <Text style={styles.backupHeaderTitle}>
+                {t('backup_restore.restore_from_backup')}
+              </Text>
               <Text style={styles.backupHeaderSubtitle}>
-                Recover your data from a previous backup
+                {t('backup_restore.recover_data_description')}
               </Text>
             </View>
 
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>
-                  {showBackupList ? 'Select Backup' : 'Selected Backup'}
+                  {showBackupList
+                    ? t('backup_restore.select_backup')
+                    : t('backup_restore.selected_backup')}
                 </Text>
                 {selectedBackup && !showBackupList && (
                   <TouchableOpacity
@@ -855,9 +900,12 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                       color={theme.primary}
                     />
                     <Text
-                      style={[styles.changeButtonText, { color: theme.primary }]}
+                      style={[
+                        styles.changeButtonText,
+                        { color: theme.primary },
+                      ]}
                     >
-                      Change
+                      {t('backup_restore.change')}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -879,7 +927,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                             color={theme.primary}
                           />
                           <Text style={styles.multiSelectButtonText}>
-                            Select Multiple
+                            {t('backup_restore.select_multiple')}
                           </Text>
                         </TouchableOpacity>
                       ) : (
@@ -888,7 +936,9 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                             style={styles.cancelButton}
                             onPress={handleCancelMultiSelect}
                           >
-                            <Text style={styles.cancelButtonText}>Cancel</Text>
+                            <Text style={styles.cancelButtonText}>
+                              {t('backup_restore.cancel')}
+                            </Text>
                           </TouchableOpacity>
 
                           <TouchableOpacity
@@ -900,9 +950,15 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                             onPress={handleDeleteMultipleBackups}
                             disabled={selectedBackupsForDeletion.size === 0}
                           >
-                            <Icon name="trash-outline" size={16} color="white" />
+                            <Icon
+                              name="trash-outline"
+                              size={16}
+                              color="white"
+                            />
                             <Text style={styles.deleteSelectedButtonText}>
-                              Delete ({selectedBackupsForDeletion.size})
+                              {t('backup_restore.delete_count', {
+                                count: selectedBackupsForDeletion.size,
+                              })}
                             </Text>
                           </TouchableOpacity>
                         </View>
@@ -942,43 +998,52 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             {selectedBackup && (
               <>
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Will Restore</Text>
+                  <Text style={styles.sectionTitle}>
+                    {t('backup_restore.will_restore')}
+                  </Text>
                   <View style={styles.featuresList}>
                     {renderBackupFeatureItem(
                       'key-outline',
-                      'All Passwords',
-                      `${selectedBackup.entryCount} entries`,
+                      t('backup_restore.all_passwords'),
+                      t('backup_restore.entries', {
+                        count: selectedBackup.entryCount,
+                      }),
                     )}
                     {renderBackupFeatureItem(
                       'folder-outline',
-                      'Categories & Tags',
-                      `${selectedBackup.categoryCount} categories`,
+                      t('backup_restore.categories_tags'),
+                      t('backup_restore.categories', {
+                        count: selectedBackup.categoryCount,
+                      }),
                     )}
                     {renderBackupFeatureItem(
                       'document-text-outline',
-                      'Metadata & Notes',
-                      'All additional information',
+                      t('backup_restore.metadata_notes'),
+                      t('backup_restore.all_additional_info'),
                     )}
                     {renderBackupFeatureItem(
                       'image-outline',
-                      'Attachments',
-                      'Files and images',
+                      t('backup_restore.attachments'),
+                      t('backup_restore.files_and_images'),
                     )}
                     {renderBackupFeatureItem(
                       'time-outline',
-                      'Change History',
-                      'Backup from ' +
-                        formatDate(selectedBackup.createdAt),
+                      t('backup_restore.change_history'),
+                      t('backup_restore.backup_from', {
+                        date: formatDate(selectedBackup.createdAt),
+                      }),
                     )}
                   </View>
                 </View>
 
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Restore Options</Text>
+                  <Text style={styles.sectionTitle}>
+                    {t('backup_restore.restore_options')}
+                  </Text>
 
                   {renderSwitchOption(
-                    'Merge with Existing Data',
-                    'Add backup data to current data',
+                    t('backup_restore.merge_with_existing'),
+                    t('backup_restore.merge_description'),
                     restoreOptions.mergeWithExisting,
                     value =>
                       handleRestoreOptionChange('mergeWithExisting', value),
@@ -986,31 +1051,32 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
 
                   {restoreOptions.mergeWithExisting &&
                     renderSwitchOption(
-                      'Overwrite Duplicates',
-                      'Replace existing entries with backup versions',
+                      t('backup_restore.overwrite_duplicates'),
+                      t('backup_restore.overwrite_description'),
                       restoreOptions.overwriteDuplicates,
                       value =>
                         handleRestoreOptionChange('overwriteDuplicates', value),
                     )}
 
                   {renderSwitchOption(
-                    'Restore Categories',
-                    'Restore category settings and organization',
+                    t('backup_restore.restore_categories'),
+                    t('backup_restore.restore_categories_desc'),
                     restoreOptions.restoreCategories,
                     value =>
                       handleRestoreOptionChange('restoreCategories', value),
                   )}
 
                   {renderSwitchOption(
-                    'Restore App Settings',
-                    'Restore application preferences and settings',
+                    t('backup_restore.restore_app_settings'),
+                    t('backup_restore.restore_app_settings_desc'),
                     restoreOptions.restoreSettings,
-                    value => handleRestoreOptionChange('restoreSettings', value),
+                    value =>
+                      handleRestoreOptionChange('restoreSettings', value),
                   )}
 
                   {renderSwitchOption(
-                    'Restore Trusted Domains',
-                    'Restore your trusted domains list for autofill',
+                    t('backup_restore.restore_trusted_domains'),
+                    t('backup_restore.restore_trusted_domains_desc'),
                     restoreOptions.restoreDomains,
                     value => handleRestoreOptionChange('restoreDomains', value),
                   )}
@@ -1025,8 +1091,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                         color={theme.primary}
                       />
                       <Text style={styles.infoText}>
-                        This backup is encrypted with your master password. It will
-                        be decrypted automatically during restoration.
+                        {t('backup_restore.encrypted_backup_info')}
                       </Text>
                     </View>
                   </View>
@@ -1044,10 +1109,16 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                   {isLoading ? (
                     <ActivityIndicator size="small" color="white" />
                   ) : (
-                    <Icon name="cloud-download-outline" size={20} color="white" />
+                    <Icon
+                      name="cloud-download-outline"
+                      size={20}
+                      color="white"
+                    />
                   )}
                   <Text style={styles.actionButtonText}>
-                    {isLoading ? 'Restoring...' : 'Restore Now'}
+                    {isLoading
+                      ? t('backup_restore.restoring')
+                      : t('backup_restore.restore_now')}
                   </Text>
                 </Pressable>
               </>
@@ -1068,7 +1139,9 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Backup Details</Text>
+            <Text style={styles.modalTitle}>
+              {t('backup_restore.backup_details')}
+            </Text>
             <TouchableOpacity
               onPress={() => setShowBackupDetails(false)}
               style={styles.modalCloseButton}
@@ -1083,62 +1156,82 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.detailSection}>
-                <Text style={styles.detailLabel}>Filename</Text>
+                <Text style={styles.detailLabel}>
+                  {t('backup_restore.filename')}
+                </Text>
                 <Text style={styles.detailValue}>
                   {selectedBackup.filename}
                 </Text>
               </View>
 
               <View style={styles.detailSection}>
-                <Text style={styles.detailLabel}>Created</Text>
+                <Text style={styles.detailLabel}>
+                  {t('backup_restore.created')}
+                </Text>
                 <Text style={styles.detailValue}>
                   {formatDate(selectedBackup.createdAt)}
                 </Text>
               </View>
 
               <View style={styles.detailSection}>
-                <Text style={styles.detailLabel}>File Size</Text>
+                <Text style={styles.detailLabel}>
+                  {t('backup_restore.file_size')}
+                </Text>
                 <Text style={styles.detailValue}>
                   {formatFileSize(selectedBackup.size)}
                 </Text>
               </View>
 
               <View style={styles.detailSection}>
-                <Text style={styles.detailLabel}>Entries</Text>
+                <Text style={styles.detailLabel}>
+                  {t('backup_restore.entries_label')}
+                </Text>
                 <Text style={styles.detailValue}>
                   {selectedBackup.entryCount}
                 </Text>
               </View>
 
               <View style={styles.detailSection}>
-                <Text style={styles.detailLabel}>Categories</Text>
+                <Text style={styles.detailLabel}>
+                  {t('backup_restore.categories_label')}
+                </Text>
                 <Text style={styles.detailValue}>
                   {selectedBackup.categoryCount}
                 </Text>
               </View>
 
               <View style={styles.detailSection}>
-                <Text style={styles.detailLabel}>Encryption</Text>
+                <Text style={styles.detailLabel}>
+                  {t('backup_restore.encryption')}
+                </Text>
                 <Text style={styles.detailValue}>
-                  {selectedBackup.encrypted ? 'Encrypted' : 'Not Encrypted'}
+                  {selectedBackup.encrypted
+                    ? t('backup_restore.encrypted')
+                    : t('backup_restore.not_encrypted')}
                 </Text>
               </View>
 
               <View style={styles.detailSection}>
-                <Text style={styles.detailLabel}>App Version</Text>
+                <Text style={styles.detailLabel}>
+                  {t('backup_restore.app_version')}
+                </Text>
                 <Text style={styles.detailValue}>
                   {selectedBackup.appVersion}
                 </Text>
               </View>
 
               <View style={styles.detailSection}>
-                <Text style={styles.detailLabel}>Backup Version</Text>
+                <Text style={styles.detailLabel}>
+                  {t('backup_restore.backup_version')}
+                </Text>
                 <Text style={styles.detailValue}>{selectedBackup.version}</Text>
               </View>
 
               {selectedBackup.deviceInfo && (
                 <View style={styles.detailSection}>
-                  <Text style={styles.detailLabel}>Device</Text>
+                  <Text style={styles.detailLabel}>
+                    {t('backup_restore.device')}
+                  </Text>
                   <Text style={styles.detailValue}>
                     {selectedBackup.deviceInfo.platform}{' '}
                     {selectedBackup.deviceInfo.version}
@@ -1170,7 +1263,7 @@ const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             <View style={styles.handle} />
 
             <View style={styles.header}>
-              <Text style={styles.title}>Backup & Restore</Text>
+              <Text style={styles.title}>{t('backup_restore.title')}</Text>
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                 <Icon name="close" size={24} color={theme.text} />
               </TouchableOpacity>

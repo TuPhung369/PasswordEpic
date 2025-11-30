@@ -14,6 +14,7 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { SecurityThreat } from '../services/securityService';
 
 interface SecurityWarningModalProps {
@@ -31,10 +32,13 @@ const SecurityWarningModal: React.FC<SecurityWarningModalProps> = ({
   onContinueAnyway,
   allowContinue = false,
 }) => {
-  const criticalThreats = threats.filter(t => t.severity === 'critical');
-  const highThreats = threats.filter(t => t.severity === 'high');
+  const { t } = useTranslation();
+  const criticalThreats = threats.filter(
+    threat => threat.severity === 'critical',
+  );
+  const highThreats = threats.filter(threat => threat.severity === 'high');
   const otherThreats = threats.filter(
-    t => t.severity !== 'critical' && t.severity !== 'high',
+    threat => threat.severity !== 'critical' && threat.severity !== 'high',
   );
 
   const getSeverityColor = (severity: string) => {
@@ -93,7 +97,9 @@ const SecurityWarningModal: React.FC<SecurityWarningModalProps> = ({
       <Text style={styles.threatDescription}>{threat.description}</Text>
 
       <View style={styles.recommendationBox}>
-        <Text style={styles.recommendationLabel}>Recommendation:</Text>
+        <Text style={styles.recommendationLabel}>
+          {t('security_warning.recommendation')}
+        </Text>
         <Text style={styles.recommendationText}>{threat.recommendation}</Text>
       </View>
     </View>
@@ -109,10 +115,13 @@ const SecurityWarningModal: React.FC<SecurityWarningModalProps> = ({
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
           <View style={styles.header}>
-            <Text style={styles.title}>🔒 Security Warning</Text>
+            <Text style={styles.title}>🔒 {t('security_warning.title')}</Text>
             <Text style={styles.subtitle}>
-              {threats.length} security{' '}
-              {threats.length === 1 ? 'threat' : 'threats'} detected
+              {threats.length === 1
+                ? t('security_warning.threat_detected')
+                : t('security_warning.threats_detected', {
+                    count: threats.length,
+                  })}
             </Text>
           </View>
 
@@ -122,21 +131,27 @@ const SecurityWarningModal: React.FC<SecurityWarningModalProps> = ({
           >
             {criticalThreats.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Critical Threats</Text>
+                <Text style={styles.sectionTitle}>
+                  {t('security_warning.critical_threats')}
+                </Text>
                 {criticalThreats.map(renderThreat)}
               </View>
             )}
 
             {highThreats.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>High-Risk Threats</Text>
+                <Text style={styles.sectionTitle}>
+                  {t('security_warning.high_risk_threats')}
+                </Text>
                 {highThreats.map(renderThreat)}
               </View>
             )}
 
             {otherThreats.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Other Threats</Text>
+                <Text style={styles.sectionTitle}>
+                  {t('security_warning.other_threats')}
+                </Text>
                 {otherThreats.map(renderThreat)}
               </View>
             )}
@@ -145,9 +160,7 @@ const SecurityWarningModal: React.FC<SecurityWarningModalProps> = ({
               <View style={styles.warningBox}>
                 <Text style={styles.warningIcon}>⚠️</Text>
                 <Text style={styles.warningText}>
-                  Critical security threats detected. Using PasswordEpic on this
-                  device may compromise your password security. We strongly
-                  recommend addressing these issues before continuing.
+                  {t('security_warning.critical_warning')}
                 </Text>
               </View>
             )}
@@ -159,7 +172,9 @@ const SecurityWarningModal: React.FC<SecurityWarningModalProps> = ({
                 style={[styles.button, styles.continueButton]}
                 onPress={onContinueAnyway}
               >
-                <Text style={styles.continueButtonText}>Continue Anyway</Text>
+                <Text style={styles.continueButtonText}>
+                  {t('security_warning.continue_anyway')}
+                </Text>
               </TouchableOpacity>
             )}
 
@@ -168,7 +183,9 @@ const SecurityWarningModal: React.FC<SecurityWarningModalProps> = ({
               onPress={onClose}
             >
               <Text style={styles.closeButtonText}>
-                {allowContinue ? 'Close App' : 'OK'}
+                {allowContinue
+                  ? t('security_warning.close_app')
+                  : t('common.ok')}
               </Text>
             </TouchableOpacity>
           </View>

@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { PasswordEntry } from '../types/password';
 import { useTheme, Theme } from '../contexts/ThemeContext';
 import {
@@ -148,6 +149,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
   isBiometricAvailable = false,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const renderCountRef = useRef(0);
   const [isPasswordVisible, setIsPasswordVisible] = useState(showPassword);
@@ -197,7 +199,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       await Clipboard.setString(password.username);
       setToast({
         visible: true,
-        message: 'Username copied to clipboard',
+        message: t('toasts.username_copied'),
         type: 'success',
       });
     }
@@ -208,7 +210,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
     if (!isPasswordVisible) {
       setToast({
         visible: true,
-        message: 'Please reveal password first to copy',
+        message: t('password_entry.reveal_to_copy'),
         type: 'error',
       });
       return;
@@ -219,7 +221,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
     await Clipboard.setString(passwordToCopy);
     setToast({
       visible: true,
-      message: 'Password copied to clipboard',
+      message: t('toasts.password_copied'),
       type: 'success',
     });
 
@@ -235,7 +237,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       await Clipboard.setString(password.website);
       setToast({
         visible: true,
-        message: 'URL copied to clipboard',
+        message: t('toasts.website_copied'),
         type: 'success',
       });
     }
@@ -246,7 +248,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       await Clipboard.setString(password.notes);
       setToast({
         visible: true,
-        message: 'Notes copied to clipboard',
+        message: t('toasts.notes_copied'),
         type: 'success',
       });
     }
@@ -284,7 +286,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
 
     setToast({
       visible: true,
-      message: 'Biometric verified',
+      message: t('password_entry.biometric_verified'),
       type: 'success',
     });
   };
@@ -296,7 +298,7 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
 
     setToast({
       visible: true,
-      message: error || 'Authentication failed',
+      message: error || t('password_entry.authentication_failed'),
       type: 'error',
     });
   };
@@ -338,14 +340,14 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       setIsPasswordVisible(true);
       setToast({
         visible: true,
-        message: 'Authentication successful',
+        message: t('password_entry.authentication_successful'),
         type: 'success',
       });
     } catch (error) {
       console.error('❌ [PasswordEntry] Failed to decrypt password:', error);
       setToast({
         visible: true,
-        message: 'Failed to decrypt password',
+        message: t('password_entry.failed_to_decrypt'),
         type: 'error',
       });
       setIsPasswordVisible(false);
@@ -393,14 +395,14 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
       setIsPasswordVisible(true);
       setToast({
         visible: true,
-        message: 'Authentication successful',
+        message: t('password_entry.authentication_successful'),
         type: 'success',
       });
     } catch (error) {
       console.error('❌ [PasswordEntry] Failed to decrypt password:', error);
       setToast({
         visible: true,
-        message: 'Failed to decrypt password',
+        message: t('password_entry.failed_to_decrypt'),
         type: 'error',
       });
       setIsPasswordVisible(false);
@@ -695,8 +697,8 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
         onClose={handleBiometricClose}
         onSuccess={handleBiometricSuccess}
         onError={handleBiometricError}
-        title="Authenticate to view password"
-        subtitle="Use biometric authentication to reveal password"
+        title={t('password_entry.authenticate_title')}
+        subtitle={t('password_entry.authenticate_subtitle')}
       />
 
       {/* Biometric Fallback Prompt (Master Password + PIN when biometric fails) */}
@@ -711,8 +713,8 @@ const PasswordEntryComponent: React.FC<PasswordEntryComponentProps> = ({
         visible={showPinPrompt}
         onSuccess={handlePinSuccess}
         onCancel={handlePinPromptCancel}
-        title="Enter PIN"
-        subtitle="Enter your PIN to decrypt password"
+        title={t('password_entry.enter_pin_title')}
+        subtitle={t('password_entry.enter_pin_subtitle')}
       />
 
       {/* Toast Notification */}

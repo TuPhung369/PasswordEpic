@@ -11,6 +11,7 @@ import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { useSession } from '../hooks/useSession';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import ConfirmDialog from './ConfirmDialog';
 
 interface SessionTimeoutModalProps {
@@ -27,6 +28,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
   onLogout,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const session = useSelector((state: RootState) => state.auth.session);
   const { extendSession, forceLogout } = useSession();
   const [errorDialog, setErrorDialog] = React.useState({
@@ -118,16 +120,16 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
 
           {/* Title */}
           <Text style={[styles.title, { color: theme.text }]}>
-            {isExpired ? 'Session Expired' : 'Session Timeout Warning'}
+            {isExpired
+              ? t('session_timeout.title')
+              : t('session_timeout.title')}
           </Text>
 
           {/* Message */}
           <Text style={[styles.message, { color: theme.textSecondary }]}>
             {isExpired
-              ? 'Your session has expired for security. Please log in again to continue.'
-              : `Your session will expire in ${formatTime(
-                  timeDisplayed,
-                )} due to inactivity. Would you like to extend it?`}
+              ? t('session_timeout.message')
+              : t('session_timeout.sub_message')}
           </Text>
 
           {/* Timer Display */}
@@ -139,7 +141,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
               ]}
             >
               <Text style={[styles.timerLabel, { color: theme.textSecondary }]}>
-                Time Remaining
+                {t('session_timeout.title')}
               </Text>
               <Text style={[styles.timerText, { color: theme.error }]}>
                 {formatTime(timeDisplayed)}
@@ -160,7 +162,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
                 activeOpacity={0.8}
               >
                 <Text style={[styles.buttonText, { color: theme.text }]}>
-                  Log In Again
+                  {t('auth.login')}
                 </Text>
               </TouchableOpacity>
             ) : (
@@ -175,7 +177,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.buttonText, { color: theme.text }]}>
-                    Logout
+                    {t('auth.logout')}
                   </Text>
                 </TouchableOpacity>
 
@@ -189,7 +191,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.buttonText, { color: theme.text }]}>
-                    Extend Session
+                    {t('common.continue')}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -198,7 +200,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
 
           {/* Security Notice */}
           <Text style={[styles.securityNotice, { color: theme.textSecondary }]}>
-            🔒 This timeout protects your passwords when inactive
+            🔒 {t('session_timeout.sub_message')}
           </Text>
         </View>
       </View>

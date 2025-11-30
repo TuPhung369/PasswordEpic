@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useTranslation } from 'react-i18next';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordManagement } from '../../hooks/usePasswordManagement';
@@ -50,6 +51,7 @@ interface EditPasswordScreenProps {}
 
 export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const navigation = useNavigation<EditPasswordNavigationProp>();
   const route = useRoute<EditPasswordRouteProp>();
   const { passwordId } = route.params;
@@ -476,12 +478,12 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
           error,
         );
         setToastType('error');
-        setToastMessage('Failed to decrypt password');
+        setToastMessage(t('passwords.decrypt_failed'));
         setShowToast(true);
         return '';
       }
     },
-    [password, dispatch],
+    [password, dispatch, t],
   );
 
   const handleDecryptPassword = useCallback(async () => {
@@ -615,10 +617,9 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
     if (hasUnsavedChanges()) {
       setConfirmDialog({
         visible: true,
-        title: 'Discard Changes?',
-        message:
-          'You have unsaved changes. Are you sure you want to discard them?',
-        confirmText: 'Discard',
+        title: t('dialogs.discard_changes_title'),
+        message: t('dialogs.discard_changes_message'),
+        confirmText: t('dialogs.discard'),
         confirmStyle: 'destructive',
         onConfirm: () => {
           setConfirmDialog(prev => ({ ...prev, visible: false }));
@@ -680,18 +681,19 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
       );
       const hasDomain = isValidDomain(formData.website);
 
-      let errorMessage = 'Please fill in all required fields:';
-      if (!hasTitle) errorMessage += ' Title,';
-      if (!hasPassword) errorMessage += ' Password,';
-      if (!hasUsernameOrEmail) errorMessage += ' Username/Email,';
-      if (!hasDomain) errorMessage += ' Valid Domain (URL or App Package),';
+      let errorMessage = t('dialogs.fill_required_fields');
+      if (!hasTitle) errorMessage += ` ${t('dialogs.field_title')},`;
+      if (!hasPassword) errorMessage += ` ${t('dialogs.field_password')},`;
+      if (!hasUsernameOrEmail)
+        errorMessage += ` ${t('dialogs.field_username_email')},`;
+      if (!hasDomain) errorMessage += ` ${t('dialogs.field_valid_domain')},`;
       errorMessage = errorMessage.replace(/,$/, '.'); // Remove trailing comma and add period
 
       setConfirmDialog({
         visible: true,
-        title: 'Validation Error',
+        title: t('dialogs.validation_error'),
         message: errorMessage,
-        confirmText: 'OK',
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -871,15 +873,14 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
             crackTime:
               updatedPassword.auditData?.passwordStrength?.crackTime ||
               'Unknown',
-            factors:
-              updatedPassword.auditData?.passwordStrength?.factors || {
-                length: false,
-                hasUppercase: false,
-                hasLowercase: false,
-                hasNumbers: false,
-                hasSpecialChars: false,
-                hasCommonPatterns: false,
-              },
+            factors: updatedPassword.auditData?.passwordStrength?.factors || {
+              length: false,
+              hasUppercase: false,
+              hasLowercase: false,
+              hasNumbers: false,
+              hasSpecialChars: false,
+              hasCommonPatterns: false,
+            },
           },
           changes: passwordChanged ? ['Password changed'] : [],
         };
@@ -901,7 +902,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
         routes: [
           {
             name: 'PasswordsList',
-            params: { successMessage: 'Password updated successfully!' },
+            params: { successMessage: t('passwords.password_updated') },
           },
         ],
       });
@@ -938,7 +939,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
         setIsSaving(false);
       } else {
         setToastType('error');
-        setToastMessage('Failed to update password entry. Please try again.');
+        setToastMessage(t('passwords.update_failed'));
         setShowToast(true);
         setIsSaving(false);
       }
@@ -948,7 +949,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
   const handlePinUnlock = async () => {
     if (!pin.trim() || !pendingUpdateData) {
       setToastType('error');
-      setToastMessage('Please enter your PIN');
+      setToastMessage(t('auth.please_enter_pin'));
       setShowToast(true);
       return;
     }
@@ -979,7 +980,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
       setToastMessage(
         errorMessage.includes('locked')
           ? errorMessage
-          : 'Incorrect PIN. Please try again.',
+          : t('dialogs.incorrect_pin'),
       );
       setShowToast(true);
     } finally {
@@ -1027,9 +1028,9 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
 
       setConfirmDialog({
         visible: true,
-        title: 'Delete Password',
-        message: `Are you sure you want to delete "${password.title}"? This action cannot be undone.`,
-        confirmText: 'Delete',
+        title: t('dialogs.delete_password_title'),
+        message: t('dialogs.delete_password_message'),
+        confirmText: t('common.delete'),
         confirmStyle: 'destructive',
         onConfirm: async () => {
           setConfirmDialog(prev => ({ ...prev, visible: false }));
@@ -1045,7 +1046,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
                 {
                   name: 'PasswordsList',
                   params: {
-                    successMessage: 'Password deleted successfully!',
+                    successMessage: t('passwords.password_deleted'),
                   },
                 },
               ],
@@ -1055,9 +1056,9 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
             setIsDeleteDialogShowing(false);
             setConfirmDialog({
               visible: true,
-              title: 'Error',
-              message: 'Failed to delete password entry. Please try again.',
-              confirmText: 'OK',
+              title: t('dialogs.error'),
+              message: t('passwords.delete_failed'),
+              confirmText: t('common.ok'),
               onConfirm: () =>
                 setConfirmDialog(prev => ({ ...prev, visible: false })),
             });
@@ -1069,9 +1070,9 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
       console.error('❌ [Delete] Biometric authentication error:', error);
       setConfirmDialog({
         visible: true,
-        title: 'Error',
-        message: 'Failed to authenticate. Please try again.',
-        confirmText: 'OK',
+        title: t('dialogs.error'),
+        message: t('errors.authentication'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -1086,13 +1087,13 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
           <TouchableOpacity style={styles.headerButton} onPress={handleCancel}>
             <Ionicons name="close-outline" size={24} color={theme.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit Password</Text>
+          <Text style={styles.headerTitle}>{t('passwords.edit_password')}</Text>
           <View style={styles.headerButton} />
         </View>
         <View style={styles.loadingContainer}>
           <Ionicons name="create-outline" size={48} color={theme.primary} />
           <Text style={styles.loadingText}>
-            {isSaving ? 'Saving changes...' : 'Loading...'}
+            {isSaving ? t('passwords.saving_changes') : t('common.loading')}
           </Text>
         </View>
       </SafeAreaView>
@@ -1110,7 +1111,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
           >
             <Ionicons name="arrow-back-outline" size={24} color={theme.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit Password</Text>
+          <Text style={styles.headerTitle}>{t('passwords.edit_password')}</Text>
           <View style={styles.headerButton} />
         </View>
         <View style={styles.errorContainer}>
@@ -1120,10 +1121,11 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
             color={theme.error}
             style={styles.errorIcon}
           />
-          <Text style={styles.errorTitle}>Password Not Found</Text>
+          <Text style={styles.errorTitle}>
+            {t('passwords.password_not_found')}
+          </Text>
           <Text style={styles.errorMessage}>
-            The password entry you're trying to edit could not be found. It may
-            have been deleted or moved.
+            {t('passwords.password_not_found_message')}
           </Text>
         </View>
       </SafeAreaView>
@@ -1135,9 +1137,9 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.headerButton} onPress={handleCancel}>
-          <Text style={styles.headerButtonText}>Cancel</Text>
+          <Text style={styles.headerButtonText}>{t('common.cancel')}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Password</Text>
+        <Text style={styles.headerTitle}>{t('passwords.edit_password')}</Text>
         <TouchableOpacity
           style={styles.headerButton}
           onPress={handleDelete}
@@ -1150,7 +1152,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
                 : styles.deleteButtonText
             }
           >
-            Delete
+            {t('common.delete')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -1213,7 +1215,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
               color="#FFFFFF"
             />
             <Text style={styles.buttonText}>
-              {isSaving ? 'Saving...' : 'Save Changes'}
+              {isSaving ? t('passwords.saving') : t('common.save')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1270,12 +1272,12 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
                 />
               </View>
               <Text style={[styles.pinTitle, { color: theme.text }]}>
-                PIN Required
+                {t('dialogs.pin_required')}
               </Text>
               <Text
                 style={[styles.pinSubtitle, { color: theme.textSecondary }]}
               >
-                Enter your PIN to update this password
+                {t('dialogs.enter_pin_to_save')}
               </Text>
             </View>
 
@@ -1293,7 +1295,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
                 />
                 <TextInput
                   style={[styles.pinInput, { color: theme.text }]}
-                  placeholder="Enter PIN"
+                  placeholder={t('dialogs.enter_pin_placeholder')}
                   placeholderTextColor={theme.textSecondary}
                   value={pin}
                   onChangeText={setPin}
@@ -1319,7 +1321,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
                 <Text
                   style={[styles.pinButtonText, { color: theme.textSecondary }]}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Text>
               </TouchableOpacity>
 
@@ -1336,7 +1338,7 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
                 <Text
                   style={[styles.pinButtonText, { color: theme.background }]}
                 >
-                  {pinLoading ? 'Unlocking...' : 'Unlock'}
+                  {pinLoading ? t('dialogs.unlocking') : t('dialogs.unlock')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1350,8 +1352,8 @@ export const EditPasswordScreen: React.FC<EditPasswordScreenProps> = () => {
         onClose={handleBiometricClose}
         onSuccess={handleBiometricSuccess}
         onError={handleBiometricError}
-        title="Authenticate to view password"
-        subtitle="Use biometric authentication to reveal password"
+        title={t('passwords.authenticate_to_view')}
+        subtitle={t('passwords.use_biometric_to_reveal')}
       />
 
       {/* Layer 1B: Biometric Fallback (Master Password + PIN when biometric fails) */}

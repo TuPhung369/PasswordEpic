@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import { PasswordEntry } from '../types/password';
 
 export interface PasswordHistoryItem {
@@ -41,6 +42,7 @@ const PasswordHistoryViewer: React.FC<PasswordHistoryViewerProps> = ({
   onRestorePassword,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [selectedHistoryItem, setSelectedHistoryItem] =
     useState<PasswordHistoryItem | null>(null);
   const [showCompareView, setShowCompareView] = useState(false);
@@ -153,28 +155,30 @@ const PasswordHistoryViewer: React.FC<PasswordHistoryViewerProps> = ({
     }
   }, []);
 
-  const formatTimestamp = useCallback((timestamp: Date) => {
-    const now = new Date();
-    const diff = now.getTime() - timestamp.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const formatTimestamp = useCallback(
+    (timestamp: Date) => {
+      const now = new Date();
+      const diff = now.getTime() - timestamp.getTime();
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
 
-    if (days === 0) {
-      return 'Today';
-    } else if (days === 1) {
-      return 'Yesterday';
-    } else if (days < 7) {
-      return `${days} days ago`;
-    } else if (days < 30) {
-      const weeks = Math.floor(days / 7);
-      return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
-    } else if (days < 365) {
-      const months = Math.floor(days / 30);
-      return `${months} month${months > 1 ? 's' : ''} ago`;
-    } else {
-      const years = Math.floor(days / 365);
-      return `${years} year${years > 1 ? 's' : ''} ago`;
-    }
-  }, []);
+      if (days === 0) {
+        return t('password_history.time_ago.just_now');
+      } else if (days === 1) {
+        return t('password_history.time_ago.days_ago', { count: 1 });
+      } else if (days < 7) {
+        return t('password_history.time_ago.days_ago', { count: days });
+      } else if (days < 30) {
+        return t('password_history.time_ago.days_ago', { count: days });
+      } else if (days < 365) {
+        const months = Math.floor(days / 30);
+        return t('password_history.time_ago.months_ago', { count: months });
+      } else {
+        const years = Math.floor(days / 365);
+        return t('password_history.time_ago.years_ago', { count: years });
+      }
+    },
+    [t],
+  );
 
   const renderHistoryItem = ({
     item,
@@ -210,7 +214,9 @@ const PasswordHistoryViewer: React.FC<PasswordHistoryViewerProps> = ({
               </Text>
               {isCurrent && (
                 <View style={styles.currentBadge}>
-                  <Text style={styles.currentBadgeText}>Current</Text>
+                  <Text style={styles.currentBadgeText}>
+                    {t('password_history.current')}
+                  </Text>
                 </View>
               )}
             </View>
@@ -331,7 +337,9 @@ const PasswordHistoryViewer: React.FC<PasswordHistoryViewerProps> = ({
         <View style={styles.compareOverlay}>
           <View style={styles.compareModal}>
             <View style={styles.compareHeader}>
-              <Text style={styles.compareTitle}>Password Comparison</Text>
+              <Text style={styles.compareTitle}>
+                {t('password_history.comparison_title')}
+              </Text>
               <TouchableOpacity
                 onPress={() => setShowCompareView(false)}
                 style={styles.compareCloseButton}
@@ -505,7 +513,7 @@ const PasswordHistoryViewer: React.FC<PasswordHistoryViewerProps> = ({
                 >
                   <Ionicons name="refresh-outline" size={20} color="white" />
                   <Text style={styles.restoreButtonText}>
-                    Restore This Password
+                    {t('password_history.restore')}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -531,7 +539,7 @@ const PasswordHistoryViewer: React.FC<PasswordHistoryViewerProps> = ({
           <TouchableOpacity onPress={onClose} style={styles.headerButton}>
             <Ionicons name="close" size={24} color={theme.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Password History</Text>
+          <Text style={styles.headerTitle}>{t('password_history.title')}</Text>
           <View style={styles.headerButton} />
         </View>
 

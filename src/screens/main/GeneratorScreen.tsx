@@ -14,6 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useTranslation } from 'react-i18next';
 import { useAppSelector, useAppDispatch } from '../../hooks/redux';
 import { RootState } from '../../store';
 import { updateGeneratorSettings } from '../../store/slices/settingsSlice';
@@ -34,6 +35,7 @@ type GeneratorScreenNavigationProp = CompositeNavigationProp<
 >;
 
 export const GeneratorScreen: React.FC = () => {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const navigation = useNavigation<GeneratorScreenNavigationProp>();
   const { generator } = useAppSelector((state: RootState) => state.settings);
@@ -96,15 +98,18 @@ export const GeneratorScreen: React.FC = () => {
           await generateWiFiPasswordAsync(length);
           break;
         case 'memorable':
-          await generatePasswordAsync({
-            length,
-            includeUppercase: generator.includeUppercase,
-            includeLowercase: generator.includeLowercase,
-            includeNumbers: generator.includeNumbers,
-            includeSymbols: generator.includeSymbols,
-            excludeSimilar: true,
-            excludeAmbiguous: false,
-          }, selectedTemplate?.id);
+          await generatePasswordAsync(
+            {
+              length,
+              includeUppercase: generator.includeUppercase,
+              includeLowercase: generator.includeLowercase,
+              includeNumbers: generator.includeNumbers,
+              includeSymbols: generator.includeSymbols,
+              excludeSimilar: true,
+              excludeAmbiguous: false,
+            },
+            selectedTemplate?.id,
+          );
           break;
         case 'passphrase':
           await generatePassphraseAsync(length);
@@ -246,7 +251,9 @@ export const GeneratorScreen: React.FC = () => {
       style={[styles.container, { backgroundColor: theme.background }]}
     >
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <Text style={[styles.title, { color: theme.text }]}>🔐 Generate</Text>
+        <Text style={[styles.title, { color: theme.text }]}>
+          🔐 {t('generator.title')}
+        </Text>
       </View>
 
       <ScrollView
@@ -272,13 +279,16 @@ export const GeneratorScreen: React.FC = () => {
                 <Text
                   style={[styles.passwordLabel, { color: theme.textSecondary }]}
                 >
-                  {`Generated ${selectedTemplate ? selectedTemplate.name : 'Custom'} Template`}
+                  {t('generator.generated_template', {
+                    template: selectedTemplate
+                      ? selectedTemplate.name
+                      : t('generator.custom'),
+                  })}
                 </Text>
               </View>
               <View style={styles.passwordDisplay}>
                 <Text style={[styles.passwordText, { color: theme.text }]}>
-                  {generatedPassword ||
-                    'Tap Generate to create a secure password'}
+                  {generatedPassword || t('generator.tap_to_generate')}
                 </Text>
                 {generatedPassword && (
                   <TouchableOpacity
@@ -315,7 +325,7 @@ export const GeneratorScreen: React.FC = () => {
               >
                 <Ionicons name="refresh-outline" size={20} color="#ffffff" />
                 <Text style={styles.generateButtonText}>
-                  Generate New Password
+                  {t('generator.generate_new')}
                 </Text>
               </TouchableOpacity>
               {generatedPassword && (
@@ -334,7 +344,7 @@ export const GeneratorScreen: React.FC = () => {
                   <Text
                     style={[styles.saveButtonText, { color: theme.primary }]}
                   >
-                    Save to Vault
+                    {t('generator.save_to_vault')}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -345,7 +355,7 @@ export const GeneratorScreen: React.FC = () => {
               <Text
                 style={[styles.templatesSectionTitle, { color: theme.text }]}
               >
-                Choose Template
+                {t('generator.choose_template')}
               </Text>
 
               <View style={styles.templatesGrid}>
@@ -397,7 +407,7 @@ export const GeneratorScreen: React.FC = () => {
 
             <View style={styles.settings}>
               <Text style={[styles.settingsTitle, { color: theme.text }]}>
-                Settings
+                {t('generator.settings')}
               </Text>
 
               <View
@@ -410,7 +420,7 @@ export const GeneratorScreen: React.FC = () => {
                 <View style={styles.sliderSection}>
                   <View style={styles.sliderHeader}>
                     <Text style={[styles.settingLabel, { color: theme.text }]}>
-                      Length
+                      {t('generator.length')}
                     </Text>
                     <Text
                       style={[styles.lengthValue, { color: theme.primary }]}
@@ -439,7 +449,7 @@ export const GeneratorScreen: React.FC = () => {
                 {/* Include Options */}
                 <View>
                   <Text style={[styles.includeLabel, { color: theme.text }]}>
-                    Include
+                    {t('generator.include')}
                   </Text>
                   <View style={styles.checkboxGrid}>
                     {/* Row 1 */}

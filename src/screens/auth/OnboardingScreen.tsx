@@ -3,6 +3,7 @@ import { View, StyleSheet, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useTranslation } from 'react-i18next';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -14,6 +15,7 @@ type OnboardingScreenNavigationProp = NativeStackNavigationProp<
 export const OnboardingScreen: React.FC = () => {
   const navigation = useNavigation<OnboardingScreenNavigationProp>();
   const { theme } = useTheme();
+  const { t } = useTranslation();
 
   // Animation values for each element
   const titleOpacity = useRef(new Animated.Value(0)).current;
@@ -99,7 +101,7 @@ export const OnboardingScreen: React.FC = () => {
             },
           ]}
         >
-          PasswordEpic
+          {t('onboarding.app_name')}
         </Animated.Text>
 
         <Animated.Text
@@ -112,7 +114,7 @@ export const OnboardingScreen: React.FC = () => {
             },
           ]}
         >
-          Ultra-Secure Mobile Password Manager
+          {t('onboarding.tagline')}
         </Animated.Text>
 
         <Animated.Text
@@ -125,8 +127,7 @@ export const OnboardingScreen: React.FC = () => {
             },
           ]}
         >
-          Protect your digital life with military-grade encryption and seamless
-          auto-fill functionality.
+          {t('onboarding.description')}
         </Animated.Text>
 
         <View style={styles.features}>
@@ -140,7 +141,7 @@ export const OnboardingScreen: React.FC = () => {
               },
             ]}
           >
-            🔐 Zero-Knowledge Architecture
+            {t('onboarding.feature_zero_knowledge')}
           </Animated.Text>
 
           <Animated.Text
@@ -153,7 +154,7 @@ export const OnboardingScreen: React.FC = () => {
               },
             ]}
           >
-            🛡️ Biometric Authentication
+            {t('onboarding.feature_biometric')}
           </Animated.Text>
 
           <Animated.Text
@@ -166,7 +167,7 @@ export const OnboardingScreen: React.FC = () => {
               },
             ]}
           >
-            ⚡ Secure Auto-fill
+            {t('onboarding.feature_autofill')}
           </Animated.Text>
 
           <Animated.Text
@@ -179,7 +180,7 @@ export const OnboardingScreen: React.FC = () => {
               },
             ]}
           >
-            🔒 End-to-End Encryption
+            {t('onboarding.feature_encryption')}
           </Animated.Text>
         </View>
       </View>

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import { calculatePasswordStrength } from '../utils/passwordUtils';
 
 export interface PasswordStrength {
@@ -24,6 +25,7 @@ export const PasswordStrengthMeter: React.FC<PasswordStrengthMeterProps> = ({
   compact = false,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const strength = calculatePasswordStrength(password);
 
   const getStrengthIcon = () => {
@@ -80,7 +82,7 @@ export const PasswordStrengthMeter: React.FC<PasswordStrengthMeterProps> = ({
               {strength.label}
             </Text>
             <Text style={[styles.entropyText, { color: theme.textSecondary }]}>
-              Security Analysis
+              {t('password_strength.security_analysis')}
             </Text>
           </View>
         </View>
@@ -96,7 +98,7 @@ export const PasswordStrengthMeter: React.FC<PasswordStrengthMeterProps> = ({
           {strength.feedback.length > 0 && (
             <View style={styles.feedbackSection}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                Security Analysis
+                {t('password_strength.security_analysis')}
               </Text>
               {strength.feedback.map((item, index) => (
                 <View key={index} style={styles.feedbackItem}>
@@ -115,12 +117,12 @@ export const PasswordStrengthMeter: React.FC<PasswordStrengthMeterProps> = ({
 
           <View style={styles.suggestionsSection}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
-              Crack Time Estimate
+              {t('password_strength.crack_time')}
             </Text>
             <View style={styles.suggestionItem}>
               <Ionicons name="time-outline" size={16} color={theme.primary} />
               <Text style={[styles.suggestionText, { color: theme.text }]}>
-                {strength.crackTime} to crack this password
+                {strength.crackTime}
               </Text>
             </View>
           </View>

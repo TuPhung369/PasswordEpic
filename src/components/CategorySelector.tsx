@@ -9,6 +9,7 @@ import {
   TextInput,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { PasswordCategoryExtended } from '../types/password';
 import { useTheme, Theme } from '../contexts/ThemeContext';
 import {
@@ -17,7 +18,6 @@ import {
   CATEGORY_COLORS,
 } from '../constants/categories';
 import { CategoryService } from '../services/categoryService';
-import ConfirmDialog from './ConfirmDialog';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 interface CategorySelectorProps {
@@ -37,10 +37,10 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
 }) => {
   const { theme } = useTheme();
   const styles = createStyles(theme);
+  const { t } = useTranslation();
 
   // Confirm dialog hook
-  const { confirmDialog, showAlert, showDestructive, hideConfirm } =
-    useConfirmDialog();
+  const { showAlert, showDestructive } = useConfirmDialog();
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [categories, setCategories] = useState<PasswordCategoryExtended[]>(
@@ -108,7 +108,10 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
 
   const handleCreateCategory = async () => {
     if (!newCategoryName.trim()) {
-      showAlert('Error', 'Please enter a category name');
+      showAlert(
+        t('category_manager.error'),
+        t('category_manager.enter_category_name'),
+      );
       return;
     }
 
@@ -134,9 +137,12 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
       // Select the new category
       handleSelectCategory(newCategory.name);
 
-      showAlert('Success', 'Category created successfully');
+      showAlert(t('common.success'), t('category_selector.category_created'));
     } catch (error) {
-      showAlert('Error', 'Failed to create category');
+      showAlert(
+        t('category_manager.error'),
+        t('category_selector.create_failed'),
+      );
       console.error('Failed to create category:', error);
     }
   };
@@ -146,8 +152,8 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
     categoryName: string,
   ) => {
     showDestructive(
-      'Delete Category',
-      `Are you sure you want to delete "${categoryName}"? This action cannot be undone.`,
+      t('category_selector.delete_category'),
+      t('category_selector.delete_confirm', { name: categoryName }),
       async () => {
         try {
           await CategoryService.deleteCategory(categoryId);
@@ -158,11 +164,14 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
             onCategorySelect('Other');
           }
         } catch (error) {
-          showAlert('Error', 'Failed to delete category');
+          showAlert(
+            t('category_manager.error'),
+            t('category_selector.delete_failed'),
+          );
           console.error('Failed to delete category:', error);
         }
       },
-      'Delete',
+      t('common.delete'),
     );
   };
 
@@ -260,7 +269,10 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
             <Text style={styles.categoryName}>{item.name}</Text>
             {showCounts && (
               <Text style={styles.categoryCount}>
-                {item.entryCount} {item.entryCount === 1 ? 'entry' : 'entries'}
+                {item.entryCount}{' '}
+                {item.entryCount === 1
+                  ? t('category_selector.entry')
+                  : t('category_selector.entries')}
               </Text>
             )}
             {item.description && (
@@ -288,11 +300,13 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
 
   const renderCreateForm = () => (
     <View style={styles.createForm}>
-      <Text style={styles.createFormTitle}>Create New Category</Text>
+      <Text style={styles.createFormTitle}>
+        {t('category_selector.create_title')}
+      </Text>
 
       <TextInput
         style={styles.createInput}
-        placeholder="Category name"
+        placeholder={t('category_selector.category_name_placeholder')}
         value={newCategoryName}
         onChangeText={setNewCategoryName}
         placeholderTextColor={theme.textSecondary}
@@ -300,7 +314,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
         importantForAutofill="no"
       />
 
-      <Text style={styles.createLabel}>Icon</Text>
+      <Text style={styles.createLabel}>{t('category_selector.icon')}</Text>
       <View style={styles.iconGrid}>
         {Object.entries(CATEGORY_ICONS)
           .slice(0, 12)
@@ -318,7 +332,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
           ))}
       </View>
 
-      <Text style={styles.createLabel}>Color</Text>
+      <Text style={styles.createLabel}>{t('category_selector.color')}</Text>
       <View style={styles.colorGrid}>
         {Object.values(CATEGORY_COLORS)
           .slice(0, 8)
@@ -340,13 +354,15 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
           style={styles.cancelCreateButton}
           onPress={() => setIsCreating(false)}
         >
-          <Text style={styles.cancelCreateText}>Cancel</Text>
+          <Text style={styles.cancelCreateText}>{t('common.cancel')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.confirmCreateButton}
           onPress={handleCreateCategory}
         >
-          <Text style={styles.confirmCreateText}>Create</Text>
+          <Text style={styles.confirmCreateText}>
+            {t('category_selector.create')}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -382,7 +398,9 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select Category</Text>
+            <Text style={styles.modalTitle}>
+              {t('category_selector.title')}
+            </Text>
             <TouchableOpacity
               onPress={handleCloseModal}
               style={styles.closeButton}
@@ -397,7 +415,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
                 <Icon name="search" size={20} color={theme.textSecondary} />
                 <TextInput
                   style={styles.searchInput}
-                  placeholder="Search categories..."
+                  placeholder={t('category_selector.search_placeholder')}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                   placeholderTextColor={theme.textSecondary}
@@ -422,7 +440,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
                   >
                     <Icon name="add" size={24} color={theme.primary} />
                     <Text style={styles.createNewText}>
-                      Create New Category
+                      {t('category_selector.create_new')}
                     </Text>
                   </TouchableOpacity>
 
@@ -433,21 +451,24 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
                     ]}
                     onPress={async () => {
                       showDestructive(
-                        'Reset Categories',
-                        'This will reset all categories to default with updated icons. Custom categories will be lost.',
+                        t('category_selector.reset_title'),
+                        t('category_selector.reset_confirm'),
                         async () => {
                           try {
                             await CategoryService.resetToDefaultCategories();
                             await loadCategories();
                             showAlert(
-                              'Success',
-                              'Categories have been reset with updated icons',
+                              t('common.success'),
+                              t('category_selector.reset_success'),
                             );
                           } catch (error) {
-                            showAlert('Error', 'Failed to reset categories');
+                            showAlert(
+                              t('category_manager.error'),
+                              t('category_selector.reset_failed'),
+                            );
                           }
                         },
-                        'Reset',
+                        t('category_selector.reset_button'),
                       );
                     }}
                   >
@@ -455,7 +476,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
                     <Text
                       style={[styles.createNewText, { color: theme.warning }]}
                     >
-                      Reset to Default
+                      {t('category_selector.reset_to_default')}
                     </Text>
                   </TouchableOpacity>
                 </>

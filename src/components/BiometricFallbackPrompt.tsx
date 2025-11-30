@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { unlockMasterPasswordWithPin } from '../services/staticMasterPasswordService';
 import ConfirmDialog from './ConfirmDialog';
@@ -22,14 +23,11 @@ interface BiometricFallbackPromptProps {
   subtitle?: string;
 }
 
-export const BiometricFallbackPrompt: React.FC<BiometricFallbackPromptProps> = ({
-  visible,
-  onSuccess,
-  onCancel,
-  title = 'Verify Identity',
-  subtitle = 'Enter your master password and PIN to continue',
-}) => {
+export const BiometricFallbackPrompt: React.FC<
+  BiometricFallbackPromptProps
+> = ({ visible, onSuccess, onCancel, title, subtitle }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [masterPassword, setMasterPassword] = useState('');
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
@@ -57,9 +55,9 @@ export const BiometricFallbackPrompt: React.FC<BiometricFallbackPromptProps> = (
     if (!masterPassword.trim()) {
       setConfirmDialog({
         visible: true,
-        title: 'Error',
-        message: 'Please enter your master password',
-        confirmText: 'OK',
+        title: t('common.error'),
+        message: t('biometric_fallback.enter_master_password'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -69,9 +67,9 @@ export const BiometricFallbackPrompt: React.FC<BiometricFallbackPromptProps> = (
     if (!pin.trim()) {
       setConfirmDialog({
         visible: true,
-        title: 'Error',
-        message: 'Please enter your PIN',
-        confirmText: 'OK',
+        title: t('common.error'),
+        message: t('biometric_fallback.enter_pin'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -81,9 +79,9 @@ export const BiometricFallbackPrompt: React.FC<BiometricFallbackPromptProps> = (
     if (!isPinValid) {
       setConfirmDialog({
         visible: true,
-        title: 'Invalid PIN',
-        message: 'PIN must be 6-8 digits',
-        confirmText: 'OK',
+        title: t('biometric_fallback.invalid_pin'),
+        message: t('biometric_fallback.pin_must_be_digits'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -101,10 +99,9 @@ export const BiometricFallbackPrompt: React.FC<BiometricFallbackPromptProps> = (
       } else {
         setConfirmDialog({
           visible: true,
-          title: 'Invalid PIN',
-          message:
-            result.error || 'Invalid PIN',
-          confirmText: 'OK',
+          title: t('biometric_fallback.invalid_pin'),
+          message: result.error || t('biometric_fallback.invalid_pin'),
+          confirmText: t('common.ok'),
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
@@ -113,9 +110,10 @@ export const BiometricFallbackPrompt: React.FC<BiometricFallbackPromptProps> = (
       console.error('Unlock failed:', error);
       setConfirmDialog({
         visible: true,
-        title: 'Error',
-        message: error instanceof Error ? error.message : 'Failed to unlock',
-        confirmText: 'OK',
+        title: t('common.error'),
+        message:
+          error instanceof Error ? error.message : t('errors.failed_unlock'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -155,9 +153,11 @@ export const BiometricFallbackPrompt: React.FC<BiometricFallbackPromptProps> = (
                 color={theme.primary}
               />
             </View>
-            <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
+            <Text style={[styles.title, { color: theme.text }]}>
+              {title || t('biometric_fallback.title')}
+            </Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-              {subtitle}
+              {subtitle || t('biometric_fallback.subtitle')}
             </Text>
           </View>
 
@@ -172,7 +172,9 @@ export const BiometricFallbackPrompt: React.FC<BiometricFallbackPromptProps> = (
               />
               <TextInput
                 style={[styles.input, { color: theme.text }]}
-                placeholder="Master password"
+                placeholder={t(
+                  'biometric_fallback.master_password_placeholder',
+                )}
                 placeholderTextColor={theme.textSecondary}
                 value={masterPassword}
                 onChangeText={text => setMasterPassword(text.trim())}
@@ -203,7 +205,7 @@ export const BiometricFallbackPrompt: React.FC<BiometricFallbackPromptProps> = (
               />
               <TextInput
                 style={[styles.input, { color: theme.text }]}
-                placeholder="PIN (6-8 digits)"
+                placeholder={t('biometric_fallback.pin_placeholder')}
                 placeholderTextColor={theme.textSecondary}
                 value={pin}
                 onChangeText={text => setPin(text.replace(/[^0-9]/g, ''))}
@@ -237,7 +239,7 @@ export const BiometricFallbackPrompt: React.FC<BiometricFallbackPromptProps> = (
               disabled={loading}
             >
               <Text style={[styles.buttonText, { color: theme.textSecondary }]}>
-                Cancel
+                {t('common.cancel')}
               </Text>
             </TouchableOpacity>
 
@@ -253,11 +255,11 @@ export const BiometricFallbackPrompt: React.FC<BiometricFallbackPromptProps> = (
             >
               {loading ? (
                 <Text style={[styles.buttonText, { color: theme.background }]}>
-                  Unlocking...
+                  {t('pin_prompt.unlocking')}
                 </Text>
               ) : (
                 <Text style={[styles.buttonText, { color: theme.background }]}>
-                  Unlock
+                  {t('common.unlock')}
                 </Text>
               )}
             </TouchableOpacity>

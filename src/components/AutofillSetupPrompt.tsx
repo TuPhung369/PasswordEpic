@@ -16,10 +16,10 @@ import {
   Modal,
   StyleSheet,
   ScrollView,
-  Platform,
   ActivityIndicator,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface AutofillSetupPromptProps {
@@ -34,6 +34,7 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
   onDismiss,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleEnable = async () => {
@@ -53,13 +54,13 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
       onRequestClose={onDismiss}
     >
       <View
-        style={[styles.container, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}
+        style={[styles.container, styles.modalBackdrop]}
       >
         <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
           {/* Header with Close Button */}
           <View style={styles.header}>
             <Text style={[styles.title, { color: theme.text }]}>
-              Enable Autofill?
+              {t('autofill_setup.title')}
             </Text>
             <TouchableOpacity
               onPress={onDismiss}
@@ -92,7 +93,7 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
 
             {/* Subtitle */}
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-              Make password entry faster and easier
+              {t('autofill_setup.subtitle')}
             </Text>
 
             {/* Benefits */}
@@ -108,7 +109,7 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
                 </View>
                 <View style={styles.benefitText}>
                   <Text style={[styles.benefitTitle, { color: theme.text }]}>
-                    Auto-fill login forms
+                    {t('autofill_setup.benefit_autofill_title')}
                   </Text>
                   <Text
                     style={[
@@ -116,7 +117,7 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
                       { color: theme.textSecondary },
                     ]}
                   >
-                    Automatically fill passwords in apps and browsers
+                    {t('autofill_setup.benefit_autofill_desc')}
                   </Text>
                 </View>
               </View>
@@ -132,7 +133,7 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
                 </View>
                 <View style={styles.benefitText}>
                   <Text style={[styles.benefitTitle, { color: theme.text }]}>
-                    Stay secure
+                    {t('autofill_setup.benefit_secure_title')}
                   </Text>
                   <Text
                     style={[
@@ -140,7 +141,7 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
                       { color: theme.textSecondary },
                     ]}
                   >
-                    Uses biometric or master password for verification
+                    {t('autofill_setup.benefit_secure_desc')}
                   </Text>
                 </View>
               </View>
@@ -156,7 +157,7 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
                 </View>
                 <View style={styles.benefitText}>
                   <Text style={[styles.benefitTitle, { color: theme.text }]}>
-                    Save time
+                    {t('autofill_setup.benefit_time_title')}
                   </Text>
                   <Text
                     style={[
@@ -164,7 +165,7 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
                       { color: theme.textSecondary },
                     ]}
                   >
-                    No need to manually copy/paste passwords
+                    {t('autofill_setup.benefit_time_desc')}
                   </Text>
                 </View>
               </View>
@@ -181,10 +182,10 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
                 name="information-circle"
                 size={20}
                 color={theme.primary}
-                style={{ marginRight: 8 }}
+                style={styles.infoIcon}
               />
               <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-                You can enable or disable autofill anytime in Settings
+                {t('autofill_setup.info_text')}
               </Text>
             </View>
           </ScrollView>
@@ -202,7 +203,7 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
               <Text
                 style={[styles.secondaryButtonText, { color: theme.primary }]}
               >
-                Later
+                {t('autofill_setup.later')}
               </Text>
             </TouchableOpacity>
 
@@ -210,7 +211,9 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
               style={[
                 styles.primaryButton,
                 {
-                  backgroundColor: isLoading ? theme.disabled : theme.primary,
+                  backgroundColor: isLoading
+                    ? theme.textSecondary
+                    : theme.primary,
                 },
               ]}
               onPress={handleEnable}
@@ -220,18 +223,20 @@ export const AutofillSetupPrompt: React.FC<AutofillSetupPromptProps> = ({
                 <ActivityIndicator
                   size="small"
                   color="#FFFFFF"
-                  style={{ marginRight: 8 }}
+                  style={styles.loadingIcon}
                 />
               ) : (
                 <Ionicons
                   name="checkmark"
                   size={18}
                   color="#FFFFFF"
-                  style={{ marginRight: 4 }}
+                  style={styles.primaryButtonIcon}
                 />
               )}
               <Text style={styles.primaryButtonText}>
-                {isLoading ? 'Enabling...' : 'Enable Autofill'}
+                {isLoading
+                  ? t('autofill_setup.enabling')
+                  : t('autofill_setup.enable_button')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -245,6 +250,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
     borderTopLeftRadius: 20,
@@ -334,6 +342,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 16,
   },
+  infoIcon: {
+    marginRight: 8,
+  },
   infoText: {
     fontSize: 12,
     flex: 1,
@@ -355,6 +366,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  primaryButtonIcon: {
+    marginRight: 4,
+  },
   primaryButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
@@ -371,6 +385,9 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  loadingIcon: {
+    marginRight: 8,
   },
 });
 

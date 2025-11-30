@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useTranslation } from 'react-i18next';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useAppDispatch, useAppSelector } from '../../hooks/redux';
 import {
@@ -36,6 +37,7 @@ export const LoginScreen: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigation = useNavigation<LoginScreenNavigationProp>();
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const authState = useAppSelector(state => state.auth);
   const [isLoading, setIsLoading] = useState(false);
   const [buttonPressed, setButtonPressed] = useState(false);
@@ -308,10 +310,9 @@ export const LoginScreen: React.FC = () => {
         console.log('❌ Google Sign-In not available, showing error dialog');
         setConfirmDialog({
           visible: true,
-          title: 'Google Sign-In Unavailable',
-          message:
-            'Google Sign-In is not available in this build. Please use a development build that includes the Google Sign-In module.',
-          confirmText: 'OK',
+          title: t('auth.google_signin_unavailable'),
+          message: t('auth.google_signin_not_available'),
+          confirmText: t('common.ok'),
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
@@ -342,10 +343,9 @@ export const LoginScreen: React.FC = () => {
         console.log('❌ Google Sign-In still not ready after reinit attempt');
         setConfirmDialog({
           visible: true,
-          title: 'Google Sign-In Not Ready',
-          message:
-            'Google Sign-In is still initializing. Please wait a moment and try again.',
-          confirmText: 'OK',
+          title: t('auth.google_signin_not_ready'),
+          message: t('auth.google_signin_initializing'),
+          confirmText: t('common.ok'),
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
@@ -389,9 +389,9 @@ export const LoginScreen: React.FC = () => {
         dispatch(loginFailure(result.error || 'Failed to sign in with Google'));
         setConfirmDialog({
           visible: true,
-          title: 'Authentication Error',
-          message: result.error || 'Failed to sign in with Google',
-          confirmText: 'OK',
+          title: t('auth.authentication_error'),
+          message: result.error || t('errors.authentication'),
+          confirmText: t('common.ok'),
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
@@ -405,13 +405,13 @@ export const LoginScreen: React.FC = () => {
         );
       }
     } catch (error: any) {
-      const errorMessage = error.message || 'An unexpected error occurred';
+      const errorMessage = error.message || t('errors.generic');
       dispatch(loginFailure(errorMessage));
       setConfirmDialog({
         visible: true,
-        title: 'Error',
+        title: t('common.error'),
         message: errorMessage,
-        confirmText: 'OK',
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -423,7 +423,14 @@ export const LoginScreen: React.FC = () => {
       setIsLoading(false);
       console.log('🔄 Google Sign-In failed - button re-enabled');
     }
-  }, [isLoading, buttonPressed, googleSignInAvailable, dispatch, navigation]);
+  }, [
+    isLoading,
+    buttonPressed,
+    googleSignInAvailable,
+    dispatch,
+    navigation,
+    t,
+  ]);
 
   // Show loading screen while auto-logging in
   if (isAutoLoggingIn) {
@@ -463,7 +470,7 @@ export const LoginScreen: React.FC = () => {
 
           {/* Welcome text */}
           <Text style={[styles.welcomeTitle, { color: theme.text }]}>
-            Welcome back,
+            {t('auth.welcome_back_user')}
           </Text>
           <Text
             style={[styles.usernameLarge, { color: theme.primary }]}
@@ -474,7 +481,7 @@ export const LoginScreen: React.FC = () => {
 
           {/* Subtitle */}
           <Text style={[styles.preparingText, { color: theme.textSecondary }]}>
-            Unlocking your vault...
+            {t('auth.unlocking_vault')}
           </Text>
 
           {/* Loading indicator */}
@@ -508,7 +515,7 @@ export const LoginScreen: React.FC = () => {
           {/* Bottom security note */}
           <View style={styles.bottomSpacer} />
           <Text style={[styles.secureNote, { color: theme.textSecondary }]}>
-            🔒 Your vault is encrypted end-to-end
+            {t('auth.vault_encrypted')}
           </Text>
         </View>
       </SafeAreaView>
@@ -521,10 +528,11 @@ export const LoginScreen: React.FC = () => {
     >
       <View style={styles.content}>
         <Text style={[styles.title, { color: theme.text }]}>
-          Welcome Back{cachedUsername ? `, ${cachedUsername}` : ''}
+          {t('auth.welcome_back')}
+          {cachedUsername ? `, ${cachedUsername}` : ''}
         </Text>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-          Sign in to access your secure password vault
+          {t('auth.sign_in_subtitle')}
         </Text>
 
         <TouchableOpacity
@@ -557,14 +565,14 @@ export const LoginScreen: React.FC = () => {
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#ffffff" />
               <Text style={[styles.googleButtonText, styles.loadingText]}>
-                Signing in...
+                {t('auth.signing_in')}
               </Text>
             </View>
           ) : (
             <Text style={styles.googleButtonText}>
               {googleSignInAvailable
-                ? 'Continue with Google'
-                : 'Google Sign-In Unavailable'}
+                ? t('auth.continue_with_google')
+                : t('auth.google_signin_unavailable')}
             </Text>
           )}
         </TouchableOpacity>
@@ -573,19 +581,18 @@ export const LoginScreen: React.FC = () => {
           <Text
             style={[styles.warningText, { color: theme.error || '#ff6b6b' }]}
           >
-            ⚠️ Google Sign-In không khả dụng.{'\n'}
-            Vui lòng sử dụng Development Build hoặc kiểm tra cấu hình.
+            {t('auth.google_signin_not_available')}
           </Text>
         )}
 
         {googleSignInAvailable && (
           <Text style={[styles.methodText, { color: theme.textSecondary }]}>
-            🔧 Using Native Google Sign-In
+            {t('auth.using_native_google')}
           </Text>
         )}
 
         <Text style={[styles.securityNote, { color: theme.textSecondary }]}>
-          🔒 Your data is encrypted end-to-end and never stored on our servers
+          {t('auth.data_encrypted_note')}
         </Text>
       </View>
 

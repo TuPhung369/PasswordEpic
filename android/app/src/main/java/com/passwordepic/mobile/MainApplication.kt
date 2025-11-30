@@ -13,6 +13,7 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.passwordepic.mobile.BuildConfig
 import com.passwordepic.mobile.autofill.AutofillBridgePackage
+import com.zoontek.rnlocalize.RNLocalizePackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -62,6 +63,7 @@ class MainApplication : Application(), ReactApplication {
               
               // Add SharedPreferences Module (for autofill encrypted data)
               add(PasswordEpicPackage())
+              add(RNLocalizePackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

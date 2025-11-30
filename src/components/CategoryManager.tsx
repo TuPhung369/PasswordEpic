@@ -10,6 +10,7 @@ import {
   FlatList,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { PasswordEntry, PasswordCategory } from '../types/password';
 import ConfirmDialog from './ConfirmDialog';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
@@ -51,6 +52,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   onDeleteCategory,
   onMoveEntries,
 }) => {
+  const { t } = useTranslation();
   // Confirm dialog hook
   const {
     confirmDialog,
@@ -204,7 +206,10 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   // Handlers
   const handleCreateCategory = () => {
     if (!newCategoryName.trim()) {
-      showAlert('Error', 'Please enter a category name');
+      showAlert(
+        t('category_manager.error'),
+        t('category_manager.enter_category_name'),
+      );
       return;
     }
 
@@ -213,7 +218,10 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
         cat => cat.name.toLowerCase() === newCategoryName.toLowerCase(),
       )
     ) {
-      showAlert('Error', 'A category with this name already exists');
+      showAlert(
+        t('category_manager.error'),
+        t('category_manager.category_exists'),
+      );
       return;
     }
 
@@ -239,7 +247,10 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
 
   const handleUpdateCategory = () => {
     if (!selectedCategory || !newCategoryName.trim()) {
-      showAlert('Error', 'Please enter a category name');
+      showAlert(
+        t('category_manager.error'),
+        t('category_manager.enter_category_name'),
+      );
       return;
     }
 
@@ -250,7 +261,10 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     );
 
     if (existingCategory) {
-      showAlert('Error', 'A category with this name already exists');
+      showAlert(
+        t('category_manager.error'),
+        t('category_manager.category_exists'),
+      );
       return;
     }
 
@@ -268,16 +282,21 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     const stat = categoryStats.find(s => s.id === categoryId);
 
     if (stat?.isDefault) {
-      showAlert('Cannot Delete', 'Default categories cannot be deleted');
+      showAlert(
+        t('category_manager.cannot_delete'),
+        t('category_manager.default_cannot_delete'),
+      );
       return;
     }
 
     if (stat && stat.entryCount > 0) {
       // Category has entries - show options dialog
       showConfirm({
-        title: 'Delete Category',
-        message: `This category contains ${stat.entryCount} password(s). Do you want to move them to Uncategorized or delete everything?`,
-        confirmText: 'Move to Uncategorized',
+        title: t('category_manager.delete_category'),
+        message: t('category_manager.delete_with_entries', {
+          count: stat.entryCount,
+        }),
+        confirmText: t('category_manager.move_to_uncategorized'),
         onConfirm: () => {
           const categoryEntries = entries
             .filter(entry => entry.category === categoryId)
@@ -290,10 +309,10 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     } else {
       // Empty category - simple delete confirmation
       showDestructive(
-        'Delete Category',
-        `Are you sure you want to delete "${categoryName}"?`,
+        t('category_manager.delete_category'),
+        t('category_manager.delete_confirm', { name: categoryName }),
         () => onDeleteCategory(categoryId),
-        'Delete',
+        t('common.delete'),
       );
     }
   };
@@ -342,7 +361,9 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
               <Text style={styles.categoryName}>{stat.name}</Text>
               <Text style={styles.categoryCount}>
                 {stat.entryCount}{' '}
-                {stat.entryCount === 1 ? 'password' : 'passwords'}
+                {stat.entryCount === 1
+                  ? t('category_manager.password')
+                  : t('category_manager.passwords')}
               </Text>
             </View>
           </View>
@@ -374,12 +395,16 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
                 size={16}
                 color={theme.success}
               />
-              <Text style={styles.statText}>{stat.strongPasswords} strong</Text>
+              <Text style={styles.statText}>
+                {stat.strongPasswords} {t('category_manager.strong')}
+              </Text>
             </View>
 
             <View style={styles.statItem}>
               <Icon name="warning" size={16} color={theme.warning} />
-              <Text style={styles.statText}>{stat.weakPasswords} weak</Text>
+              <Text style={styles.statText}>
+                {stat.weakPasswords} {t('category_manager.weak')}
+              </Text>
             </View>
 
             {stat.lastUsed && (
@@ -404,10 +429,14 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
       (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24),
     );
 
-    if (diffInDays === 0) return 'Today';
-    if (diffInDays === 1) return 'Yesterday';
-    if (diffInDays < 7) return `${diffInDays} days ago`;
-    if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} weeks ago`;
+    if (diffInDays === 0) return t('category_manager.today');
+    if (diffInDays === 1) return t('category_manager.yesterday');
+    if (diffInDays < 7)
+      return t('category_manager.days_ago', { count: diffInDays });
+    if (diffInDays < 30)
+      return t('category_manager.weeks_ago', {
+        count: Math.floor(diffInDays / 7),
+      });
     return date.toLocaleDateString();
   };
 
@@ -420,18 +449,20 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>Create Category</Text>
+          <Text style={styles.modalTitle}>
+            {t('category_manager.create_category')}
+          </Text>
 
           <TextInput
             style={styles.modalInput}
-            placeholder="Category name"
+            placeholder={t('category_manager.category_name_placeholder')}
             placeholderTextColor={theme.textSecondary}
             value={newCategoryName}
             onChangeText={setNewCategoryName}
             autoFocus
           />
 
-          <Text style={styles.sectionLabel}>Icon</Text>
+          <Text style={styles.sectionLabel}>{t('category_manager.icon')}</Text>
           <ScrollView
             horizontal
             style={styles.iconSelector}
@@ -457,7 +488,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
             ))}
           </ScrollView>
 
-          <Text style={styles.sectionLabel}>Color</Text>
+          <Text style={styles.sectionLabel}>{t('category_manager.color')}</Text>
           <View style={styles.colorSelector}>
             {availableColors.map((color, index) => (
               <TouchableOpacity
@@ -481,14 +512,16 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
               style={styles.modalCancelButton}
               onPress={() => setShowCreateModal(false)}
             >
-              <Text style={styles.modalCancelText}>Cancel</Text>
+              <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.modalCreateButton}
               onPress={handleCreateCategory}
             >
-              <Text style={styles.modalCreateText}>Create</Text>
+              <Text style={styles.modalCreateText}>
+                {t('category_manager.create')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -505,18 +538,20 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>Edit Category</Text>
+          <Text style={styles.modalTitle}>
+            {t('category_manager.edit_category')}
+          </Text>
 
           <TextInput
             style={styles.modalInput}
-            placeholder="Category name"
+            placeholder={t('category_manager.category_name_placeholder')}
             placeholderTextColor={theme.textSecondary}
             value={newCategoryName}
             onChangeText={setNewCategoryName}
             autoFocus
           />
 
-          <Text style={styles.sectionLabel}>Icon</Text>
+          <Text style={styles.sectionLabel}>{t('category_manager.icon')}</Text>
           <ScrollView
             horizontal
             style={styles.iconSelector}
@@ -542,7 +577,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
             ))}
           </ScrollView>
 
-          <Text style={styles.sectionLabel}>Color</Text>
+          <Text style={styles.sectionLabel}>{t('category_manager.color')}</Text>
           <View style={styles.colorSelector}>
             {availableColors.map((color, index) => (
               <TouchableOpacity
@@ -566,14 +601,16 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
               style={styles.modalCancelButton}
               onPress={() => setShowEditModal(false)}
             >
-              <Text style={styles.modalCancelText}>Cancel</Text>
+              <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.modalCreateButton}
               onPress={handleUpdateCategory}
             >
-              <Text style={styles.modalCreateText}>Update</Text>
+              <Text style={styles.modalCreateText}>
+                {t('category_manager.update')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -595,7 +632,9 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
               <Icon name="close" size={24} color={theme.text} />
             </TouchableOpacity>
 
-            <Text style={styles.headerTitle}>Manage Categories</Text>
+            <Text style={styles.headerTitle}>
+              {t('category_manager.title')}
+            </Text>
 
             <TouchableOpacity
               onPress={() => setShowCreateModal(true)}
@@ -614,7 +653,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
             />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search categories..."
+              placeholder={t('category_manager.search_placeholder')}
               placeholderTextColor={theme.textSecondary}
               value={searchQuery}
               onChangeText={setSearchQuery}

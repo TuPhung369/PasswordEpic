@@ -9,6 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import ConfirmDialog from './ConfirmDialog';
 import { PasswordEntry } from '../types/password';
 
@@ -53,6 +54,7 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
   entries,
   onExport,
 }) => {
+  const { t } = useTranslation();
   // Mock theme context
   const theme = {
     background: '#FFFFFF',
@@ -220,10 +222,9 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
     if (!options.encrypt) {
       setConfirmDialog({
         visible: true,
-        title: '⚠️ Security Warning',
-        message:
-          'You are about to export passwords in PLAINTEXT format. This is highly insecure and not recommended.\n\nWe recommend enabling encryption to protect your passwords with your Master Password.\n\nAre you sure you want to continue without encryption?',
-        confirmText: 'Export Anyway',
+        title: t('export_options.security_warning_title'),
+        message: t('export_options.security_warning_message'),
+        confirmText: t('export_options.export_anyway'),
         confirmStyle: 'destructive',
         onConfirm: () => {
           setConfirmDialog(prev => ({ ...prev, visible: false }));
@@ -240,9 +241,9 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
     if (options.includeAttachments && entriesWithAttachments.length === 0) {
       setConfirmDialog({
         visible: true,
-        title: 'No Attachments',
-        message: 'No entries have attachments to export.',
-        confirmText: 'Continue',
+        title: t('export_options.no_attachments_title'),
+        message: t('export_options.no_attachments_message'),
+        confirmText: t('common.continue'),
         onConfirm: () => {
           setConfirmDialog(prev => ({ ...prev, visible: false }));
           setOptions(prev => ({ ...prev, includeAttachments: false }));
@@ -298,7 +299,7 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
 
   const renderFormatSelector = () => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Export Format</Text>
+      <Text style={styles.sectionTitle}>{t('export_options.format')}</Text>
 
       <TouchableOpacity
         style={styles.formatSelector}
@@ -325,7 +326,9 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Export Format</Text>
+              <Text style={styles.modalTitle}>
+                {t('export_options.select_format')}
+              </Text>
               <TouchableOpacity
                 onPress={() => setShowFormatDetails(false)}
                 style={styles.modalCloseButton}
@@ -380,13 +383,17 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
                             size={12}
                             color={theme.success}
                           />
-                          <Text style={styles.capabilityText}>Encryption</Text>
+                          <Text style={styles.capabilityText}>
+                            {t('export_options.encryption')}
+                          </Text>
                         </View>
                       )}
                       {format.supportsAttachments && (
                         <View style={styles.capability}>
                           <Icon name="attach" size={12} color={theme.success} />
-                          <Text style={styles.capabilityText}>Attachments</Text>
+                          <Text style={styles.capabilityText}>
+                            {t('export_options.attachments')}
+                          </Text>
                         </View>
                       )}
                     </View>
@@ -410,25 +417,31 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
 
   const renderStatistics = () => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Export Statistics</Text>
+      <Text style={styles.sectionTitle}>{t('export_options.statistics')}</Text>
 
       <View style={styles.statisticsGrid}>
         <View style={styles.statisticItem}>
           <Icon name="key-outline" size={20} color={theme.primary} />
           <Text style={styles.statisticNumber}>{entries.length}</Text>
-          <Text style={styles.statisticLabel}>Entries</Text>
+          <Text style={styles.statisticLabel}>
+            {t('export_options.entries')}
+          </Text>
         </View>
 
         <View style={styles.statisticItem}>
           <Icon name="folder-outline" size={20} color={theme.warning} />
           <Text style={styles.statisticNumber}>{categoriesCount}</Text>
-          <Text style={styles.statisticLabel}>Categories</Text>
+          <Text style={styles.statisticLabel}>
+            {t('export_options.categories')}
+          </Text>
         </View>
 
         <View style={styles.statisticItem}>
           <Icon name="pricetag-outline" size={20} color={theme.success} />
           <Text style={styles.statisticNumber}>{entriesWithTags.length}</Text>
-          <Text style={styles.statisticLabel}>With Tags</Text>
+          <Text style={styles.statisticLabel}>
+            {t('export_options.with_tags')}
+          </Text>
         </View>
 
         <View style={styles.statisticItem}>
@@ -438,7 +451,9 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
             color={theme.textSecondary}
           />
           <Text style={styles.statisticNumber}>{entriesWithNotes.length}</Text>
-          <Text style={styles.statisticLabel}>With Notes</Text>
+          <Text style={styles.statisticLabel}>
+            {t('export_options.with_notes')}
+          </Text>
         </View>
       </View>
     </View>
@@ -456,7 +471,7 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
           <View style={styles.handle} />
 
           <View style={styles.header}>
-            <Text style={styles.title}>Export Options</Text>
+            <Text style={styles.title}>{t('export_options.title')}</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Icon name="close" size={24} color={theme.text} />
             </TouchableOpacity>
@@ -470,46 +485,56 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
             {renderStatistics()}
 
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Content Options</Text>
+              <Text style={styles.sectionTitle}>
+                {t('export_options.content_options')}
+              </Text>
 
               {renderOptionRow(
-                'Include Metadata',
-                'Export creation and modification dates',
+                t('export_options.include_metadata'),
+                t('export_options.include_metadata_desc'),
                 options.includeMetadata,
                 value => handleOptionChange('includeMetadata', value),
               )}
 
               {renderOptionRow(
-                'Include Categories',
-                `Export category information (${categoriesCount} categories)`,
+                t('export_options.include_categories'),
+                t('export_options.include_categories_desc', {
+                  count: categoriesCount,
+                }),
                 options.includeCategories,
                 value => handleOptionChange('includeCategories', value),
               )}
 
               {renderOptionRow(
-                'Include Tags',
-                `Export tags (${entriesWithTags.length} entries have tags)`,
+                t('export_options.include_tags'),
+                t('export_options.include_tags_desc', {
+                  count: entriesWithTags.length,
+                }),
                 options.includeTags,
                 value => handleOptionChange('includeTags', value),
               )}
 
               {renderOptionRow(
-                'Include Notes',
-                `Export notes (${entriesWithNotes.length} entries have notes)`,
+                t('export_options.include_notes'),
+                t('export_options.include_notes_desc', {
+                  count: entriesWithNotes.length,
+                }),
                 options.includeNotes,
                 value => handleOptionChange('includeNotes', value),
               )}
 
               {renderOptionRow(
-                'Include History',
-                'Export password change history',
+                t('export_options.include_history'),
+                t('export_options.include_history_desc'),
                 options.includeHistory,
                 value => handleOptionChange('includeHistory', value),
               )}
 
               {renderOptionRow(
-                'Include Attachments',
-                `Export file attachments (${entriesWithAttachments.length} entries have attachments)`,
+                t('export_options.include_attachments'),
+                t('export_options.include_attachments_desc', {
+                  count: entriesWithAttachments.length,
+                }),
                 options.includeAttachments,
                 value => handleOptionChange('includeAttachments', value),
                 !selectedFormat.supportsAttachments,
@@ -517,11 +542,13 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
             </View>
 
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Security Options</Text>
+              <Text style={styles.sectionTitle}>
+                {t('export_options.security_options')}
+              </Text>
 
               {renderOptionRow(
-                'Encrypt Export',
-                'Password-protect the exported file',
+                t('export_options.encrypt_export'),
+                t('export_options.encrypt_export_desc'),
                 options.encrypt,
                 value => handleOptionChange('encrypt', value),
                 !selectedFormat.supportsEncryption,
@@ -529,11 +556,13 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
             </View>
 
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Formatting Options</Text>
+              <Text style={styles.sectionTitle}>
+                {t('export_options.formatting_options')}
+              </Text>
 
               {renderOptionRow(
-                'Group by Category',
-                'Organize entries by their categories',
+                t('export_options.group_by_category'),
+                t('export_options.group_by_category_desc'),
                 options.groupByCategory,
                 value => handleOptionChange('groupByCategory', value),
               )}
@@ -541,9 +570,11 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
               {/* Date Format Selector */}
               <View style={styles.optionRow}>
                 <View style={styles.optionContent}>
-                  <Text style={styles.optionTitle}>Date Format</Text>
+                  <Text style={styles.optionTitle}>
+                    {t('export_options.date_format')}
+                  </Text>
                   <Text style={styles.optionSubtitle}>
-                    How dates should be formatted in the export
+                    {t('export_options.date_format_desc')}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -565,9 +596,11 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
               {selectedFormat.id === 'csv' && (
                 <View style={styles.optionRow}>
                   <View style={styles.optionContent}>
-                    <Text style={styles.optionTitle}>Field Delimiter</Text>
+                    <Text style={styles.optionTitle}>
+                      {t('export_options.field_delimiter')}
+                    </Text>
                     <Text style={styles.optionSubtitle}>
-                      Character used to separate CSV fields
+                      {t('export_options.field_delimiter_desc')}
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -594,7 +627,7 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
 
           <View style={styles.actions}>
             <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -602,7 +635,9 @@ const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
               onPress={handleExport}
             >
               <Icon name="download-outline" size={20} color="white" />
-              <Text style={styles.exportButtonText}>Export</Text>
+              <Text style={styles.exportButtonText}>
+                {t('export_options.export')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

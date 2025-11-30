@@ -10,6 +10,7 @@ import {
   FlatList,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { PasswordEntry } from '../types/password';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -40,6 +41,7 @@ const TagManager: React.FC<TagManagerProps> = ({
   onUpdateEntryTags,
   _onBulkUpdateTags,
 }) => {
+  const { t } = useTranslation();
   // Mock theme context
   const theme = {
     background: '#FFFFFF',
@@ -162,7 +164,7 @@ const TagManager: React.FC<TagManagerProps> = ({
   const handleTagSelect = (tagName: string) => {
     setSelectedTags(prev =>
       prev.includes(tagName)
-        ? prev.filter(t => t !== tagName)
+        ? prev.filter(tag => tag !== tagName)
         : [...prev, tagName],
     );
   };
@@ -179,9 +181,9 @@ const TagManager: React.FC<TagManagerProps> = ({
     if (!newTagName.trim()) {
       setDialogState({
         visible: true,
-        title: 'Error',
-        message: 'Please enter a tag name',
-        confirmText: 'OK',
+        title: t('tag_manager.error'),
+        message: t('tag_manager.please_enter_tag_name'),
+        confirmText: t('common.ok'),
         confirmStyle: 'destructive',
         onConfirm: () => setDialogState(prev => ({ ...prev, visible: false })),
       });
@@ -195,9 +197,9 @@ const TagManager: React.FC<TagManagerProps> = ({
     ) {
       setDialogState({
         visible: true,
-        title: 'Error',
-        message: 'A tag with this name already exists',
-        confirmText: 'OK',
+        title: t('tag_manager.error'),
+        message: t('tag_manager.tag_already_exists'),
+        confirmText: t('common.ok'),
         confirmStyle: 'destructive',
         onConfirm: () => setDialogState(prev => ({ ...prev, visible: false })),
       });
@@ -211,9 +213,9 @@ const TagManager: React.FC<TagManagerProps> = ({
 
     setDialogState({
       visible: true,
-      title: 'Tag Created',
-      message: `Tag "${trimmedName}" has been created. You can now assign it to passwords.`,
-      confirmText: 'OK',
+      title: t('tag_manager.tag_created'),
+      message: t('tag_manager.tag_created_message', { name: trimmedName }),
+      confirmText: t('common.ok'),
       confirmStyle: 'default',
       onConfirm: () => setDialogState(prev => ({ ...prev, visible: false })),
     });
@@ -223,9 +225,9 @@ const TagManager: React.FC<TagManagerProps> = ({
     if (!newTagName.trim() || !tagToRename) {
       setDialogState({
         visible: true,
-        title: 'Error',
-        message: 'Please enter a new tag name',
-        confirmText: 'OK',
+        title: t('tag_manager.error'),
+        message: t('tag_manager.please_enter_tag_name'),
+        confirmText: t('common.ok'),
         confirmStyle: 'destructive',
         onConfirm: () => setDialogState(prev => ({ ...prev, visible: false })),
       });
@@ -239,9 +241,9 @@ const TagManager: React.FC<TagManagerProps> = ({
     ) {
       setDialogState({
         visible: true,
-        title: 'Error',
-        message: 'A tag with this name already exists',
-        confirmText: 'OK',
+        title: t('tag_manager.error'),
+        message: t('tag_manager.tag_already_exists'),
+        confirmText: t('common.ok'),
         confirmStyle: 'destructive',
         onConfirm: () => setDialogState(prev => ({ ...prev, visible: false })),
       });
@@ -266,15 +268,18 @@ const TagManager: React.FC<TagManagerProps> = ({
   };
 
   const handleDeleteTag = (tagName: string) => {
-    const tag = tagStats.find(t => t.name === tagName);
+    const tag = tagStats.find(tagItem => tagItem.name === tagName);
 
     if (!tag) return;
 
     setDialogState({
       visible: true,
-      title: 'Delete Tag',
-      message: `Are you sure you want to delete "${tagName}"? This will remove it from ${tag.count} password(s).`,
-      confirmText: 'Delete',
+      title: t('tag_manager.delete_tag'),
+      message: t('tag_manager.delete_tag_confirm', {
+        name: tagName,
+        count: tag.count,
+      }),
+      confirmText: t('common.delete'),
       confirmStyle: 'destructive',
       onConfirm: () => {
         // Remove tag from all entries
@@ -311,10 +316,11 @@ const TagManager: React.FC<TagManagerProps> = ({
       (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24),
     );
 
-    if (diffInDays === 0) return 'Today';
-    if (diffInDays === 1) return 'Yesterday';
-    if (diffInDays < 7) return `${diffInDays} days ago`;
-    if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} weeks ago`;
+    if (diffInDays === 0) return t('tag_manager.today');
+    if (diffInDays === 1) return t('tag_manager.yesterday');
+    if (diffInDays < 7) return t('tag_manager.days_ago', { count: diffInDays });
+    if (diffInDays < 30)
+      return t('tag_manager.weeks_ago', { count: Math.floor(diffInDays / 7) });
     return date.toLocaleDateString();
   };
 
@@ -325,21 +331,7 @@ const TagManager: React.FC<TagManagerProps> = ({
         selectedTags.includes(tag.name) && styles.tagItemSelected,
       ]}
       onPress={() => handleTagSelect(tag.name)}
-      onLongPress={() => {
-        setDialogState({
-          visible: true,
-          title: 'Tag Options',
-          message: `What would you like to do with "${tag.name}"?`,
-          confirmText: 'Rename',
-          confirmStyle: 'default',
-          onConfirm: () => {
-            setTagToRename(tag.name);
-            setNewTagName(tag.name);
-            setShowRenameModal(true);
-            setDialogState(prev => ({ ...prev, visible: false }));
-          },
-        });
-      }}
+      onLongPress={() => handleDeleteTag(tag.name)}
     >
       <View style={styles.tagHeader}>
         <View
@@ -353,7 +345,7 @@ const TagManager: React.FC<TagManagerProps> = ({
 
       {tag.lastUsed && (
         <Text style={styles.tagLastUsed}>
-          Last used: {formatDate(tag.lastUsed)}
+          {t('tag_manager.last_used', { date: formatDate(tag.lastUsed) })}
         </Text>
       )}
     </TouchableOpacity>
@@ -381,7 +373,7 @@ const TagManager: React.FC<TagManagerProps> = ({
       {entry.tags && entry.tags.length > 0 && (
         <View style={styles.entryTags}>
           {entry.tags.map(tagName => {
-            const tagStat = tagStats.find(t => t.name === tagName);
+            const tagStat = tagStats.find(tagItem => tagItem.name === tagName);
             return (
               <View
                 key={tagName}
@@ -419,7 +411,7 @@ const TagManager: React.FC<TagManagerProps> = ({
             currentView === 'tags' && styles.viewToggleTextActive,
           ]}
         >
-          Tags ({tagStats.length})
+          {t('tag_manager.tags_count', { count: tagStats.length })}
         </Text>
       </TouchableOpacity>
 
@@ -441,11 +433,12 @@ const TagManager: React.FC<TagManagerProps> = ({
             currentView === 'entries' && styles.viewToggleTextActive,
           ]}
         >
-          Entries (
-          {selectedTags.length > 0
-            ? entriesForSelectedTags.length
-            : entries.length}
-          )
+          {t('tag_manager.entries_count', {
+            count:
+              selectedTags.length > 0
+                ? entriesForSelectedTags.length
+                : entries.length,
+          })}
         </Text>
       </TouchableOpacity>
     </View>
@@ -460,11 +453,11 @@ const TagManager: React.FC<TagManagerProps> = ({
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>Create Tag</Text>
+          <Text style={styles.modalTitle}>{t('tag_manager.create_tag')}</Text>
 
           <TextInput
             style={styles.modalInput}
-            placeholder="Tag name"
+            placeholder={t('tag_manager.tag_name')}
             placeholderTextColor={theme.textSecondary}
             value={newTagName}
             onChangeText={setNewTagName}
@@ -476,14 +469,16 @@ const TagManager: React.FC<TagManagerProps> = ({
               style={styles.modalCancelButton}
               onPress={() => setShowCreateModal(false)}
             >
-              <Text style={styles.modalCancelText}>Cancel</Text>
+              <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.modalCreateButton}
               onPress={handleCreateTag}
             >
-              <Text style={styles.modalCreateText}>Create</Text>
+              <Text style={styles.modalCreateText}>
+                {t('tag_manager.create_tag')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -500,12 +495,14 @@ const TagManager: React.FC<TagManagerProps> = ({
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>Rename Tag</Text>
-          <Text style={styles.modalSubtitle}>Renaming "{tagToRename}"</Text>
+          <Text style={styles.modalTitle}>{t('tag_manager.rename_tag')}</Text>
+          <Text style={styles.modalSubtitle}>
+            {t('tag_manager.renaming', { name: tagToRename })}
+          </Text>
 
           <TextInput
             style={styles.modalInput}
-            placeholder="New tag name"
+            placeholder={t('tag_manager.new_tag_name')}
             placeholderTextColor={theme.textSecondary}
             value={newTagName}
             onChangeText={setNewTagName}
@@ -517,14 +514,16 @@ const TagManager: React.FC<TagManagerProps> = ({
               style={styles.modalCancelButton}
               onPress={() => setShowRenameModal(false)}
             >
-              <Text style={styles.modalCancelText}>Cancel</Text>
+              <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.modalCreateButton}
               onPress={handleRenameTag}
             >
-              <Text style={styles.modalCreateText}>Rename</Text>
+              <Text style={styles.modalCreateText}>
+                {t('tag_manager.rename_tag')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -546,7 +545,7 @@ const TagManager: React.FC<TagManagerProps> = ({
               <Ionicons name="close" size={24} color={theme.text} />
             </TouchableOpacity>
 
-            <Text style={styles.headerTitle}>Manage Tags</Text>
+            <Text style={styles.headerTitle}>{t('tag_manager.title')}</Text>
 
             <TouchableOpacity
               onPress={() => setShowCreateModal(true)}
@@ -565,7 +564,7 @@ const TagManager: React.FC<TagManagerProps> = ({
             />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search tags..."
+              placeholder={t('tag_manager.search_tags')}
               placeholderTextColor={theme.textSecondary}
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -589,12 +588,14 @@ const TagManager: React.FC<TagManagerProps> = ({
           {selectedTags.length > 0 && (
             <View style={styles.selectedTagsContainer}>
               <Text style={styles.selectedTagsTitle}>
-                Selected Tags ({selectedTags.length}):
+                {t('tag_manager.selected_tags', { count: selectedTags.length })}
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.selectedTags}>
                   {selectedTags.map(tagName => {
-                    const tagStat = tagStats.find(t => t.name === tagName);
+                    const tagStat = tagStats.find(
+                      tagItem => tagItem.name === tagName,
+                    );
                     return (
                       <TouchableOpacity
                         key={tagName}
@@ -637,7 +638,9 @@ const TagManager: React.FC<TagManagerProps> = ({
           {selectedEntries.length > 0 && (
             <View style={styles.footer}>
               <Text style={styles.footerText}>
-                {selectedEntries.length} selected
+                {t('tag_manager.selected_count', {
+                  count: selectedEntries.length,
+                })}
               </Text>
 
               <TouchableOpacity
@@ -645,7 +648,9 @@ const TagManager: React.FC<TagManagerProps> = ({
                 onPress={() => _setShowBulkModal(true)}
               >
                 <Ionicons name="pricetag-outline" size={20} color="white" />
-                <Text style={styles.bulkActionText}>Manage Tags</Text>
+                <Text style={styles.bulkActionText}>
+                  {t('tag_manager.manage_tags')}
+                </Text>
               </TouchableOpacity>
             </View>
           )}

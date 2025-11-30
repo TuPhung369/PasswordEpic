@@ -11,6 +11,7 @@ import {
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { CATEGORY_ICONS } from '../constants/categories';
+import { useTranslation } from 'react-i18next';
 
 export interface MultipleFilterOptions {
   weak: boolean;
@@ -30,14 +31,26 @@ interface FilterDropdownProps {
 }
 
 const FILTER_OPTIONS = [
-  { type: 'weak' as const, label: 'Weak Passwords', icon: 'alert-outline' },
+  {
+    type: 'weak' as const,
+    labelKey: 'filter_dropdown.weak_passwords',
+    icon: 'alert-outline',
+  },
   {
     type: 'compromised' as const,
-    label: 'Compromised',
+    labelKey: 'filter_dropdown.breached',
     icon: 'warning-outline',
   },
-  { type: 'duplicate' as const, label: 'Duplicates', icon: 'copy-outline' },
-  { type: 'favorite' as const, label: 'Favorites', icon: 'heart-outline' },
+  {
+    type: 'duplicate' as const,
+    labelKey: 'filter_dropdown.reused_passwords',
+    icon: 'copy-outline',
+  },
+  {
+    type: 'favorite' as const,
+    labelKey: 'filter_dropdown.favorites',
+    icon: 'heart-outline',
+  },
 ] as const;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -51,6 +64,7 @@ export const FilterDropdown: React.FC<FilterDropdownProps> = ({
   categories = [],
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
@@ -183,7 +197,7 @@ export const FilterDropdown: React.FC<FilterDropdownProps> = ({
               { color: isSelected ? theme.primary : theme.text },
             ]}
           >
-            {option.label}
+            {t(option.labelKey)}
           </Text>
         </View>
 
@@ -272,7 +286,7 @@ export const FilterDropdown: React.FC<FilterDropdownProps> = ({
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: theme.border }]}>
             <Text style={[styles.title, { color: theme.text }]}>
-              Filter Options
+              {t('filter_dropdown.title')}
             </Text>
           </View>
 
@@ -301,14 +315,13 @@ export const FilterDropdown: React.FC<FilterDropdownProps> = ({
                       { color: theme.textSecondary },
                     ]}
                   >
-                    Categories
+                    {t('filter_dropdown.categories')}
                   </Text>
                 </View>
                 {categories.map(renderCategoryOption)}
               </>
             )}
 
-            {/* Reset Option */}
             <TouchableOpacity
               style={[styles.resetOption, { borderTopColor: theme.border }]}
               onPress={() => {
@@ -329,7 +342,7 @@ export const FilterDropdown: React.FC<FilterDropdownProps> = ({
                 color={theme.textSecondary}
               />
               <Text style={[styles.resetText, { color: theme.textSecondary }]}>
-                Clear All
+                {t('filter_dropdown.clear_all')}
               </Text>
             </TouchableOpacity>
           </ScrollView>

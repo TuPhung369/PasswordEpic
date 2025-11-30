@@ -8,6 +8,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface MigrationBannerProps {
@@ -21,6 +22,7 @@ export const MigrationBanner: React.FC<MigrationBannerProps> = ({
   total,
   onMigrate,
 }) => {
+  const { t } = useTranslation();
   const { theme } = useTheme();
 
   // Don't show if no migration needed
@@ -110,12 +112,11 @@ export const MigrationBanner: React.FC<MigrationBannerProps> = ({
           color={theme.primary}
           style={styles.icon}
         />
-        <Text style={styles.title}>Update Available</Text>
+        <Text style={styles.title}>{t('migration.update_available')}</Text>
       </View>
 
       <Text style={styles.message}>
-        {needsMigration} of your {total} passwords need to be updated to support
-        new features like password history and security audit.
+        {t('migration.needs_migration_message', { needsMigration, total })}
       </Text>
 
       <View style={styles.progressContainer}>
@@ -128,7 +129,7 @@ export const MigrationBanner: React.FC<MigrationBannerProps> = ({
       {onMigrate && (
         <TouchableOpacity style={styles.button} onPress={onMigrate}>
           <Ionicons name="sync-outline" size={18} color="#FFFFFF" />
-          <Text style={styles.buttonText}>Update Now</Text>
+          <Text style={styles.buttonText}>{t('migration.update_now')}</Text>
         </TouchableOpacity>
       )}
     </View>

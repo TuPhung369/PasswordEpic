@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useBiometric } from '../../hooks/useBiometric';
 import { useNavigation } from '@react-navigation/native';
@@ -35,6 +36,7 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
   console.log('🔍 [BiometricUnlock] ===== SCREEN RENDERING =====');
 
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const navigation = useNavigation<BiometricUnlockNavigationProp>();
   const { isAvailable, biometryType, isLoading } = useBiometric();
 
@@ -156,10 +158,9 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
     if (!isAvailable) {
       setConfirmDialog({
         visible: true,
-        title: 'Not Available',
-        message:
-          'Biometric authentication hardware is not available on this device.',
-        confirmText: 'OK',
+        title: t('biometric_unlock.not_available'),
+        message: t('biometric_unlock.biometric_not_available'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -181,10 +182,9 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
     console.error('Biometric error:', errorMessage);
     setConfirmDialog({
       visible: true,
-      title: 'Biometric Failed',
-      message:
-        'Unable to unlock with biometric. Please enter your Master Password.',
-      confirmText: 'Use Master Password',
+      title: t('biometric_unlock.biometric_failed'),
+      message: t('biometric_unlock.biometric_failed_message'),
+      confirmText: t('biometric_unlock.use_master_password'),
       onConfirm: () => {
         setConfirmDialog(prev => ({ ...prev, visible: false }));
         navigation.navigate('MasterPassword', { mode: 'unlock' });
@@ -201,7 +201,7 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
         <>
           <View style={[styles.header, { borderBottomColor: theme.border }]}>
             <Text style={[styles.headerTitle, { color: theme.text }]}>
-              Unlock
+              {t('biometric_unlock.title')}
             </Text>
           </View>
 
@@ -222,13 +222,13 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
               </View>
 
               <Text style={[styles.heroTitle, { color: theme.text }]}>
-                Unlock with {biometryType}
+                {t('biometric_unlock.unlock_with', { biometryType })}
               </Text>
 
               <Text
                 style={[styles.heroSubtitle, { color: theme.textSecondary }]}
               >
-                Use your {biometryType.toLowerCase()} to unlock your vault
+                {t('biometric_unlock.use_to_unlock', { biometryType: biometryType.toLowerCase() })}
               </Text>
             </View>
 
@@ -247,7 +247,7 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
                 />
                 <View style={styles.statusContent}>
                   <Text style={[styles.statusTitle, { color: theme.error }]}>
-                    Not Available
+                    {t('biometric_unlock.not_available')}
                   </Text>
                   <Text
                     style={[
@@ -255,7 +255,7 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
                       { color: theme.textSecondary },
                     ]}
                   >
-                    Biometric authentication is not available on this device.
+                    {t('biometric_unlock.biometric_not_available')}
                   </Text>
                 </View>
               </View>
@@ -285,7 +285,7 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
                     size={20}
                     color="#ffffff"
                   />
-                  <Text style={styles.unlockButtonText}>Try Again</Text>
+                  <Text style={styles.unlockButtonText}>{t('biometric_unlock.try_again')}</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -298,8 +298,8 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
         onClose={() => setShowPrompt(false)}
         onSuccess={handleBiometricSuccess}
         onError={handleBiometricError}
-        title={`Unlock with ${biometryType}`}
-        subtitle={`Use your ${biometryType.toLowerCase()} to unlock`}
+        title={t('biometric_unlock.unlock_with', { biometryType })}
+        subtitle={t('biometric_unlock.use_to_unlock', { biometryType: biometryType.toLowerCase() })}
       />
 
       <ConfirmDialog

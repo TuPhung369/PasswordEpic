@@ -16,6 +16,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppState } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePasswordManagement } from '../../hooks/usePasswordManagement';
 import PasswordForm from '../../components/PasswordForm';
@@ -57,6 +58,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   route,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const navigation = useNavigation<AddPasswordScreenNavigationProp>();
   const { createPassword } = usePasswordManagement();
 
@@ -235,10 +237,9 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
           // Show confirmation dialog
           setConfirmDialog({
             visible: true,
-            title: 'Discard Changes?',
-            message:
-              'You have unsaved changes. Are you sure you want to discard them?',
-            confirmText: 'Discard',
+            title: t('dialogs.discard_changes_title'),
+            message: t('dialogs.discard_changes_message'),
+            confirmText: t('dialogs.discard'),
             confirmStyle: 'destructive',
             onConfirm: async () => {
               setConfirmDialog(prev => ({ ...prev, visible: false }));
@@ -260,7 +261,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     );
 
     return () => backHandler.remove();
-  }, [navigation, navigationPersistence]);
+  }, [navigation, navigationPersistence, t]);
 
   // Focus effect to handle screen focus/blur events
   useFocusEffect(
@@ -398,7 +399,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   const handlePinUnlock = async () => {
     if (!pin.trim() || !pendingSaveData) {
       setToastType('error');
-      setToastMessage('Please enter your PIN');
+      setToastMessage(t('auth.please_enter_pin'));
       setShowToast(true);
       return;
     }
@@ -455,7 +456,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       setToastMessage(
         errorMessage.includes('locked')
           ? errorMessage
-          : 'Incorrect PIN. Please try again.',
+          : t('dialogs.incorrect_pin'),
       );
       setShowToast(true);
       setIsSaving(false);
@@ -477,10 +478,9 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
     if (hasUnsavedChanges()) {
       setConfirmDialog({
         visible: true,
-        title: 'Discard Changes?',
-        message:
-          'You have unsaved changes. Are you sure you want to discard them?',
-        confirmText: 'Discard',
+        title: t('dialogs.discard_changes_title'),
+        message: t('dialogs.discard_changes_message'),
+        confirmText: t('dialogs.discard'),
         confirmStyle: 'destructive',
         onConfirm: async () => {
           setConfirmDialog(prev => ({ ...prev, visible: false }));
@@ -533,18 +533,19 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       );
       const hasDomain = isValidDomain(formData?.website);
 
-      let errorMessage = 'Please fill in all required fields:';
-      if (!hasTitle) errorMessage += ' Title,';
-      if (!hasPassword) errorMessage += ' Password,';
-      if (!hasUsernameOrEmail) errorMessage += ' Username/Email,';
-      if (!hasDomain) errorMessage += ' Valid Domain (URL or App Package),';
+      let errorMessage = t('dialogs.fill_required_fields');
+      if (!hasTitle) errorMessage += ` ${t('dialogs.field_title')},`;
+      if (!hasPassword) errorMessage += ` ${t('dialogs.field_password')},`;
+      if (!hasUsernameOrEmail)
+        errorMessage += ` ${t('dialogs.field_username_email')},`;
+      if (!hasDomain) errorMessage += ` ${t('dialogs.field_valid_domain')},`;
       errorMessage = errorMessage.replace(/,$/, '.'); // Remove trailing comma and add period
 
       setConfirmDialog({
         visible: true,
-        title: 'Validation Error',
+        title: t('dialogs.validation_error'),
         message: errorMessage,
-        confirmText: 'OK',
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -681,15 +682,14 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
             crackTime:
               createdPassword.auditData?.passwordStrength?.crackTime ||
               'Unknown',
-            factors:
-              createdPassword.auditData?.passwordStrength?.factors || {
-                length: false,
-                hasUppercase: false,
-                hasLowercase: false,
-                hasNumbers: false,
-                hasSpecialChars: false,
-                hasCommonPatterns: false,
-              },
+            factors: createdPassword.auditData?.passwordStrength?.factors || {
+              length: false,
+              hasUppercase: false,
+              hasLowercase: false,
+              hasNumbers: false,
+              hasSpecialChars: false,
+              hasCommonPatterns: false,
+            },
           },
           changes: ['Password created'],
         };
@@ -803,7 +803,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
       } else {
         setShowLoadingScreen(false);
         setToastType('error');
-        setToastMessage('Failed to create password entry. Please try again.');
+        setToastMessage(t('passwords.create_failed'));
         setShowToast(true);
         setIsSaving(false);
       }
@@ -826,7 +826,7 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
   // Biometric authentication success - proceed to PIN verification
   const handleBiometricSuccess = async () => {
     setShowBiometricPrompt(false);
-    setToastMessage('Biometric verified');
+    setToastMessage(t('auth.biometric_verified'));
     setToastType('success');
     setShowToast(true);
 
@@ -888,220 +888,227 @@ export const AddPasswordScreen: React.FC<AddPasswordScreenProps> = ({
 
   return (
     <>
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerButton} onPress={handleCancel}>
-          <Text style={styles.headerButtonText}>Cancel</Text>
-        </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Add Password</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.headerButton}
-          onPress={handleSave}
-          disabled={!isFormValid() || isSaving}
-        >
-          <Text
-            style={[
-              styles.headerButtonText,
-              (!isFormValid() || isSaving) && { color: theme.textSecondary },
-            ]}
-          >
-            Save
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Content */}
-      <View style={styles.content}>
-        <ScrollView
-          style={styles.formContainer}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <PasswordForm
-            password={formData as PasswordEntry}
-            onSave={handleFormSave}
-            onCancel={handleCancel}
-            onDataChange={handleFormSave}
-            isEditing={false}
-            enableAutoSave={false}
-            onDecryptPassword={handleDecryptPassword}
-          />
-        </ScrollView>
-
-        {/* Save Button */}
-        <TouchableOpacity
-          style={[
-            styles.saveButton,
-            (!isFormValid() || isSaving) && styles.saveButtonDisabled,
-          ]}
-          onPress={handleSave}
-          disabled={!isFormValid() || isSaving}
-        >
-          {isSaving ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Ionicons name="save-outline" size={20} color="#FFFFFF" />
-          )}
-          <Text style={styles.saveButtonText}>
-            {isSaving ? 'Saving...' : 'Save Password'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Toast notification */}
-      <Toast
-        message={toastMessage}
-        type={toastType}
-        visible={showToast}
-        onHide={() => setShowToast(false)}
-        duration={2000}
-      />
-
-      {/* Confirm Dialog */}
-      <ConfirmDialog
-        visible={confirmDialog.visible}
-        title={confirmDialog.title}
-        message={confirmDialog.message}
-        confirmText={confirmDialog.confirmText}
-        confirmStyle={confirmDialog.confirmStyle}
-        onConfirm={confirmDialog.onConfirm}
-        onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
-      />
-
-      {/* PIN Unlock Dialog */}
-      <Modal
-        visible={showPinDialog}
-        transparent={true}
-        animationType="none"
-        onRequestClose={handlePinCancel}
-      >
-        <KeyboardAvoidingView
-          style={styles.pinOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-          <View
-            style={[styles.pinContainer, { backgroundColor: theme.surface }]}
-          >
-            <View style={styles.pinHeader}>
-              <View
-                style={[
-                  styles.pinIconContainer,
-                  { backgroundColor: theme.primary + '20' },
-                ]}
-              >
-                <Ionicons
-                  name="lock-closed-outline"
-                  size={32}
-                  color={theme.primary}
-                />
-              </View>
-              <Text style={[styles.pinTitle, { color: theme.text }]}>
-                PIN Required
-              </Text>
-              <Text
-                style={[styles.pinSubtitle, { color: theme.textSecondary }]}
-              >
-                Enter your PIN to save this password
-              </Text>
-            </View>
-
-            <View style={styles.pinInputSection}>
-              <View
-                style={[
-                  styles.pinInputContainer,
-                  { borderColor: theme.border },
-                ]}
-              >
-                <Ionicons
-                  name="keypad-outline"
-                  size={24}
-                  color={theme.textSecondary}
-                />
-                <TextInput
-                  style={[styles.pinInput, { color: theme.text }]}
-                  placeholder="Enter PIN"
-                  placeholderTextColor={theme.textSecondary}
-                  value={pin}
-                  onChangeText={setPin}
-                  secureTextEntry={true}
-                  keyboardType="numeric"
-                  maxLength={6}
-                  autoFocus={true}
-                  onSubmitEditing={handlePinUnlock}
-                />
-              </View>
-            </View>
-
-            <View style={styles.pinButtonSection}>
-              <TouchableOpacity
-                style={[
-                  styles.pinButton,
-                  styles.pinCancelButton,
-                  { borderColor: theme.border },
-                ]}
-                onPress={handlePinCancel}
-                disabled={pinLoading}
-              >
-                <Text
-                  style={[styles.pinButtonText, { color: theme.textSecondary }]}
-                >
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.pinButton,
-                  styles.pinUnlockButton,
-                  { backgroundColor: theme.primary },
-                  (pinLoading || !pin.trim()) && styles.pinButtonDisabled,
-                ]}
-                onPress={handlePinUnlock}
-                disabled={pinLoading || !pin.trim()}
-              >
-                <Text
-                  style={[styles.pinButtonText, { color: theme.background }]}
-                >
-                  {pinLoading ? 'Unlocking...' : 'Unlock'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+      <SafeAreaView style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.headerButton} onPress={handleCancel}>
+            <Text style={styles.headerButtonText}>{t('common.cancel')}</Text>
+          </TouchableOpacity>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>
+              {t('passwords.add_password')}
+            </Text>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={handleSave}
+            disabled={!isFormValid() || isSaving}
+          >
+            <Text
+              style={[
+                styles.headerButtonText,
+                (!isFormValid() || isSaving) && { color: theme.textSecondary },
+              ]}
+            >
+              {t('common.save')}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-      {/* Layer 1: Biometric Authentication */}
-      <BiometricPrompt
-        visible={showBiometricPrompt}
-        onClose={handleBiometricClose}
-        onSuccess={handleBiometricSuccess}
-        onError={handleBiometricError}
-        title="Authenticate to view password"
-        subtitle="Use biometric authentication to reveal password"
-      />
+        {/* Content */}
+        <View style={styles.content}>
+          <ScrollView
+            style={styles.formContainer}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <PasswordForm
+              password={formData as PasswordEntry}
+              onSave={handleFormSave}
+              onCancel={handleCancel}
+              onDataChange={handleFormSave}
+              isEditing={false}
+              enableAutoSave={false}
+              onDecryptPassword={handleDecryptPassword}
+            />
+          </ScrollView>
 
-      {/* Layer 1B: Biometric Fallback (Master Password + PIN when biometric fails) */}
-      <BiometricFallbackPrompt
-        visible={showFallbackModal}
-        onSuccess={handleFallbackSuccess}
-        onCancel={handleFallbackCancel}
-      />
+          {/* Save Button */}
+          <TouchableOpacity
+            style={[
+              styles.saveButton,
+              (!isFormValid() || isSaving) && styles.saveButtonDisabled,
+            ]}
+            onPress={handleSave}
+            disabled={!isFormValid() || isSaving}
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Ionicons name="save-outline" size={20} color="#FFFFFF" />
+            )}
+            <Text style={styles.saveButtonText}>
+              {isSaving ? t('passwords.saving') : t('passwords.save_password')}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-      {/* Layer 2: PIN Prompt Modal (after biometric succeeds) */}
-      <PinPromptModal
-        visible={showPinPrompt}
-        onSuccess={handlePinPromptSuccess}
-        onCancel={handlePinPromptCancel}
-        title="Enter PIN"
-        subtitle="Enter your PIN to view password"
-      />
-    </SafeAreaView>
+        {/* Toast notification */}
+        <Toast
+          message={toastMessage}
+          type={toastType}
+          visible={showToast}
+          onHide={() => setShowToast(false)}
+          duration={2000}
+        />
 
-    {/* Loading Screen - Outside SafeAreaView for full screen */}
-    <LoadingScreen visible={showLoadingScreen} />
+        {/* Confirm Dialog */}
+        <ConfirmDialog
+          visible={confirmDialog.visible}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmText={confirmDialog.confirmText}
+          confirmStyle={confirmDialog.confirmStyle}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() =>
+            setConfirmDialog(prev => ({ ...prev, visible: false }))
+          }
+        />
+
+        {/* PIN Unlock Dialog */}
+        <Modal
+          visible={showPinDialog}
+          transparent={true}
+          animationType="none"
+          onRequestClose={handlePinCancel}
+        >
+          <KeyboardAvoidingView
+            style={styles.pinOverlay}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View
+              style={[styles.pinContainer, { backgroundColor: theme.surface }]}
+            >
+              <View style={styles.pinHeader}>
+                <View
+                  style={[
+                    styles.pinIconContainer,
+                    { backgroundColor: theme.primary + '20' },
+                  ]}
+                >
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={32}
+                    color={theme.primary}
+                  />
+                </View>
+                <Text style={[styles.pinTitle, { color: theme.text }]}>
+                  {t('dialogs.pin_required')}
+                </Text>
+                <Text
+                  style={[styles.pinSubtitle, { color: theme.textSecondary }]}
+                >
+                  {t('dialogs.enter_pin_to_save')}
+                </Text>
+              </View>
+
+              <View style={styles.pinInputSection}>
+                <View
+                  style={[
+                    styles.pinInputContainer,
+                    { borderColor: theme.border },
+                  ]}
+                >
+                  <Ionicons
+                    name="keypad-outline"
+                    size={24}
+                    color={theme.textSecondary}
+                  />
+                  <TextInput
+                    style={[styles.pinInput, { color: theme.text }]}
+                    placeholder={t('dialogs.enter_pin_placeholder')}
+                    placeholderTextColor={theme.textSecondary}
+                    value={pin}
+                    onChangeText={setPin}
+                    secureTextEntry={true}
+                    keyboardType="numeric"
+                    maxLength={6}
+                    autoFocus={true}
+                    onSubmitEditing={handlePinUnlock}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.pinButtonSection}>
+                <TouchableOpacity
+                  style={[
+                    styles.pinButton,
+                    styles.pinCancelButton,
+                    { borderColor: theme.border },
+                  ]}
+                  onPress={handlePinCancel}
+                  disabled={pinLoading}
+                >
+                  <Text
+                    style={[
+                      styles.pinButtonText,
+                      { color: theme.textSecondary },
+                    ]}
+                  >
+                    {t('common.cancel')}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.pinButton,
+                    styles.pinUnlockButton,
+                    { backgroundColor: theme.primary },
+                    (pinLoading || !pin.trim()) && styles.pinButtonDisabled,
+                  ]}
+                  onPress={handlePinUnlock}
+                  disabled={pinLoading || !pin.trim()}
+                >
+                  <Text
+                    style={[styles.pinButtonText, { color: theme.background }]}
+                  >
+                    {pinLoading ? t('dialogs.unlocking') : t('dialogs.unlock')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Layer 1: Biometric Authentication */}
+        <BiometricPrompt
+          visible={showBiometricPrompt}
+          onClose={handleBiometricClose}
+          onSuccess={handleBiometricSuccess}
+          onError={handleBiometricError}
+          title={t('passwords.authenticate_to_view')}
+          subtitle={t('passwords.use_biometric_to_reveal')}
+        />
+
+        {/* Layer 1B: Biometric Fallback (Master Password + PIN when biometric fails) */}
+        <BiometricFallbackPrompt
+          visible={showFallbackModal}
+          onSuccess={handleFallbackSuccess}
+          onCancel={handleFallbackCancel}
+        />
+
+        {/* Layer 2: PIN Prompt Modal (after biometric succeeds) */}
+        <PinPromptModal
+          visible={showPinPrompt}
+          onSuccess={handlePinPromptSuccess}
+          onCancel={handlePinPromptCancel}
+          title={t('auth.enter_pin')}
+          subtitle={t('auth.enter_pin')}
+        />
+      </SafeAreaView>
+
+      {/* Loading Screen - Outside SafeAreaView for full screen */}
+      <LoadingScreen visible={showLoadingScreen} />
     </>
   );
 };

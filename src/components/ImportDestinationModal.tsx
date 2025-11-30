@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 
 interface FileItem {
   name: string;
@@ -20,9 +21,17 @@ interface FileItem {
 interface ImportDestinationModalProps {
   visible: boolean;
   onClose: () => void;
-  onConfirm: (destination: 'local' | 'google' | 'google-hidden', filePath?: string) => void;
-  onSelectDestination?: (destination: 'local' | 'google' | 'google-hidden') => void;
-  onDeleteFile?: (destination: 'local' | 'google' | 'google-hidden', filePath: string) => Promise<boolean>;
+  onConfirm: (
+    destination: 'local' | 'google' | 'google-hidden',
+    filePath?: string,
+  ) => void;
+  onSelectDestination?: (
+    destination: 'local' | 'google' | 'google-hidden',
+  ) => void;
+  onDeleteFile?: (
+    destination: 'local' | 'google' | 'google-hidden',
+    filePath: string,
+  ) => Promise<boolean>;
   localFileList?: FileItem[];
   googleFileList?: FileItem[];
   googleHiddenFileList?: FileItem[];
@@ -41,6 +50,7 @@ const ImportDestinationModal: React.FC<ImportDestinationModalProps> = ({
   isLoadingFiles = false,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const styles = createStyles(theme);
   const [selectedDestination, setSelectedDestination] = useState<
     'local' | 'google' | 'google-hidden' | null
@@ -51,11 +61,15 @@ const ImportDestinationModal: React.FC<ImportDestinationModalProps> = ({
 
   useEffect(() => {
     if (visible) {
-      console.log('[ImportDestinationModal] Modal opened, setting destination to local');
+      console.log(
+        '[ImportDestinationModal] Modal opened, setting destination to local',
+      );
       setSelectedDestination('local');
       setSelectedFile(null);
       if (onSelectDestination) {
-        console.log('[ImportDestinationModal] Calling onSelectDestination for local');
+        console.log(
+          '[ImportDestinationModal] Calling onSelectDestination for local',
+        );
         onSelectDestination('local');
       }
     }
@@ -75,19 +89,27 @@ const ImportDestinationModal: React.FC<ImportDestinationModalProps> = ({
     }
   };
 
-  const handleDestinationSelect = (destination: 'local' | 'google' | 'google-hidden') => {
-    console.log('[ImportDestinationModal] handleDestinationSelect called with:', destination);
+  const handleDestinationSelect = (
+    destination: 'local' | 'google' | 'google-hidden',
+  ) => {
+    console.log(
+      '[ImportDestinationModal] handleDestinationSelect called with:',
+      destination,
+    );
     setSelectedDestination(destination);
     setSelectedFile(null);
     if (onSelectDestination) {
-      console.log('[ImportDestinationModal] Calling onSelectDestination for:', destination);
+      console.log(
+        '[ImportDestinationModal] Calling onSelectDestination for:',
+        destination,
+      );
       onSelectDestination(destination);
     }
   };
 
   const handleConfirm = () => {
     if (!selectedDestination) return;
-    
+
     if (selectedFile) {
       onConfirm(selectedDestination, selectedFile);
     } else {
@@ -132,18 +154,23 @@ const ImportDestinationModal: React.FC<ImportDestinationModalProps> = ({
 
   const renderFileItem = (item: FileItem) => {
     const isSelected = selectedFile === item.path;
-    const fileDate = item.mtime 
+    const fileDate = item.mtime
       ? new Date(item.mtime).toLocaleDateString()
       : 'Unknown date';
 
-    console.log('[ImportDestinationModal] renderFileItem:', { name: item.name, isSelected });
+    console.log('[ImportDestinationModal] renderFileItem:', {
+      name: item.name,
+      isSelected,
+    });
 
     return (
       <View
         style={[
           styles.fileItem,
           {
-            backgroundColor: isSelected ? theme.primary + '10' : theme.background,
+            backgroundColor: isSelected
+              ? theme.primary + '10'
+              : theme.background,
             borderColor: isSelected ? theme.primary : theme.border,
           },
         ]}
@@ -178,22 +205,14 @@ const ImportDestinationModal: React.FC<ImportDestinationModalProps> = ({
             </Text>
           </View>
           {isSelected && (
-            <Icon
-              name="checkmark-circle"
-              size={20}
-              color={theme.primary}
-            />
+            <Icon name="checkmark-circle" size={20} color={theme.primary} />
           )}
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.deleteButton}
           onPress={() => handleDeletePress(item.path)}
         >
-          <Icon
-            name="trash-outline"
-            size={18}
-            color={theme.textSecondary}
-          />
+          <Icon name="trash-outline" size={18} color={theme.textSecondary} />
         </TouchableOpacity>
       </View>
     );
@@ -214,7 +233,9 @@ const ImportDestinationModal: React.FC<ImportDestinationModalProps> = ({
       <Icon
         name={icon}
         size={20}
-        color={selectedDestination === value ? theme.primary : theme.textSecondary}
+        color={
+          selectedDestination === value ? theme.primary : theme.textSecondary
+        }
       />
       <Text
         style={[
@@ -250,29 +271,31 @@ const ImportDestinationModal: React.FC<ImportDestinationModalProps> = ({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <View style={[styles.container, showFileList && styles.containerExpanded]}>
+        <View
+          style={[styles.container, showFileList && styles.containerExpanded]}
+        >
           <View style={styles.header}>
             <Icon
               name="arrow-down-circle-outline"
               size={20}
               color={theme.primary}
             />
-            <Text style={styles.title}>Import From</Text>
+            <Text style={styles.title}>{t('import_destination.title')}</Text>
           </View>
 
           <View style={styles.optionsContainer}>
             {renderDestinationOption(
-              'Local',
+              t('import_destination.local_storage'),
               'phone-portrait-outline',
               'local',
             )}
             {renderDestinationOption(
-              'Drive',
+              t('import_destination.google_drive'),
               'logo-google',
               'google',
             )}
             {renderDestinationOption(
-              'Hidden',
+              t('import_destination.hidden_files'),
               'folder-hidden-outline',
               'google-hidden',
             )}
@@ -281,21 +304,31 @@ const ImportDestinationModal: React.FC<ImportDestinationModalProps> = ({
           {showFileLoading && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={theme.primary} />
-              <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-                Loading files...
+              <Text
+                style={[styles.loadingText, { color: theme.textSecondary }]}
+              >
+                {t('google_drive_picker.loading')}
               </Text>
             </View>
           )}
 
           {showFileList && (
-            <View style={[styles.fileListContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
+            <View
+              style={[
+                styles.fileListContainer,
+                {
+                  backgroundColor: theme.background,
+                  borderColor: theme.border,
+                },
+              ]}
+            >
               <Text style={[styles.fileListTitle, { color: theme.text }]}>
-                Select a file to import
+                {t('import_destination.select_file')}
               </Text>
               <FlatList
                 data={fileList}
                 renderItem={({ item }) => renderFileItem(item)}
-                keyExtractor={(item) => item.path}
+                keyExtractor={item => item.path}
                 scrollEnabled
                 style={styles.fileList}
                 ItemSeparatorComponent={renderSeparator}
@@ -309,19 +342,27 @@ const ImportDestinationModal: React.FC<ImportDestinationModalProps> = ({
               style={[styles.button, styles.cancelButton]}
               onPress={onClose}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={styles.cancelButtonText}>
+                {t('import_destination.cancel')}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[
                 styles.button,
                 styles.confirmButton,
-                (!selectedDestination || (fileList.length > 0 && !selectedFile)) && styles.confirmButtonDisabled,
+                (!selectedDestination ||
+                  (fileList.length > 0 && !selectedFile)) &&
+                  styles.confirmButtonDisabled,
               ]}
               onPress={handleConfirm}
-              disabled={!selectedDestination || (fileList.length > 0 && !selectedFile)}
+              disabled={
+                !selectedDestination || (fileList.length > 0 && !selectedFile)
+              }
             >
-              <Text style={styles.confirmButtonText}>Continue</Text>
+              <Text style={styles.confirmButtonText}>
+                {t('import_destination.continue')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -335,22 +376,30 @@ const ImportDestinationModal: React.FC<ImportDestinationModalProps> = ({
       >
         <View style={styles.overlay}>
           <View style={styles.confirmDialog}>
-            <Text style={styles.confirmDialogTitle}>Delete File?</Text>
+            <Text style={styles.confirmDialogTitle}>
+              {t('google_drive_picker.delete_confirm_title')}
+            </Text>
             <Text style={styles.confirmDialogMessage}>
-              Are you sure you want to delete this file?
+              {t('google_drive_picker.delete_confirm_message', {
+                filename: deletingFilePath?.split('/').pop() || '',
+              })}
             </Text>
             <View style={styles.confirmDialogButtons}>
               <TouchableOpacity
                 style={[styles.confirmDialogButton, styles.confirmDialogCancel]}
                 onPress={() => setShowDeleteConfirm(false)}
               >
-                <Text style={styles.confirmDialogCancelText}>Cancel</Text>
+                <Text style={styles.confirmDialogCancelText}>
+                  {t('import_destination.cancel')}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.confirmDialogButton, styles.confirmDialogDelete]}
                 onPress={handleConfirmDelete}
               >
-                <Text style={styles.confirmDialogDeleteText}>Delete</Text>
+                <Text style={styles.confirmDialogDeleteText}>
+                  {t('google_drive_picker.delete')}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

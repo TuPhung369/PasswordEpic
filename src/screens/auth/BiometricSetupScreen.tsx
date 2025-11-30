@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useBiometric } from '../../hooks/useBiometric';
 import { useNavigation } from '@react-navigation/native';
@@ -30,6 +31,7 @@ interface BiometricFeature {
 }
 
 export const BiometricSetupScreen: React.FC = () => {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const dispatch = useAppDispatch();
   const navigation = useNavigation<BiometricSetupNavigationProp>();
@@ -73,27 +75,23 @@ export const BiometricSetupScreen: React.FC = () => {
   const features: BiometricFeature[] = [
     {
       icon: 'shield-checkmark-outline',
-      title: 'Enhanced Security',
-      description:
-        'Your biometric data is stored securely on your device and never leaves it.',
+      title: t('biometric_setup.feature_security_title'),
+      description: t('biometric_setup.feature_security_desc'),
     },
     {
       icon: 'flash-outline',
-      title: 'Quick Access',
-      description:
-        'Access your passwords instantly without typing your master password.',
+      title: t('biometric_setup.feature_quick_title'),
+      description: t('biometric_setup.feature_quick_desc'),
     },
     {
       icon: 'shield-checkmark-outline',
-      title: 'Unique to You',
-      description:
-        'Only you can access your passwords using your unique biometric features.',
+      title: t('biometric_setup.feature_unique_title'),
+      description: t('biometric_setup.feature_unique_desc'),
     },
     {
       icon: 'lock-closed-outline',
-      title: 'Privacy Protected',
-      description:
-        'Your biometric data is processed locally and never shared or stored online.',
+      title: t('biometric_setup.feature_privacy_title'),
+      description: t('biometric_setup.feature_privacy_desc'),
     },
   ];
 
@@ -107,9 +105,9 @@ export const BiometricSetupScreen: React.FC = () => {
     if (!isAvailable) {
       setConfirmDialog({
         visible: true,
-        title: 'Not Available',
-        message: 'Biometric authentication is not available on this device.',
-        confirmText: 'OK',
+        title: t('biometric_setup.not_available_title'),
+        message: t('biometric_setup.not_available_message'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -131,9 +129,11 @@ export const BiometricSetupScreen: React.FC = () => {
         setSetupComplete(true);
         setConfirmDialog({
           visible: true,
-          title: 'Setup Complete',
-          message: `${biometryType} authentication has been enabled successfully!`,
-          confirmText: 'Continue',
+          title: t('biometric_setup.setup_complete'),
+          message: t('biometric_setup.setup_complete_message', {
+            biometryType,
+          }),
+          confirmText: t('common.continue'),
           onConfirm: async () => {
             setConfirmDialog(prev => ({ ...prev, visible: false }));
             try {
@@ -161,11 +161,9 @@ export const BiometricSetupScreen: React.FC = () => {
       } else {
         setConfirmDialog({
           visible: true,
-          title: 'Setup Failed',
-          message:
-            error ||
-            'Failed to setup biometric authentication. Please try again.',
-          confirmText: 'OK',
+          title: t('biometric_setup.setup_failed'),
+          message: error || t('biometric_setup.setup_failed_message'),
+          confirmText: t('common.ok'),
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
@@ -174,9 +172,9 @@ export const BiometricSetupScreen: React.FC = () => {
       console.error('Setup error:', err);
       setConfirmDialog({
         visible: true,
-        title: 'Setup Error',
-        message: 'An error occurred while setting up biometric authentication.',
-        confirmText: 'OK',
+        title: t('biometric_setup.setup_error'),
+        message: t('biometric_setup.setup_error_message'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -187,9 +185,9 @@ export const BiometricSetupScreen: React.FC = () => {
     console.error('Biometric error:', errorMessage);
     setConfirmDialog({
       visible: true,
-      title: 'Authentication Failed',
+      title: t('biometric_setup.authentication_failed'),
       message: errorMessage,
-      confirmText: 'OK',
+      confirmText: t('common.ok'),
       onConfirm: () => setConfirmDialog(prev => ({ ...prev, visible: false })),
     });
   };
@@ -197,9 +195,9 @@ export const BiometricSetupScreen: React.FC = () => {
   const handleSkip = () => {
     setConfirmDialog({
       visible: true,
-      title: 'Skip Setup',
-      message: 'You can enable biometric authentication later in Settings.',
-      confirmText: 'Skip',
+      title: t('biometric_setup.skip_setup_title'),
+      message: t('biometric_setup.skip_setup_message'),
+      confirmText: t('common.skip'),
       confirmStyle: 'destructive',
       onConfirm: () => {
         setConfirmDialog(prev => ({ ...prev, visible: false }));
@@ -242,11 +240,11 @@ export const BiometricSetupScreen: React.FC = () => {
           <Ionicons name="arrow-back-outline" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>
-          Biometric Setup
+          {t('biometric_setup.title')}
         </Text>
         <TouchableOpacity onPress={handleSkip}>
           <Text style={[styles.skipText, { color: theme.textSecondary }]}>
-            Skip
+            {t('biometric_setup.skip')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -267,12 +265,13 @@ export const BiometricSetupScreen: React.FC = () => {
           </View>
 
           <Text style={[styles.heroTitle, { color: theme.text }]}>
-            Enable {biometryType}
+            {t('biometric_setup.enable_biometric', { biometryType })}
           </Text>
 
           <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
-            Use your {biometryType.toLowerCase()} to quickly and securely access
-            your passwords
+            {t('biometric_setup.enable_subtitle', {
+              biometryType: biometryType.toLowerCase(),
+            })}
           </Text>
         </View>
 
@@ -292,7 +291,7 @@ export const BiometricSetupScreen: React.FC = () => {
             />
             <View style={styles.statusContent}>
               <Text style={[styles.statusTitle, { color: theme.error }]}>
-                Not Available
+                {t('biometric_setup.not_available_title')}
               </Text>
               <Text
                 style={[
@@ -300,7 +299,7 @@ export const BiometricSetupScreen: React.FC = () => {
                   { color: theme.textSecondary },
                 ]}
               >
-                Biometric authentication is not available on this device.
+                {t('biometric_setup.not_available_message')}
               </Text>
             </View>
           </View>
@@ -321,7 +320,7 @@ export const BiometricSetupScreen: React.FC = () => {
             />
             <View style={styles.statusContent}>
               <Text style={[styles.statusTitle, styles.successColor]}>
-                Setup Complete
+                {t('biometric_setup.setup_complete')}
               </Text>
               <Text
                 style={[
@@ -329,7 +328,7 @@ export const BiometricSetupScreen: React.FC = () => {
                   { color: theme.textSecondary },
                 ]}
               >
-                {biometryType} authentication is now enabled.
+                {t('biometric_setup.setup_complete_message', { biometryType })}
               </Text>
             </View>
           </View>
@@ -338,7 +337,7 @@ export const BiometricSetupScreen: React.FC = () => {
         {/* Features Section */}
         <View style={styles.featuresSection}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Why Use Biometric Authentication?
+            {t('biometric_setup.why_use_title')}
           </Text>
 
           {features.map((feature, index) => renderFeature(feature, index))}
@@ -354,9 +353,7 @@ export const BiometricSetupScreen: React.FC = () => {
             color={theme.primary}
           />
           <Text style={[styles.securityText, { color: theme.textSecondary }]}>
-            Your biometric data is stored securely on your device using
-            hardware-backed security features. It never leaves your device and
-            cannot be accessed by this app or any third parties.
+            {t('biometric_setup.security_notice')}
           </Text>
         </View>
       </ScrollView>
@@ -383,7 +380,9 @@ export const BiometricSetupScreen: React.FC = () => {
               color="#ffffff"
             />
             <Text style={styles.setupButtonText}>
-              {isLoading ? 'Setting up...' : `Enable ${biometryType}`}
+              {isLoading
+                ? t('biometric_setup.setting_up')
+                : t('biometric_setup.enable_biometric', { biometryType })}
             </Text>
           </TouchableOpacity>
         ) : (
@@ -392,7 +391,9 @@ export const BiometricSetupScreen: React.FC = () => {
             onPress={() => navigation.goBack()}
           >
             <Ionicons name="checkmark-outline" size={20} color="#ffffff" />
-            <Text style={styles.completeButtonText}>Continue</Text>
+            <Text style={styles.completeButtonText}>
+              {t('common.continue')}
+            </Text>
           </TouchableOpacity>
         )}
       </View>
@@ -403,8 +404,10 @@ export const BiometricSetupScreen: React.FC = () => {
         onClose={() => setShowPrompt(false)}
         onSuccess={handleBiometricSuccess}
         onError={handleBiometricError}
-        title={`Setup ${biometryType}`}
-        subtitle={`Authenticate with your ${biometryType.toLowerCase()} to enable this feature`}
+        title={t('biometric_setup.setup_biometric_title', { biometryType })}
+        subtitle={t('biometric_setup.setup_biometric_subtitle', {
+          biometryType: biometryType.toLowerCase(),
+        })}
       />
 
       <ConfirmDialog

@@ -10,6 +10,7 @@ import {
   Switch,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { PasswordEntry } from '../types/password';
 import { SearchFilters, SearchOptions } from '../services/searchService';
 
@@ -40,6 +41,7 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
   initialFilters,
   savedSearches = [],
 }) => {
+  const { t } = useTranslation();
   // Mock theme context for now
   const theme = {
     background: '#FFFFFF',
@@ -114,19 +116,19 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
   ];
 
   const sortOptions = [
-    { key: 'name', label: 'Name' },
-    { key: 'category', label: 'Category' },
-    { key: 'created', label: 'Created Date' },
-    { key: 'modified', label: 'Modified Date' },
-    { key: 'lastUsed', label: 'Last Used' },
-    { key: 'strength', label: 'Strength' },
+    { key: 'name', label: t('advanced_search.sort_name') },
+    { key: 'category', label: t('categories.title') },
+    { key: 'created', label: t('advanced_search.sort_created') },
+    { key: 'modified', label: t('advanced_search.sort_modified') },
+    { key: 'lastUsed', label: t('advanced_search.sort_used') },
+    { key: 'strength', label: t('advanced_search.sort_strength') },
   ];
 
   const datePresets = [
-    { label: 'Last 7 days', days: 7 },
-    { label: 'Last 30 days', days: 30 },
-    { label: 'Last 90 days', days: 90 },
-    { label: 'Last year', days: 365 },
+    { label: t('advanced_search.last_7_days'), days: 7 },
+    { label: t('advanced_search.last_30_days'), days: 30 },
+    { label: t('advanced_search.last_90_days'), days: 90 },
+    { label: t('advanced_search.last_year'), days: 365 },
   ];
 
   // Handlers
@@ -150,7 +152,7 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
     setFilters(prev => ({
       ...prev,
       tags: prev.tags.includes(tag)
-        ? prev.tags.filter(t => t !== tag)
+        ? prev.tags.filter(existingTag => existingTag !== tag)
         : [...prev.tags, tag],
     }));
   };
@@ -244,7 +246,11 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
 
   const renderBasicSearch = () => (
     <View style={styles.section}>
-      {renderSectionHeader('Basic Search', 'search', 'basic')}
+      {renderSectionHeader(
+        t('advanced_search.basic_search'),
+        'search',
+        'basic',
+      )}
       {expandedSections.basic && (
         <>
           <View style={styles.inputContainer}>
@@ -256,7 +262,7 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
             />
             <TextInput
               style={styles.textInput}
-              placeholder="Search passwords..."
+              placeholder={t('advanced_search.search_placeholder')}
               placeholderTextColor={theme.textSecondary}
               value={filters.query}
               onChangeText={text =>
@@ -283,7 +289,11 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
 
   const renderCategoriesSection = () => (
     <View style={styles.section}>
-      {renderSectionHeader('Categories', 'folder', 'categories')}
+      {renderSectionHeader(
+        t('advanced_search.categories'),
+        'folder',
+        'categories',
+      )}
       {expandedSections.categories && (
         <View style={styles.checkboxContainer}>
           {availableCategories.map(category => (
@@ -315,7 +325,7 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
 
   const renderTagsSection = () => (
     <View style={styles.section}>
-      {renderSectionHeader('Tags', 'label', 'tags')}
+      {renderSectionHeader(t('advanced_search.tags'), 'label', 'tags')}
       {expandedSections.tags && (
         <View style={styles.tagContainer}>
           {availableTags.map(tag => (
@@ -344,7 +354,11 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
 
   const renderStrengthSection = () => (
     <View style={styles.section}>
-      {renderSectionHeader('Password Strength', 'security', 'strength')}
+      {renderSectionHeader(
+        t('advanced_search.password_strength'),
+        'security',
+        'strength',
+      )}
       {expandedSections.strength && (
         <View style={styles.strengthContainer}>
           {strengthLevels.map(strength => (
@@ -380,11 +394,17 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
 
   const renderPropertiesSection = () => (
     <View style={styles.section}>
-      {renderSectionHeader('Properties', 'tune', 'properties')}
+      {renderSectionHeader(
+        t('advanced_search.properties'),
+        'tune',
+        'properties',
+      )}
       {expandedSections.properties && (
         <>
           <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Has Notes</Text>
+            <Text style={styles.switchLabel}>
+              {t('advanced_search.has_notes')}
+            </Text>
             <View style={styles.switchGroup}>
               <TouchableOpacity
                 style={[
@@ -404,7 +424,7 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
                     filters.hasNotes === true && styles.switchOptionTextActive,
                   ]}
                 >
-                  Yes
+                  {t('common.yes')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -425,14 +445,16 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
                     filters.hasNotes === false && styles.switchOptionTextActive,
                   ]}
                 >
-                  No
+                  {t('common.no')}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
 
           <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Has Custom Fields</Text>
+            <Text style={styles.switchLabel}>
+              {t('advanced_search.has_custom_fields')}
+            </Text>
             <View style={styles.switchGroup}>
               <TouchableOpacity
                 style={[
@@ -454,7 +476,7 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
                       styles.switchOptionTextActive,
                   ]}
                 >
-                  Yes
+                  {t('common.yes')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -478,14 +500,16 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
                       styles.switchOptionTextActive,
                   ]}
                 >
-                  No
+                  {t('common.no')}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
 
           <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Favorites Only</Text>
+            <Text style={styles.switchLabel}>
+              {t('advanced_search.favorites_only')}
+            </Text>
             <Switch
               value={filters.isFavorite === true}
               onValueChange={value =>
@@ -500,7 +524,9 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
           </View>
 
           <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Compromised Only</Text>
+            <Text style={styles.switchLabel}>
+              {t('advanced_search.compromised_only')}
+            </Text>
             <Switch
               value={filters.isCompromised === true}
               onValueChange={value =>
@@ -522,10 +548,16 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
 
   const renderDatesSection = () => (
     <View style={styles.section}>
-      {renderSectionHeader('Date Filters', 'date-range', 'dates')}
+      {renderSectionHeader(
+        t('advanced_search.date_filters'),
+        'date-range',
+        'dates',
+      )}
       {expandedSections.dates && (
         <>
-          <Text style={styles.subsectionTitle}>Created Date</Text>
+          <Text style={styles.subsectionTitle}>
+            {t('advanced_search.created_date')}
+          </Text>
           <View style={styles.presetContainer}>
             {datePresets.map(preset => (
               <TouchableOpacity
@@ -538,7 +570,9 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
             ))}
           </View>
 
-          <Text style={styles.subsectionTitle}>Last Used</Text>
+          <Text style={styles.subsectionTitle}>
+            {t('advanced_search.last_used')}
+          </Text>
           <View style={styles.presetContainer}>
             {datePresets.map(preset => (
               <TouchableOpacity
@@ -557,10 +591,16 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
 
   const renderAdvancedSection = () => (
     <View style={styles.section}>
-      {renderSectionHeader('Advanced Options', 'settings', 'advanced')}
+      {renderSectionHeader(
+        t('advanced_search.advanced_options'),
+        'settings',
+        'advanced',
+      )}
       {expandedSections.advanced && (
         <>
-          <Text style={styles.subsectionTitle}>Sort By</Text>
+          <Text style={styles.subsectionTitle}>
+            {t('advanced_search.sort_by')}
+          </Text>
           <View style={styles.sortContainer}>
             {sortOptions.map(option => (
               <TouchableOpacity
@@ -587,7 +627,9 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
           </View>
 
           <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Sort Order</Text>
+            <Text style={styles.switchLabel}>
+              {t('advanced_search.sort_order')}
+            </Text>
             <View style={styles.switchGroup}>
               <TouchableOpacity
                 style={[
@@ -612,7 +654,7 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
                       styles.switchOptionTextActive,
                   ]}
                 >
-                  Ascending
+                  {t('advanced_search.ascending')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -638,14 +680,16 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
                       styles.switchOptionTextActive,
                   ]}
                 >
-                  Descending
+                  {t('advanced_search.descending')}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
 
           <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Fuzzy Search</Text>
+            <Text style={styles.switchLabel}>
+              {t('advanced_search.fuzzy_search')}
+            </Text>
             <Switch
               value={options.fuzzySearch}
               onValueChange={value =>
@@ -657,7 +701,9 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
           </View>
 
           <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Search in Notes</Text>
+            <Text style={styles.switchLabel}>
+              {t('advanced_search.search_in_notes')}
+            </Text>
             <Switch
               value={options.searchInNotes}
               onValueChange={value =>
@@ -669,7 +715,9 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
           </View>
 
           <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Search in Custom Fields</Text>
+            <Text style={styles.switchLabel}>
+              {t('advanced_search.search_in_custom_fields')}
+            </Text>
             <Switch
               value={options.searchInCustomFields}
               onValueChange={value =>
@@ -686,7 +734,11 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
 
   const renderSavedSearches = () => (
     <View style={styles.section}>
-      {renderSectionHeader('Saved Searches', 'bookmark', 'basic')}
+      {renderSectionHeader(
+        t('advanced_search.saved_searches'),
+        'bookmark',
+        'basic',
+      )}
       {savedSearches.map((savedSearch, index) => (
         <TouchableOpacity
           key={index}
@@ -730,13 +782,13 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
               <Icon name="close" size={24} color={theme.text} />
             </TouchableOpacity>
 
-            <Text style={styles.headerTitle}>Advanced Search</Text>
+            <Text style={styles.headerTitle}>{t('advanced_search.title')}</Text>
 
             <TouchableOpacity
               onPress={handleClearFilters}
               style={styles.headerButton}
             >
-              <Text style={styles.clearText}>Clear</Text>
+              <Text style={styles.clearText}>{t('advanced_search.clear')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -760,7 +812,9 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
               onPress={() => setShowSaveModal(true)}
             >
               <Icon name="bookmark-outline" size={20} color={theme.primary} />
-              <Text style={styles.saveButtonText}>Save Search</Text>
+              <Text style={styles.saveButtonText}>
+                {t('advanced_search.save_search')}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -768,7 +822,7 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
               onPress={handleSearch}
             >
               <Icon name="search" size={20} color="white" />
-              <Text style={styles.searchButtonText}>Search</Text>
+              <Text style={styles.searchButtonText}>{t('common.search')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -783,11 +837,13 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
       >
         <View style={styles.saveModalOverlay}>
           <View style={styles.saveModalContent}>
-            <Text style={styles.saveModalTitle}>Save Search</Text>
+            <Text style={styles.saveModalTitle}>
+              {t('advanced_search.save_search')}
+            </Text>
 
             <TextInput
               style={styles.saveModalInput}
-              placeholder="Enter search name..."
+              placeholder={t('advanced_search.enter_search_name')}
               placeholderTextColor={theme.textSecondary}
               value={searchName}
               onChangeText={setSearchName}
@@ -799,7 +855,9 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
                 style={styles.saveModalCancel}
                 onPress={() => setShowSaveModal(false)}
               >
-                <Text style={styles.saveModalCancelText}>Cancel</Text>
+                <Text style={styles.saveModalCancelText}>
+                  {t('common.cancel')}
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -807,7 +865,7 @@ const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
                 onPress={handleSaveSearch}
                 disabled={!searchName.trim()}
               >
-                <Text style={styles.saveModalSaveText}>Save</Text>
+                <Text style={styles.saveModalSaveText}>{t('common.save')}</Text>
               </TouchableOpacity>
             </View>
           </View>

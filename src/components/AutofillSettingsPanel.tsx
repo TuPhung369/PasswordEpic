@@ -31,6 +31,7 @@ import {
   AppState,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { autofillService } from '../services/autofillService';
 import { accessibilityService } from '../services/accessibilityService';
@@ -60,6 +61,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   onBothServicesEnabled,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const {
     isSupported: isAccessibilitySupported,
     isEnabled: isAccessibilityEnabled,
@@ -87,12 +89,18 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   const isCheckingAutofillRef = useRef(false);
   const [biometricVerifying, setBiometricVerifying] = useState(false);
   const hasTriggeredBothServicesCallbackRef = useRef(false);
-  const initialStateRef = useRef<{ autofillEnabled: boolean; accessibilityEnabled: boolean } | null>(null);
+  const initialStateRef = useRef<{
+    autofillEnabled: boolean;
+    accessibilityEnabled: boolean;
+  } | null>(null);
   const isInSetupModeRef = useRef(false);
 
   const handleAppStateChange = useCallback(
     async (state: string) => {
-      if (state === 'active' && (isCheckingAutofillRef.current || isCheckingAccessibilityRef.current)) {
+      if (
+        state === 'active' &&
+        (isCheckingAutofillRef.current || isCheckingAccessibilityRef.current)
+      ) {
         console.log('📱 App returned to foreground - checking settings status');
         await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -101,14 +109,16 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
             const enabled = await autofillService.isEnabled();
             if (enabled !== isEnabled) {
               console.log(
-                `✅ Autofill status changed: ${enabled ? 'Enabled' : 'Disabled'}`,
+                `✅ Autofill status changed: ${
+                  enabled ? 'Enabled' : 'Disabled'
+                }`,
               );
               setIsEnabled(enabled);
 
               if (enabled) {
                 Alert.alert(
-                  '✅ Success',
-                  'Autofill has been enabled! You can now use PasswordEpic to fill credentials.',
+                  t('autofill_settings.success'),
+                  t('autofill_settings.autofill_enabled_success'),
                 );
               }
             }
@@ -120,13 +130,15 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
             const enabled = await accessibilityService.isEnabled();
             if (enabled !== isAccessibilityEnabled) {
               console.log(
-                `✅ Accessibility status changed: ${enabled ? 'Enabled' : 'Disabled'}`,
+                `✅ Accessibility status changed: ${
+                  enabled ? 'Enabled' : 'Disabled'
+                }`,
               );
-              
+
               if (enabled) {
                 Alert.alert(
-                  '✅ Success',
-                  'Accessibility service has been enabled! You can now use PasswordEpic accessibility features.',
+                  t('autofill_settings.success'),
+                  t('autofill_settings.accessibility_enabled_success'),
                 );
               }
               await checkAccessibility();
@@ -174,7 +186,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
       setTrustedDomainsCount(domains.length);
     } catch (error) {
       console.error('Error loading autofill data:', error);
-      Alert.alert('Error', 'Failed to load autofill settings');
+      Alert.alert(t('common.error'), 'Failed to load autofill settings');
     } finally {
       setLoading(false);
     }
@@ -192,20 +204,22 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
     const initializePanel = async () => {
       await loadAutofillData();
       await loadAccessibilityData();
-      
+
       // After loading, capture initial state and determine if in setup mode
       // Setup mode = at least one service is not enabled when entering this screen
       if (initialStateRef.current === null) {
         const autofillEnabled = await autofillService.isEnabled();
         const accessibilityEnabled = await accessibilityService.isEnabled();
-        
+
         initialStateRef.current = { autofillEnabled, accessibilityEnabled };
         isInSetupModeRef.current = !autofillEnabled || !accessibilityEnabled;
-        
-        console.log(`🔧 [AutofillSettingsPanel] Initial state - Autofill: ${autofillEnabled}, Accessibility: ${accessibilityEnabled}, Setup Mode: ${isInSetupModeRef.current}`);
+
+        console.log(
+          `🔧 [AutofillSettingsPanel] Initial state - Autofill: ${autofillEnabled}, Accessibility: ${accessibilityEnabled}, Setup Mode: ${isInSetupModeRef.current}`,
+        );
       }
     };
-    
+
     initializePanel();
   }, [loadAutofillData, loadAccessibilityData]);
 
@@ -221,12 +235,23 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   }, [handleAppStateChange]);
 
   useEffect(() => {
-    if (isEnabled && isAccessibilityEnabled && onBothServicesEnabled && !hasTriggeredBothServicesCallbackRef.current && isInSetupModeRef.current && initialStateRef.current) {
-      const wasAutofillDisabledInitially = !initialStateRef.current.autofillEnabled;
-      const wasAccessibilityDisabledInitially = !initialStateRef.current.accessibilityEnabled;
-      
+    if (
+      isEnabled &&
+      isAccessibilityEnabled &&
+      onBothServicesEnabled &&
+      !hasTriggeredBothServicesCallbackRef.current &&
+      isInSetupModeRef.current &&
+      initialStateRef.current
+    ) {
+      const wasAutofillDisabledInitially =
+        !initialStateRef.current.autofillEnabled;
+      const wasAccessibilityDisabledInitially =
+        !initialStateRef.current.accessibilityEnabled;
+
       if (wasAutofillDisabledInitially || wasAccessibilityDisabledInitially) {
-        console.log('✅ Both services enabled during setup - calling callback to navigate back');
+        console.log(
+          '✅ Both services enabled during setup - calling callback to navigate back',
+        );
         hasTriggeredBothServicesCallbackRef.current = true;
         setTimeout(() => {
           onBothServicesEnabled();
@@ -244,7 +269,10 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
   }, []);
 
   const handleEnableAutofill = async () => {
-    console.log('🔵 [DEBUG] handleEnableAutofill called, isEnabled:', isEnabled);
+    console.log(
+      '🔵 [DEBUG] handleEnableAutofill called, isEnabled:',
+      isEnabled,
+    );
     try {
       if (isEnabled) {
         // Autofill is enabled - user wants to DISABLE it
@@ -276,12 +304,14 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
 
       const deviceInstructions = Platform.select({
         android: () => {
-          const manufacturer = (Platform.constants as any)?.Manufacturer?.toUpperCase() || '';
-          
+          const manufacturer =
+            (Platform.constants as any)?.Manufacturer?.toUpperCase() || '';
+
           if (manufacturer.includes('SAMSUNG')) {
             return {
               title: '📱 Enable Autofill on Samsung',
-              message: 'Follow these steps:\n\n' +
+              message:
+                'Follow these steps:\n\n' +
                 '1. In Settings, tap "General management"\n' +
                 '2. Tap "Language and input"\n' +
                 '3. Tap "Autofill service"\n' +
@@ -292,7 +322,8 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
           } else if (manufacturer.includes('HUAWEI')) {
             return {
               title: '📱 Enable Autofill on Huawei',
-              message: 'Follow these steps:\n\n' +
+              message:
+                'Follow these steps:\n\n' +
                 '1. In Settings, tap "System"\n' +
                 '2. Tap "Languages & input"\n' +
                 '3. Tap "More input settings"\n' +
@@ -303,7 +334,8 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
           } else {
             return {
               title: '📱 Enable Autofill',
-              message: 'Follow these steps:\n\n' +
+              message:
+                'Follow these steps:\n\n' +
                 '1. In Settings, look for "Autofill service"\n' +
                 '2. Select "PasswordEpic" from the list\n' +
                 '3. Return to this app\n\n' +
@@ -315,7 +347,8 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
         },
         default: () => ({
           title: '📱 Enable Autofill',
-          message: 'Please select "PasswordEpic" as your Autofill service in Settings.',
+          message:
+            'Please select "PasswordEpic" as your Autofill service in Settings.',
         }),
       })();
 
@@ -328,7 +361,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
             text: 'Open Settings',
             onPress: async () => {
               console.log('👤 User confirmed - opening settings now...');
-              
+
               try {
                 console.log('📞 Calling autofillService.requestEnable()...');
                 const success = await autofillService.requestEnable();
@@ -338,7 +371,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                   console.warn('⚠️ requestEnable returned false');
                   Alert.alert(
                     'Error',
-                    "Failed to open autofill settings. Please manually enable it following the instructions above.",
+                    'Failed to open autofill settings. Please manually enable it following the instructions above.',
                   );
                   isCheckingAutofillRef.current = false;
                   setBiometricVerifying(false);
@@ -698,17 +731,19 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
         <View style={styles.unsupportedContainer}>
           <Ionicons name="alert-circle-outline" size={64} color={theme.error} />
           <Text style={[styles.unsupportedTitle, { color: theme.text }]}>
-            Autofill Not Supported
+            {t('autofill_settings.not_supported_title')}
           </Text>
           <Text
             style={[styles.unsupportedText, { color: theme.textSecondary }]}
           >
-            Autofill requires Android 8.0 (API 26) or higher.
+            {t('autofill_settings.not_supported_text')}
           </Text>
           <Text
             style={[styles.unsupportedText, { color: theme.textSecondary }]}
           >
-            Your device is running Android {Platform.Version}.
+            {t('autofill_settings.running_android', {
+              version: Platform.Version,
+            })}
           </Text>
         </View>
       </View>
@@ -739,12 +774,12 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
             color={isEnabled ? theme.success : theme.error}
           />
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Autofill Status
+            {t('autofill_settings.autofill_status')}
           </Text>
         </View>
         <View style={styles.statusRow}>
           <Text style={[styles.statusLabel, { color: theme.textSecondary }]}>
-            Service Status
+            {t('autofill_settings.service_status')}
           </Text>
           <View style={styles.statusBadge}>
             <Text
@@ -753,7 +788,9 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                 { color: isEnabled ? theme.success : theme.error },
               ]}
             >
-              {isEnabled ? 'Enabled' : 'Disabled'}
+              {isEnabled
+                ? t('autofill_settings.enabled')
+                : t('autofill_settings.disabled')}
             </Text>
           </View>
         </View>
@@ -766,7 +803,9 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
             <ActivityIndicator color={theme.surface} size="small" />
           ) : (
             <Text style={styles.buttonText}>
-              {isEnabled ? 'Disable Autofill' : 'Enable Autofill'}
+              {isEnabled
+                ? t('autofill_settings.disable_autofill')
+                : t('autofill_settings.enable_autofill')}
             </Text>
           )}
         </TouchableOpacity>
@@ -777,51 +816,48 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
         <View style={[styles.section, { backgroundColor: theme.surface }]}>
           <View style={styles.sectionHeader}>
             <Ionicons
-              name={isAccessibilityEnabled ? 'checkmark-circle' : 'close-circle'}
+              name={
+                isAccessibilityEnabled ? 'checkmark-circle' : 'close-circle'
+              }
               size={24}
               color={isAccessibilityEnabled ? theme.success : theme.error}
             />
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
-              Accessibility Status
+              {t('autofill_settings.accessibility_status')}
             </Text>
           </View>
           <View style={styles.statusRow}>
             <Text style={[styles.statusLabel, { color: theme.textSecondary }]}>
-              Service Status
+              {t('autofill_settings.service_status')}
             </Text>
             <View style={styles.statusBadge}>
               <Text
                 style={[
                   styles.statusText,
-                  { color: isAccessibilityEnabled ? theme.success : theme.error },
+                  {
+                    color: isAccessibilityEnabled ? theme.success : theme.error,
+                  },
                 ]}
               >
-                {isAccessibilityEnabled ? 'Enabled' : 'Disabled'}
+                {isAccessibilityEnabled
+                  ? t('autofill_settings.enabled')
+                  : t('autofill_settings.disabled')}
               </Text>
             </View>
           </View>
           <TouchableOpacity
-            style={[
-              styles.button,
-              accessibilityButtonStyle,
-            ]}
+            style={[styles.button, accessibilityButtonStyle]}
             onPress={async () => {
               try {
                 if (isAccessibilityEnabled) {
                   await handleDisableAccessibility();
                 } else {
                   Alert.alert(
-                    'Enable Accessibility Service',
-                    'In the next screen:\n\n' +
-                    '1️⃣ Tap "Accessibility"\n' +
-                    '2️⃣ Scroll down to "Downloaded apps"\n' +
-                    '3️⃣ Find "PasswordEpic Autofill Refill"\n' +
-                    '4️⃣ Tap it\n' +
-                    '5️⃣ Toggle "Use PasswordEpic" ON\n\n' +
-                    '✓ We\'ll auto-detect when you return',
+                    t('autofill_settings.enable_accessibility_title'),
+                    t('autofill_settings.enable_accessibility_steps'),
                     [
                       {
-                        text: 'Cancel',
+                        text: t('common.cancel'),
                         style: 'cancel',
                         onPress: () => {
                           console.log('❌ User cancelled accessibility setup');
@@ -830,15 +866,18 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                         },
                       },
                       {
-                        text: 'Open Settings',
+                        text: t('autofill_settings.open_settings'),
                         onPress: async () => {
                           setAccessibilityLoading(true);
                           isCheckingAccessibilityRef.current = true;
-                          
+
                           try {
                             await accessibilityService.requestEnable();
                           } catch (error) {
-                            console.error('Error opening accessibility settings:', error);
+                            console.error(
+                              'Error opening accessibility settings:',
+                              error,
+                            );
                             Alert.alert(
                               'Error',
                               'Failed to open settings. Open manually: Settings → Accessibility → PasswordEpic Autofill Refill',
@@ -848,7 +887,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                           }
                         },
                       },
-                    ]
+                    ],
                   );
                 }
               } catch (error) {
@@ -862,7 +901,9 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
               <ActivityIndicator color={theme.surface} size="small" />
             ) : (
               <Text style={styles.buttonText}>
-                {isAccessibilityEnabled ? 'Disable Accessibility' : 'Enable Accessibility'}
+                {isAccessibilityEnabled
+                  ? t('autofill_settings.disable_accessibility')
+                  : t('autofill_settings.enable_accessibility')}
               </Text>
             )}
           </TouchableOpacity>
@@ -875,7 +916,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
           <View style={styles.sectionHeader}>
             <Ionicons name="settings-outline" size={24} color={theme.primary} />
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
-              Autofill Settings
+              {t('autofill_settings.settings_section')}
             </Text>
           </View>
 
@@ -883,7 +924,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
               <Text style={[styles.settingLabel, { color: theme.text }]}>
-                Require Biometric
+                {t('autofill_settings.require_biometric')}
               </Text>
               <Text
                 style={[
@@ -891,7 +932,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                   { color: theme.textSecondary },
                 ]}
               >
-                Require biometric authentication before autofill
+                {t('autofill_settings.require_biometric_desc')}
               </Text>
             </View>
             <Switch
@@ -908,7 +949,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
               <Text style={[styles.settingLabel, { color: theme.text }]}>
-                Allow Subdomains
+                {t('autofill_settings.allow_subdomains')}
               </Text>
               <Text
                 style={[
@@ -916,7 +957,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                   { color: theme.textSecondary },
                 ]}
               >
-                Match credentials for subdomains (e.g., mail.example.com)
+                {t('autofill_settings.allow_subdomains_desc')}
               </Text>
             </View>
             <Switch
@@ -941,7 +982,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
               color={theme.primary}
             />
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
-              Statistics
+              {t('autofill_settings.statistics')}
             </Text>
           </View>
 
@@ -951,7 +992,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                 {statistics.totalFills}
               </Text>
               <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
-                Total Fills
+                {t('autofill_settings.total_fills')}
               </Text>
             </View>
             <View style={styles.statItem}>
@@ -959,7 +1000,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                 {statistics.totalSaves}
               </Text>
               <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
-                Saved Credentials
+                {t('autofill_settings.saved_credentials')}
               </Text>
             </View>
             <View style={styles.statItem}>
@@ -967,7 +1008,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                 {statistics.blockedPhishing}
               </Text>
               <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
-                Blocked Phishing
+                {t('autofill_settings.blocked_phishing')}
               </Text>
             </View>
             <View style={styles.statItem}>
@@ -975,14 +1016,16 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
                 {trustedDomainsCount}
               </Text>
               <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
-                Trusted Domains
+                {t('autofill_settings.trusted_domains')}
               </Text>
             </View>
           </View>
 
           {statistics.lastUsed && (
             <Text style={[styles.lastUsedText, { color: theme.textSecondary }]}>
-              Last used: {new Date(statistics.lastUsed).toLocaleString()}
+              {t('autofill_settings.last_used', {
+                date: new Date(statistics.lastUsed).toLocaleString(),
+              })}
             </Text>
           )}
         </View>
@@ -998,7 +1041,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
               color={theme.primary}
             />
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
-              Management
+              {t('autofill_settings.management')}
             </Text>
           </View>
 
@@ -1012,7 +1055,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
               color={theme.primary}
             />
             <Text style={[styles.actionButtonText, { color: theme.text }]}>
-              Manage Trusted Domains
+              {t('autofill_settings.manage_trusted_domains')}
             </Text>
             <Ionicons
               name="chevron-forward"
@@ -1027,7 +1070,7 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
           >
             <Ionicons name="trash-outline" size={20} color={theme.error} />
             <Text style={[styles.actionButtonText, { color: theme.text }]}>
-              Clear Autofill Cache
+              {t('autofill_settings.clear_autofill_cache')}
             </Text>
             <Ionicons
               name="chevron-forward"
@@ -1047,18 +1090,14 @@ export const AutofillSettingsPanel: React.FC<AutofillSettingsPanelProps> = ({
             color={theme.primary}
           />
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Help & Information
+            {t('autofill_settings.help_info')}
           </Text>
         </View>
         <Text style={[styles.helpText, { color: theme.textSecondary }]}>
-          Autofill allows PasswordEpic to automatically fill your credentials in
-          apps and websites. Your passwords are encrypted and require biometric
-          authentication before being filled.
+          {t('autofill_settings.help_text_1')}
         </Text>
         <Text style={[styles.helpText, { color: theme.textSecondary }]}>
-          To use autofill, enable the service above and grant the necessary
-          permissions. PasswordEpic will detect login forms and offer to fill
-          your credentials securely.
+          {t('autofill_settings.help_text_2')}
         </Text>
       </View>
     </ScrollView>

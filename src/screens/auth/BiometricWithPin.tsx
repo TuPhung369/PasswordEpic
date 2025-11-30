@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -32,6 +33,7 @@ export const BiometricWithPin: React.FC<BiometricWithPinProps> = ({
   onUnlock,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const navigation = useNavigation<BiometricWithPinNavigationProp>();
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
@@ -236,9 +238,9 @@ export const BiometricWithPin: React.FC<BiometricWithPinProps> = ({
     if (!isPinValid) {
       setConfirmDialog({
         visible: true,
-        title: 'Invalid PIN',
-        message: 'PIN must be 6-8 digits.',
-        confirmText: 'OK',
+        title: t('biometric_pin.invalid_pin'),
+        message: t('biometric_pin.pin_must_be_digits'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -265,9 +267,9 @@ export const BiometricWithPin: React.FC<BiometricWithPinProps> = ({
     } catch (error: any) {
       setConfirmDialog({
         visible: true,
-        title: 'Unlock Failed',
-        message: error.message || 'Failed to unlock with PIN',
-        confirmText: 'Try Again',
+        title: t('biometric_pin.unlock_failed'),
+        message: error.message || t('biometric_pin.unlock_failed_message'),
+        confirmText: t('common.try_again'),
         onConfirm: () => {
           setConfirmDialog(prev => ({ ...prev, visible: false }));
           setIsLoading(false);
@@ -289,7 +291,7 @@ export const BiometricWithPin: React.FC<BiometricWithPinProps> = ({
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.primary} />
           <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-            Waiting for authentication...
+            {t('biometric_pin.waiting_for_auth')}
           </Text>
         </View>
       </SafeAreaView>
@@ -308,7 +310,7 @@ export const BiometricWithPin: React.FC<BiometricWithPinProps> = ({
           <Ionicons name="arrow-back-outline" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>
-          Unlock with PIN
+          {t('biometric_pin.title')}
         </Text>
         <View style={styles.spacer} />
       </View>
@@ -329,17 +331,17 @@ export const BiometricWithPin: React.FC<BiometricWithPinProps> = ({
           </View>
 
           <Text style={[styles.heroTitle, { color: theme.text }]}>
-            Enter Your PIN
+            {t('biometric_pin.enter_your_pin')}
           </Text>
 
           <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
-            Enter your 6-8 digit PIN to unlock your vault
+            {t('biometric_pin.enter_pin_subtitle')}
           </Text>
         </View>
 
         <View style={styles.inputSection}>
           <Text style={[styles.inputLabel, { color: theme.text }]}>
-            Security PIN
+            {t('biometric_pin.security_pin')}
           </Text>
           <View style={[styles.inputContainer, { borderColor: theme.border }]}>
             <TextInput
@@ -348,7 +350,7 @@ export const BiometricWithPin: React.FC<BiometricWithPinProps> = ({
               onChangeText={text =>
                 setPin(text.replace(/[^0-9]/g, '').slice(0, 8))
               }
-              placeholder="Enter 6-8 digit PIN"
+              placeholder={t('biometric_pin.enter_pin_placeholder')}
               placeholderTextColor={theme.textSecondary}
               secureTextEntry={!showPin}
               keyboardType="number-pad"
@@ -387,8 +389,11 @@ export const BiometricWithPin: React.FC<BiometricWithPinProps> = ({
                     : { color: theme.textSecondary },
                 ]}
               >
-                {pin.length} digit{pin.length !== 1 ? 's' : ''} (
-                {isPinValid ? 'valid' : 'need 6-8'})
+                {t('biometric_pin.digits', { count: pin.length })} (
+                {isPinValid
+                  ? t('biometric_pin.valid')
+                  : t('biometric_pin.need_6_8')}
+                )
               </Text>
             </View>
           )}
@@ -401,7 +406,7 @@ export const BiometricWithPin: React.FC<BiometricWithPinProps> = ({
             color={theme.primary}
           />
           <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-            Use the PIN you set up during the initial setup
+            {t('biometric_pin.pin_setup_info')}
           </Text>
         </View>
 
@@ -415,7 +420,7 @@ export const BiometricWithPin: React.FC<BiometricWithPinProps> = ({
               <Text
                 style={[styles.dividerText, { color: theme.textSecondary }]}
               >
-                OR
+                {t('biometric_pin.or')}
               </Text>
               <View
                 style={[styles.dividerLine, { backgroundColor: theme.border }]}
@@ -485,14 +490,14 @@ export const BiometricWithPin: React.FC<BiometricWithPinProps> = ({
                 color={theme.primary}
               />
               <Text style={[styles.biometricButtonText, { color: theme.text }]}>
-                Use Biometric Authentication
+                {t('biometric_pin.use_biometric')}
               </Text>
             </TouchableOpacity>
 
             <Text
               style={[styles.biometricHint, { color: theme.textSecondary }]}
             >
-              Tip: Press the back button to trigger biometric authentication
+              {t('biometric_pin.back_button_hint')}
             </Text>
           </View>
         )}
@@ -513,7 +518,9 @@ export const BiometricWithPin: React.FC<BiometricWithPinProps> = ({
           ) : (
             <>
               <Ionicons name="lock-open-outline" size={20} color="#ffffff" />
-              <Text style={styles.unlockButtonText}>Unlock</Text>
+              <Text style={styles.unlockButtonText}>
+                {t('biometric_pin.unlock')}
+              </Text>
             </>
           )}
         </TouchableOpacity>

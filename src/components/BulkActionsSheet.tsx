@@ -9,6 +9,7 @@ import {
   TextInput,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import ConfirmDialog from './ConfirmDialog';
 import { PasswordEntry, PasswordCategory } from '../types/password';
 
@@ -48,6 +49,7 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
   onBulkToggleFavorite,
   onBulkExport,
 }) => {
+  const { t } = useTranslation();
   // Mock theme context
   const theme = {
     background: '#FFFFFF',
@@ -103,13 +105,13 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
   const bulkActions: BulkAction[] = [
     {
       id: 'move',
-      title: 'Move to Category',
+      title: t('bulk_actions.move_to_category'),
       icon: 'folder-outline',
       color: theme.primary,
     },
     {
       id: 'tags',
-      title: 'Manage Tags',
+      title: t('bulk_actions.manage_tags'),
       icon: 'pricetag-outline',
       color: theme.primary,
     },
@@ -117,20 +119,20 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
       id: 'favorite',
       title:
         favoriteCount === entryCount
-          ? 'Remove from Favorites'
-          : 'Add to Favorites',
+          ? t('bulk_actions.remove_from_favorites')
+          : t('bulk_actions.add_to_favorites'),
       icon: favoriteCount === entryCount ? 'heart' : 'heart-outline',
       color: theme.warning,
     },
     {
       id: 'export',
-      title: 'Export',
+      title: t('bulk_actions.export'),
       icon: 'download-outline',
       color: theme.success,
     },
     {
       id: 'delete',
-      title: 'Delete',
+      title: t('bulk_actions.delete'),
       icon: 'trash-outline',
       color: theme.error,
       destructive: true,
@@ -171,11 +173,11 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
   const handleDeleteConfirmation = () => {
     setConfirmDialog({
       visible: true,
-      title: 'Delete Passwords',
-      message: `Are you sure you want to delete ${entryCount} password${
-        entryCount === 1 ? '' : 's'
-      }? This action cannot be undone.`,
-      confirmText: 'Delete',
+      title: t('bulk_actions.delete_passwords'),
+      message: t('bulk_actions.delete_passwords_confirm', {
+        count: entryCount,
+      }),
+      confirmText: t('common.delete'),
       confirmStyle: 'destructive',
       onConfirm: () => {
         setConfirmDialog(prev => ({ ...prev, visible: false }));
@@ -201,13 +203,13 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
     }
   };
 
-  const handleRemoveTagFromAdd = (tag: string) => {
-    setTagsToAdd(prev => prev.filter(t => t !== tag));
+  const handleRemoveTagFromAdd = (tagToRemove: string) => {
+    setTagsToAdd(prev => prev.filter(tg => tg !== tagToRemove));
   };
 
   const handleToggleTagForRemoval = (tag: string) => {
     setTagsToRemove(prev =>
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag],
+      prev.includes(tag) ? prev.filter(tg => tg !== tag) : [...prev, tag],
     );
   };
 
@@ -279,7 +281,9 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select Category</Text>
+            <Text style={styles.modalTitle}>
+              {t('bulk_actions.select_category')}
+            </Text>
             <TouchableOpacity
               onPress={() => setShowCategoriesModal(false)}
               style={styles.modalCloseButton}
@@ -310,7 +314,9 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Manage Tags</Text>
+            <Text style={styles.modalTitle}>
+              {t('bulk_actions.manage_tags')}
+            </Text>
             <TouchableOpacity
               onPress={() => setShowTagsModal(false)}
               style={styles.modalCloseButton}
@@ -321,12 +327,14 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
 
           {/* Add Tags Section */}
           <View style={styles.tagSection}>
-            <Text style={styles.tagSectionTitle}>Add Tags</Text>
+            <Text style={styles.tagSectionTitle}>
+              {t('bulk_actions.add_tags')}
+            </Text>
 
             <View style={styles.tagInputContainer}>
               <TextInput
                 style={styles.tagInput}
-                placeholder="Enter tag name..."
+                placeholder={t('bulk_actions.enter_tag_name')}
                 placeholderTextColor={theme.textSecondary}
                 value={tagInput}
                 onChangeText={setTagInput}
@@ -365,7 +373,9 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
           {/* Remove Tags Section */}
           {existingTags.length > 0 && (
             <View style={styles.tagSection}>
-              <Text style={styles.tagSectionTitle}>Remove Existing Tags</Text>
+              <Text style={styles.tagSectionTitle}>
+                {t('bulk_actions.remove_existing_tags')}
+              </Text>
 
               <View style={styles.tagList}>
                 {existingTags.map(tag => (
@@ -401,7 +411,9 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
               style={styles.modalCancelButton}
               onPress={() => setShowTagsModal(false)}
             >
-              <Text style={styles.modalCancelText}>Cancel</Text>
+              <Text style={styles.modalCancelText}>
+                {t('bulk_actions.cancel')}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -409,7 +421,9 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
               onPress={handleApplyTags}
               disabled={tagsToAdd.length === 0 && tagsToRemove.length === 0}
             >
-              <Text style={styles.modalApplyText}>Apply Changes</Text>
+              <Text style={styles.modalApplyText}>
+                {t('bulk_actions.apply_changes')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -430,7 +444,7 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
             <View style={styles.handle} />
 
             <View style={styles.header}>
-              <Text style={styles.title}>Bulk Actions</Text>
+              <Text style={styles.title}>{t('bulk_actions.title')}</Text>
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                 <Icon name="close" size={24} color={theme.text} />
               </TouchableOpacity>
@@ -438,19 +452,20 @@ const BulkActionsSheet: React.FC<BulkActionsSheetProps> = ({
 
             <View style={styles.summary}>
               <Text style={styles.summaryText}>
-                {entryCount} password{entryCount === 1 ? '' : 's'} selected
+                {t('bulk_actions.passwords_selected', { count: entryCount })}
               </Text>
 
               {categoriesUsed.size > 0 && (
                 <Text style={styles.summaryDetail}>
-                  From {categoriesUsed.size} categor
-                  {categoriesUsed.size === 1 ? 'y' : 'ies'}
+                  {t('bulk_actions.from_categories', {
+                    count: categoriesUsed.size,
+                  })}
                 </Text>
               )}
 
               {favoriteCount > 0 && (
                 <Text style={styles.summaryDetail}>
-                  {favoriteCount} favorite{favoriteCount === 1 ? '' : 's'}
+                  {t('bulk_actions.favorites_count', { count: favoriteCount })}
                 </Text>
               )}
             </View>

@@ -19,6 +19,7 @@ import {
 } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAppDispatch, useAppSelector } from '../../hooks/redux';
@@ -87,6 +88,7 @@ type MasterPasswordScreenNavigationProp = NativeStackNavigationProp<
 export const MasterPasswordScreen: React.FC<{
   onUnlock?: () => void;
 }> = ({ onUnlock }) => {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const dispatch = useAppDispatch();
   const shouldAutoTriggerBiometric = useAppSelector(
@@ -330,20 +332,20 @@ export const MasterPasswordScreen: React.FC<{
 
     const score = Object.values(requirements).filter(Boolean).length;
 
-    let label = 'Very Weak';
+    let label = t('auth.master_password.strength_very_weak');
     let color = theme.error;
 
     if (score >= 5) {
-      label = 'Very Strong';
+      label = t('auth.master_password.strength_very_strong');
       color = '#00C851';
     } else if (score >= 4) {
-      label = 'Strong';
+      label = t('auth.master_password.strength_strong');
       color = '#2BBBAD';
     } else if (score >= 3) {
-      label = 'Medium';
+      label = t('auth.master_password.strength_medium');
       color = '#FF8800';
     } else if (score >= 2) {
-      label = 'Weak';
+      label = t('auth.master_password.strength_weak');
       color = '#FF4444';
     }
 
@@ -428,11 +430,10 @@ export const MasterPasswordScreen: React.FC<{
       // Show autofill enable dialog
       setConfirmDialog({
         visible: true,
-        title: '📱 Enable Autofill?',
-        message:
-          'Would you like to enable autofill for PasswordEpic now? You can select it from your Android autofill services. You can also enable or disable this anytime from Settings.',
-        confirmText: 'Enable Now',
-        cancelText: 'Skip for Now',
+        title: t('dialogs.enable_autofill_title'),
+        message: t('dialogs.enable_autofill_message'),
+        confirmText: t('common.enable_now'),
+        cancelText: t('common.skip_for_now'),
         dismissible: false,
         onConfirm: async () => {
           setConfirmDialog(prev => ({ ...prev, visible: false }));
@@ -469,9 +470,9 @@ export const MasterPasswordScreen: React.FC<{
         error,
       );
       dispatch(setIsInSetupFlow(false));
-      Alert.alert('Error', 'Failed to show autofill setup');
+      Alert.alert(t('common.error'), t('errors.failed_show_autofill'));
     }
-  }, [dispatch]);
+  }, [dispatch, t]);
 
   // Handle hardware back button
   // - In unlock mode: Trigger biometric authentication again
@@ -594,9 +595,9 @@ export const MasterPasswordScreen: React.FC<{
       if (!oldPassword || oldPassword.length < 12) {
         setConfirmDialog({
           visible: true,
-          title: 'Invalid Password',
-          message: 'Please enter your current Master Password.',
-          confirmText: 'OK',
+          title: t('auth.master_password.invalid_password'),
+          message: t('auth.master_password.enter_current_password'),
+          confirmText: t('common.ok'),
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
@@ -613,9 +614,9 @@ export const MasterPasswordScreen: React.FC<{
       ) {
         setConfirmDialog({
           visible: true,
-          title: 'Invalid PIN',
-          message: 'Please enter your current 6-8 digit PIN.',
-          confirmText: 'OK',
+          title: t('auth.master_password.invalid_pin'),
+          message: t('auth.master_password.enter_current_pin'),
+          confirmText: t('common.ok'),
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
@@ -678,10 +679,9 @@ export const MasterPasswordScreen: React.FC<{
       setIsVerified(true);
       setConfirmDialog({
         visible: true,
-        title: 'Verification Successful',
-        message:
-          'Your current credentials have been verified. You can now set your new Master Password and PIN.',
-        confirmText: 'Continue',
+        title: t('auth.master_password.verification_successful'),
+        message: t('auth.master_password.verification_successful_message'),
+        confirmText: t('common.continue'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -689,11 +689,10 @@ export const MasterPasswordScreen: React.FC<{
       console.error('❌ Verification failed:', error);
       setConfirmDialog({
         visible: true,
-        title: 'Verification Failed',
+        title: t('auth.master_password.verification_failed'),
         message:
-          error.message ||
-          'The credentials you entered do not match. Please try again.',
-        confirmText: 'OK',
+          error.message || t('auth.master_password.credentials_not_match'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -717,9 +716,9 @@ export const MasterPasswordScreen: React.FC<{
           if (!isPinValid) {
             setConfirmDialog({
               visible: true,
-              title: 'Invalid PIN',
-              message: 'PIN must be 6-8 digits.',
-              confirmText: 'OK',
+              title: t('auth.master_password.invalid_pin'),
+              message: t('auth.master_password.pin_6_8_digits'),
+              confirmText: t('common.ok'),
               onConfirm: () =>
                 setConfirmDialog(prev => ({ ...prev, visible: false })),
             });
@@ -745,16 +744,16 @@ export const MasterPasswordScreen: React.FC<{
             // Show success message
             setConfirmDialog({
               visible: true,
-              title: 'Success',
-              message: 'Unlocked successfully. Welcome back!',
-              confirmText: 'Continue',
+              title: t('common.success'),
+              message: t('auth.master_password.unlock_success'),
+              confirmText: t('common.continue'),
               dismissible: false,
               onConfirm: () => {
                 setConfirmDialog(prev => ({ ...prev, visible: false }));
               },
             });
           } else {
-            throw new Error(result.error || 'Failed to unlock');
+            throw new Error(result.error || t('errors.failed_unlock'));
           }
           return;
         }
@@ -763,10 +762,9 @@ export const MasterPasswordScreen: React.FC<{
         if (!isPasswordValid) {
           setConfirmDialog({
             visible: true,
-            title: 'Weak Password',
-            message:
-              'Please create a stronger password with at least 4 of the 5 requirements.',
-            confirmText: 'OK',
+            title: t('auth.master_password.weak_password'),
+            message: t('auth.master_password.weak_password_message'),
+            confirmText: t('common.ok'),
             onConfirm: () =>
               setConfirmDialog(prev => ({ ...prev, visible: false })),
           });
@@ -778,9 +776,9 @@ export const MasterPasswordScreen: React.FC<{
         if (!doPasswordsMatch) {
           setConfirmDialog({
             visible: true,
-            title: 'Password Mismatch',
-            message: 'Passwords do not match. Please try again.',
-            confirmText: 'OK',
+            title: t('auth.master_password.password_mismatch'),
+            message: t('auth.master_password.passwords_not_match'),
+            confirmText: t('common.ok'),
             onConfirm: () =>
               setConfirmDialog(prev => ({ ...prev, visible: false })),
           });
@@ -792,9 +790,9 @@ export const MasterPasswordScreen: React.FC<{
         if (!isPinValid) {
           setConfirmDialog({
             visible: true,
-            title: 'Invalid PIN',
-            message: 'PIN must be 6-8 digits.',
-            confirmText: 'OK',
+            title: t('auth.master_password.invalid_pin'),
+            message: t('auth.master_password.pin_6_8_digits'),
+            confirmText: t('common.ok'),
             onConfirm: () =>
               setConfirmDialog(prev => ({ ...prev, visible: false })),
           });
@@ -806,9 +804,9 @@ export const MasterPasswordScreen: React.FC<{
         if (!doPinsMatch) {
           setConfirmDialog({
             visible: true,
-            title: 'PIN Mismatch',
-            message: 'PINs do not match. Please try again.',
-            confirmText: 'OK',
+            title: t('auth.master_password.pin_mismatch'),
+            message: t('auth.master_password.pins_not_match'),
+            confirmText: t('common.ok'),
             onConfirm: () =>
               setConfirmDialog(prev => ({ ...prev, visible: false })),
           });
@@ -845,11 +843,11 @@ export const MasterPasswordScreen: React.FC<{
 
         setConfirmDialog({
           visible: true,
-          title: 'Success',
+          title: t('common.success'),
           message: isUpdateMode
-            ? 'Your credentials have been updated successfully. All your passwords will be re-encrypted with your new credentials.'
-            : 'Master password and PIN have been set successfully. Your passwords will now be encrypted with this key.',
-          confirmText: 'Continue',
+            ? t('auth.master_password.update_success')
+            : t('auth.master_password.setup_success'),
+          confirmText: t('common.continue'),
           dismissible: false,
           onConfirm: async () => {
             setConfirmDialog(prev => ({ ...prev, visible: false }));
@@ -897,9 +895,9 @@ export const MasterPasswordScreen: React.FC<{
       } catch (error: any) {
         setConfirmDialog({
           visible: true,
-          title: 'Error',
-          message: error.message || 'Failed to set master password',
-          confirmText: 'OK',
+          title: t('common.error'),
+          message: error.message || t('errors.failed_set_master_password'),
+          confirmText: t('common.ok'),
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
@@ -921,8 +919,8 @@ export const MasterPasswordScreen: React.FC<{
           </View>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
             {waitingForBiometric
-              ? 'Authenticating with biometric...'
-              : 'Preparing unlock screen...'}
+              ? t('auth.master_password.authenticating_biometric')
+              : t('auth.master_password.preparing_unlock')}
           </Text>
         </View>
       </SafeAreaView>
@@ -943,21 +941,21 @@ export const MasterPasswordScreen: React.FC<{
           <View style={styles.header}>
             <Text style={[styles.title, { color: theme.text }]}>
               {isUnlockMode
-                ? 'Unlock Your Vault'
+                ? t('auth.unlock.title')
                 : isUpdateMode
                 ? isVerified
-                  ? 'Update Your Credentials'
-                  : 'Verify Current Credentials'
-                : 'Create Master Password'}
+                  ? t('auth.master_password.update_credentials')
+                  : t('auth.master_password.verify_credentials')
+                : t('auth.master_password.create_title')}
             </Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
               {isUnlockMode
-                ? 'Enter your Master Password and PIN to unlock your vault.'
+                ? t('auth.unlock.enter_pin_unlock')
                 : isUpdateMode
                 ? isVerified
-                  ? 'Create new Master Password and PIN. Your passwords will be re-encrypted with the new credentials.'
-                  : 'Please enter your current Master Password and PIN to verify your identity before updating.'
-                : 'This password will encrypt all your data. Make it strong and memorable.'}
+                  ? t('auth.master_password.update_subtitle')
+                  : t('auth.master_password.verify_subtitle')
+                : t('auth.master_password.create_subtitle')}
             </Text>
           </View>
 
@@ -967,7 +965,7 @@ export const MasterPasswordScreen: React.FC<{
               {/* Old Master Password Input */}
               <View style={styles.inputSection}>
                 <Text style={[styles.inputLabel, { color: theme.text }]}>
-                  Current Master Password
+                  {t('auth.master_password.current_password')}
                 </Text>
                 <View
                   style={[styles.inputContainer, { borderColor: theme.border }]}
@@ -976,7 +974,9 @@ export const MasterPasswordScreen: React.FC<{
                     style={[styles.textInput, { color: theme.text }]}
                     value={oldPassword}
                     onChangeText={setOldPassword}
-                    placeholder="Current master password"
+                    placeholder={t(
+                      'auth.master_password.current_password_placeholder',
+                    )}
                     placeholderTextColor={theme.textSecondary}
                     secureTextEntry={!showOldPassword}
                     autoCapitalize="none"
@@ -1000,7 +1000,7 @@ export const MasterPasswordScreen: React.FC<{
               {/* Old PIN Input */}
               <View style={styles.inputSection}>
                 <Text style={[styles.inputLabel, { color: theme.text }]}>
-                  Current PIN
+                  {t('auth.master_password.current_pin')}
                 </Text>
                 <View
                   style={[styles.inputContainer, { borderColor: theme.border }]}
@@ -1011,7 +1011,9 @@ export const MasterPasswordScreen: React.FC<{
                     onChangeText={text =>
                       setOldPin(text.replace(/[^0-9]/g, ''))
                     }
-                    placeholder="Current 6-8 digit PIN"
+                    placeholder={t(
+                      'auth.master_password.current_pin_placeholder',
+                    )}
                     placeholderTextColor={theme.textSecondary}
                     secureTextEntry={!showOldPin}
                     keyboardType="number-pad"
@@ -1053,7 +1055,7 @@ export const MasterPasswordScreen: React.FC<{
                       color="#ffffff"
                     />
                     <Text style={styles.submitButtonText}>
-                      Verify Credentials
+                      {t('auth.master_password.verify_credentials_btn')}
                     </Text>
                   </>
                 )}
@@ -1065,7 +1067,7 @@ export const MasterPasswordScreen: React.FC<{
               {/* Password Input */}
               <View style={styles.inputSection}>
                 <Text style={[styles.inputLabel, { color: theme.text }]}>
-                  Master Password
+                  {t('auth.master_password.master_password_label')}
                 </Text>
                 <View
                   style={[styles.inputContainer, { borderColor: theme.border }]}
@@ -1074,7 +1076,9 @@ export const MasterPasswordScreen: React.FC<{
                     style={[styles.textInput, { color: theme.text }]}
                     value={password}
                     onChangeText={text => setPassword(text.trim())}
-                    placeholder="Enter your master password"
+                    placeholder={t(
+                      'auth.master_password.enter_master_password',
+                    )}
                     placeholderTextColor={theme.textSecondary}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
@@ -1124,7 +1128,7 @@ export const MasterPasswordScreen: React.FC<{
               {!isUnlockMode && (
                 <View style={styles.inputSection}>
                   <Text style={[styles.inputLabel, { color: theme.text }]}>
-                    Confirm Password
+                    {t('auth.master_password.confirm_password_label')}
                   </Text>
                   <View
                     style={[
@@ -1136,7 +1140,9 @@ export const MasterPasswordScreen: React.FC<{
                       style={[styles.textInput, { color: theme.text }]}
                       value={confirmPassword}
                       onChangeText={text => setConfirmPassword(text.trim())}
-                      placeholder="Confirm your master password"
+                      placeholder={t(
+                        'auth.master_password.confirm_password_placeholder',
+                      )}
                       placeholderTextColor={theme.textSecondary}
                       secureTextEntry={!showConfirmPassword}
                       autoCapitalize="none"
@@ -1183,8 +1189,8 @@ export const MasterPasswordScreen: React.FC<{
                         ]}
                       >
                         {doPasswordsMatch
-                          ? 'Passwords match'
-                          : 'Passwords do not match'}
+                          ? t('auth.master_password.passwords_match')
+                          : t('auth.master_password.passwords_not_match')}
                       </Text>
                     </View>
                   )}
@@ -1194,7 +1200,7 @@ export const MasterPasswordScreen: React.FC<{
               {/* PIN Input */}
               <View style={styles.inputSection}>
                 <Text style={[styles.inputLabel, { color: theme.text }]}>
-                  Security PIN
+                  {t('auth.master_password.security_pin_label')}
                 </Text>
                 <View
                   style={[styles.inputContainer, { borderColor: theme.border }]}
@@ -1205,7 +1211,9 @@ export const MasterPasswordScreen: React.FC<{
                     onChangeText={text =>
                       setPin(text.replace(/[^0-9]/g, '').slice(0, 8))
                     }
-                    placeholder="Enter 6-8 digit PIN"
+                    placeholder={t(
+                      'auth.master_password.enter_pin_placeholder',
+                    )}
                     placeholderTextColor={theme.textSecondary}
                     secureTextEntry={!showPin}
                     keyboardType="number-pad"
@@ -1243,8 +1251,11 @@ export const MasterPasswordScreen: React.FC<{
                           : { color: theme.textSecondary },
                       ]}
                     >
-                      {pin.length} digit{pin.length !== 1 ? 's' : ''} (
-                      {isPinValid ? 'valid' : 'need 6-8'})
+                      {pin.length} {t('auth.master_password.digits')} (
+                      {isPinValid
+                        ? t('auth.master_password.valid')
+                        : t('auth.master_password.need_6_8')}
+                      )
                     </Text>
                   </View>
                 )}
@@ -1254,7 +1265,7 @@ export const MasterPasswordScreen: React.FC<{
               {!isUnlockMode && (
                 <View style={styles.inputSection}>
                   <Text style={[styles.inputLabel, { color: theme.text }]}>
-                    Confirm PIN
+                    {t('auth.master_password.confirm_pin_label')}
                   </Text>
                   <View
                     style={[
@@ -1268,7 +1279,9 @@ export const MasterPasswordScreen: React.FC<{
                       onChangeText={text =>
                         setConfirmPin(text.replace(/[^0-9]/g, '').slice(0, 6))
                       }
-                      placeholder="Confirm your PIN"
+                      placeholder={t(
+                        'auth.master_password.confirm_pin_placeholder',
+                      )}
                       placeholderTextColor={theme.textSecondary}
                       secureTextEntry={!showConfirmPin}
                       keyboardType="number-pad"
@@ -1308,7 +1321,9 @@ export const MasterPasswordScreen: React.FC<{
                             : { color: theme.error },
                         ]}
                       >
-                        {doPinsMatch ? 'PINs match' : 'PINs do not match'}
+                        {doPinsMatch
+                          ? t('auth.master_password.pins_match')
+                          : t('auth.master_password.pins_not_match')}
                       </Text>
                     </View>
                   )}
@@ -1321,31 +1336,31 @@ export const MasterPasswordScreen: React.FC<{
                   <Text
                     style={[styles.requirementsTitle, { color: theme.text }]}
                   >
-                    Password Requirements:
+                    {t('auth.master_password.requirements_title')}
                   </Text>
                   <RequirementItem
                     met={passwordStrength.requirements.length}
-                    text="At least 12 characters"
+                    text={t('auth.master_password.req_12_chars')}
                     theme={theme}
                   />
                   <RequirementItem
                     met={passwordStrength.requirements.uppercase}
-                    text="At least one uppercase letter"
+                    text={t('auth.master_password.req_uppercase')}
                     theme={theme}
                   />
                   <RequirementItem
                     met={passwordStrength.requirements.lowercase}
-                    text="At least one lowercase letter"
+                    text={t('auth.master_password.req_lowercase')}
                     theme={theme}
                   />
                   <RequirementItem
                     met={passwordStrength.requirements.numbers}
-                    text="At least one number"
+                    text={t('auth.master_password.req_number')}
                     theme={theme}
                   />
                   <RequirementItem
                     met={passwordStrength.requirements.symbols}
-                    text="At least one special character"
+                    text={t('auth.master_password.req_special')}
                     theme={theme}
                   />
                 </View>
@@ -1373,13 +1388,15 @@ export const MasterPasswordScreen: React.FC<{
                   <ActivityIndicator size="small" color="#ffffff" />
                   <Text style={[styles.buttonText, styles.loadingButtonText]}>
                     {isUnlockMode
-                      ? 'Unlocking...'
-                      : 'Setting Password & PIN...'}
+                      ? t('auth.unlock.unlocking')
+                      : t('auth.master_password.setting_password')}
                   </Text>
                 </View>
               ) : (
                 <Text style={styles.buttonText}>
-                  {isUnlockMode ? 'Unlock Vault' : 'Complete Setup'}
+                  {isUnlockMode
+                    ? t('auth.unlock.unlock_vault')
+                    : t('auth.master_password.complete_setup')}
                 </Text>
               )}
             </TouchableOpacity>
@@ -1396,8 +1413,7 @@ export const MasterPasswordScreen: React.FC<{
               <Text
                 style={[styles.securityText, { color: theme.textSecondary }]}
               >
-                Your master password cannot be recovered. Make sure to remember
-                it or store it in a safe place.
+                {t('auth.master_password.security_note')}
               </Text>
             </View>
           )}

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import { generateSecurePassword } from '../utils/passwordUtils';
 import { DEFAULT_TEMPLATES, PasswordTemplate } from './PasswordTemplates';
 import { passwordGeneratorService } from '../services/passwordGeneratorService';
@@ -25,6 +26,7 @@ export const QuickPasswordGenerator: React.FC<QuickPasswordGeneratorProps> = ({
   onSelectPassword,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 
   const handleSelectTemplate = (template: PasswordTemplate) => {
@@ -78,7 +80,7 @@ export const QuickPasswordGenerator: React.FC<QuickPasswordGeneratorProps> = ({
             <View style={styles.headerLeft}>
               <Ionicons name="key" size={24} color={theme.primary} />
               <Text style={[styles.title, { color: theme.text }]}>
-                Generate Password
+                {t('quick_password_generator.title')}
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
@@ -121,10 +123,12 @@ export const QuickPasswordGenerator: React.FC<QuickPasswordGeneratorProps> = ({
                     style={[
                       styles.presetName,
                       { color: theme.text },
-                      selectedTemplate === template.id && { color: template.color },
+                      selectedTemplate === template.id && {
+                        color: template.color,
+                      },
                     ]}
                   >
-                    {template.name}
+                    {t(`password_templates.templates.${template.id}.name`)}
                   </Text>
                   <Text
                     style={[
@@ -132,7 +136,9 @@ export const QuickPasswordGenerator: React.FC<QuickPasswordGeneratorProps> = ({
                       { color: theme.textSecondary },
                     ]}
                   >
-                    {template.description}
+                    {t(
+                      `password_templates.templates.${template.id}.description`,
+                    )}
                   </Text>
                 </View>
                 <Ionicons

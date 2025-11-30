@@ -27,6 +27,7 @@ import {
   Alert,
   Text,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useChromeAutoFill } from '../hooks/useChromeAutoFill';
 import { chromeAutoFillService } from '../services/chromeAutoFillService';
 import type { AutofillCredential } from '../services/autofillService';
@@ -58,6 +59,7 @@ export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
   showLabel = true,
   biometricRequired = true,
 }) => {
+  const { t } = useTranslation();
   const [showCredentialPicker, setShowCredentialPicker] = useState(false);
   const [selectedCredential, setSelectedCredential] =
     useState<AutofillCredential | null>(null);
@@ -108,15 +110,18 @@ export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
     // Check if Chrome injection is available
     if (!isAvailable) {
       Alert.alert(
-        'Not Available',
-        'Chrome autofill is not available on this device. This feature requires Android 8.0+.',
+        t('chrome_autofill.not_available_title'),
+        t('chrome_autofill.not_available_message'),
       );
       return;
     }
 
     // Check if we have credentials
     if (!credentials || credentials.length === 0) {
-      Alert.alert('No Credentials', 'Please add a password first.');
+      Alert.alert(
+        t('chrome_autofill.no_credentials_title'),
+        t('chrome_autofill.no_credentials_message'),
+      );
       return;
     }
 
@@ -139,8 +144,8 @@ export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
       const isHttps = await chromeAutoFillService.isCurrentPageHttps();
       if (!isHttps) {
         Alert.alert(
-          'Insecure Connection',
-          'Autofill only works on HTTPS pages for security reasons.',
+          t('chrome_autofill.insecure_connection_title'),
+          t('chrome_autofill.insecure_connection_message'),
         );
         return;
       }
@@ -155,12 +160,15 @@ export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
       });
 
       if (success) {
-        Alert.alert('Success', `Credentials injected for ${credential.domain}`);
+        Alert.alert(
+          t('chrome_autofill.success_title'),
+          t('chrome_autofill.success_message', { domain: credential.domain }),
+        );
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       console.error('Autofill error:', err);
-      Alert.alert('Error', errorMsg);
+      Alert.alert(t('common.error'), errorMsg);
     }
   };
 
@@ -212,7 +220,7 @@ export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
             />
             {showLabel && (
               <Text style={[styles.label, { color: textColor, fontSize: 10 }]}>
-                Autofill
+                {t('chrome_autofill.autofill')}
               </Text>
             )}
           </>
@@ -225,8 +233,8 @@ export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
           <View style={styles.statusDot} />
           <Text style={styles.statusText}>
             {detectedForms > 0
-              ? `${detectedForms} form${detectedForms > 1 ? 's' : ''}`
-              : 'Ready'}
+              ? t('chrome_autofill.forms_detected', { count: detectedForms })
+              : t('chrome_autofill.ready')}
           </Text>
         </View>
       )}
@@ -236,7 +244,7 @@ export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity onPress={resetError}>
-            <Text style={styles.errorDismiss}>Dismiss</Text>
+            <Text style={styles.errorDismiss}>{t('common.close')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -245,7 +253,9 @@ export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
       {showCredentialPicker && credentials.length > 0 && (
         <View style={styles.credentialPickerContainer}>
           <View style={styles.credentialPicker}>
-            <Text style={styles.pickerTitle}>Select Credential</Text>
+            <Text style={styles.pickerTitle}>
+              {t('chrome_autofill.select_credential')}
+            </Text>
 
             {credentials.map((cred, index) => (
               <TouchableOpacity
@@ -265,7 +275,7 @@ export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
               style={styles.cancelButton}
               onPress={() => setShowCredentialPicker(false)}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -276,7 +286,7 @@ export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={backgroundColor} />
           <Text style={styles.loadingText}>
-            Initializing Chrome Autofill...
+            {t('chrome_autofill.initializing')}
           </Text>
         </View>
       )}
@@ -286,7 +296,7 @@ export const ChromeAutofillButton: React.FC<ChromeAutofillButtonProps> = ({
         <View style={styles.notSupportedContainer}>
           <Icon name="info" size={24} color="#FF6B6B" />
           <Text style={styles.notSupportedText}>
-            Chrome autofill requires Android 8.0+
+            {t('chrome_autofill.requires_android_8')}
           </Text>
         </View>
       )}

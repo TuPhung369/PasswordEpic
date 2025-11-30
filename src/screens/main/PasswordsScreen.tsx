@@ -1,4 +1,10 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, {
+  useState,
+  useMemo,
+  useCallback,
+  useEffect,
+  useRef,
+} from 'react';
 import {
   View,
   Text,
@@ -17,6 +23,7 @@ import {
   NativeStackNavigationProp,
   NativeStackScreenProps,
 } from '@react-navigation/native-stack';
+import { useTranslation } from 'react-i18next';
 import { useAppSelector, useAppDispatch } from '../../hooks/redux';
 import { RootState, persistor } from '../../store';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -102,6 +109,15 @@ type PasswordsScreenProps = NativeStackScreenProps<
 
 export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
+  // Xác định context xác thực (import/export)
+  const [authMode, setAuthMode] = useState<
+    'import' | 'export' | 'backup' | 'restore'
+  >('export');
+  // Lưu lại giá trị authMode trước đó
+  const previousAuthModeRef = useRef<
+    'import' | 'export' | 'backup' | 'restore' | undefined
+  >(undefined);
   const navigation = useNavigation<NavigationProp>();
   const dispatch = useAppDispatch();
   const { passwords } = useAppSelector((state: RootState) => state.passwords);
@@ -245,6 +261,11 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
   // Memoize toast hide callback to prevent re-renders from resetting the timer
   const handleHideToast = useCallback(() => {
     setShowToast(false);
+  }, []);
+
+  const onRequestAuth = useCallback((mode: 'backup' | 'restore') => {
+    setAuthMode(mode);
+    // Don't trigger auth here, just set the mode
   }, []);
 
   const loadAvailableBackups = useCallback(async () => {
@@ -1138,18 +1159,20 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         };
         await updatePassword(password.id, updatedPassword);
         setToastMessage(
-          password.isFavorite ? 'Removed from favorites' : 'Added to favorites',
+          password.isFavorite
+            ? t('passwords.removed_from_favorites')
+            : t('passwords.added_to_favorites'),
         );
         setToastType('success');
         setShowToast(true);
       } catch (error) {
         console.error('❌ Failed to toggle favorite:', error);
-        setToastMessage('Failed to update favorite status');
+        setToastMessage(t('passwords.favorite_update_failed'));
         setToastType('error');
         setShowToast(true);
       }
     },
-    [updatePassword],
+    [updatePassword, t],
   );
 
   // Sort and Filter handlers
@@ -1659,7 +1682,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             '❌ [Local Import] Error details:',
             (pickerError as any)?.message,
           );
-          setToastMessage('Failed to list files. Please try again.');
+          setToastMessage(t('import_export.list_files_failed'));
           setToastType('error');
           setShowToast(true);
           setImportFileList([]);
@@ -1723,7 +1746,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       }
     } catch (error) {
       console.error('❌ Failed to load import files:', error);
-      setToastMessage('Failed to load import files. Please try again.');
+      setToastMessage(t('import_export.load_import_failed'));
       setToastType('error');
       setShowToast(true);
     } finally {
@@ -1867,7 +1890,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
             '❌ [Google Drive Import] Authentication failed:',
             authError,
           );
-          setToastMessage('Authentication required to import passwords');
+          setToastMessage(t('import_export.authentication_required'));
           setToastType('error');
           setShowToast(true);
           setIsImportLoading(false);
@@ -3080,7 +3103,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           await dispatch(loadPasswordsLazy(masterPwd)).unwrap();
         }
 
-        setToastMessage('Backup restored successfully');
+        setToastMessage(t('backup.backup_restored'));
         setToastType('success');
         setShowToast(true);
 
@@ -3102,7 +3125,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
           `Incorrect password. Attempts: ${decryptionAttempts}/3`,
         );
       } else {
-        setToastMessage('Max password attempts reached');
+        setToastMessage(t('auth.max_attempts_reached'));
         setShowDecryptionPasswordDialog(false);
         setPendingRestore(null);
       }
@@ -3635,6 +3658,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         <TouchableOpacity
           key="export"
           onPress={() => {
+            previousAuthModeRef.current = authMode;
+            setAuthMode('export');
             // Show destination selector first
             const defaultFormat = {
               id: 'json',
@@ -3672,6 +3697,8 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         <TouchableOpacity
           key="import"
           onPress={() => {
+            previousAuthModeRef.current = authMode;
+            setAuthMode('import');
             setShowImportDestinationModal(true);
             handleLoadImportFiles('local');
           }}
@@ -3698,7 +3725,11 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
       !bulkMode && (
         <TouchableOpacity
           key="backup"
-          onPress={() => setShowBackupModal(true)}
+          onPress={() => {
+            previousAuthModeRef.current = authMode;
+            setAuthMode('backup');
+            setShowBackupModal(true);
+          }}
           style={[styles.headerButton, { backgroundColor: theme.surface }]}
         >
           <Ionicons
@@ -4060,11 +4091,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         availableBackups={availableBackups}
         isLoading={isExportLoading}
         onRefreshBackups={loadAvailableBackups}
-        onShowToast={(message: string, type: 'success' | 'error') => {
-          setToastMessage(message);
-          setToastType(type);
-          setShowToast(true);
-        }}
+        onRequestAuth={onRequestAuth}
       />
 
       {/* Confirm Dialog */}
@@ -4267,10 +4294,7 @@ export const PasswordsScreen: React.FC<PasswordsScreenProps> = ({ route }) => {
         onFallbackCancel={handleFallbackCancel}
         onPinPromptSuccess={handlePinPromptSuccess}
         onPinPromptCancel={handlePinPromptCancel}
-        biometricTitle="Authenticate to export/import"
-        biometricSubtitle="Use biometric to verify your identity"
-        pinTitle="Unlock Export/Import"
-        pinSubtitle="Enter your PIN to proceed"
+        mode={authMode}
       />
     </SafeAreaView>
   );

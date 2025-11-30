@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import { verifyMasterPassword } from '../services/secureStorageService';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -26,10 +27,11 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
   visible,
   onSuccess,
   onCancel,
-  title = 'Master Password Required',
-  subtitle = 'Enter your master password to continue',
+  title,
+  subtitle,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -47,13 +49,16 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
     onConfirm: () => {},
   });
 
+  const displayTitle = title || t('master_password_prompt.title');
+  const displaySubtitle = subtitle || t('master_password_prompt.subtitle');
+
   const handleVerify = async () => {
     if (!password.trim()) {
       setConfirmDialog({
         visible: true,
-        title: 'Error',
-        message: 'Please enter your master password',
-        confirmText: 'OK',
+        title: t('common.error'),
+        message: t('master_password_prompt.error_empty'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -70,10 +75,9 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
       } else {
         setConfirmDialog({
           visible: true,
-          title: 'Invalid Password',
-          message:
-            result.error || 'The master password you entered is incorrect',
-          confirmText: 'OK',
+          title: t('master_password_prompt.error_incorrect'),
+          message: result.error || t('master_password_prompt.error_incorrect'),
+          confirmText: t('common.ok'),
           onConfirm: () =>
             setConfirmDialog(prev => ({ ...prev, visible: false })),
         });
@@ -82,9 +86,9 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
       console.error('Master password verification failed:', error);
       setConfirmDialog({
         visible: true,
-        title: 'Error',
-        message: 'Failed to verify master password',
-        confirmText: 'OK',
+        title: t('common.error'),
+        message: t('master_password_prompt.error_failed'),
+        confirmText: t('common.ok'),
         onConfirm: () =>
           setConfirmDialog(prev => ({ ...prev, visible: false })),
       });
@@ -124,9 +128,11 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
                 color={theme.primary}
               />
             </View>
-            <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
+            <Text style={[styles.title, { color: theme.text }]}>
+              {displayTitle}
+            </Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-              {subtitle}
+              {displaySubtitle}
             </Text>
           </View>
 
@@ -142,7 +148,7 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
               />
               <TextInput
                 style={[styles.input, { color: theme.text }]}
-                placeholder="Enter master password"
+                placeholder={t('master_password_prompt.placeholder')}
                 placeholderTextColor={theme.textSecondary}
                 value={password}
                 onChangeText={text => setPassword(text.trim())}
@@ -177,7 +183,7 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
               disabled={loading}
             >
               <Text style={[styles.buttonText, { color: theme.textSecondary }]}>
-                Cancel
+                {t('master_password_prompt.cancel')}
               </Text>
             </TouchableOpacity>
 
@@ -192,7 +198,9 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
               disabled={loading || !password.trim()}
             >
               <Text style={[styles.buttonText, { color: theme.background }]}>
-                {loading ? 'Verifying...' : 'Unlock'}
+                {loading
+                  ? t('master_password_prompt.verifying')
+                  : t('master_password_prompt.unlock')}
               </Text>
             </TouchableOpacity>
           </View>

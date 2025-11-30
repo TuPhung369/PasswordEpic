@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import PasswordValidationService from '../services/passwordValidationService';
 import { AuditHistoryService } from '../services/auditHistoryService';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
@@ -97,6 +98,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
   onDecryptPassword,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const [expanded, setExpanded] = useState(true); // ✅ Default expanded to show Security Audit
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -402,23 +404,29 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
     return '#F44336'; // Critical - Red
   }, []);
 
-  const getScoreLabel = useCallback((score: number): string => {
-    if (score >= 90) return 'EXCELLENT';
-    if (score >= 75) return 'GOOD';
-    if (score >= 60) return 'FAIR';
-    if (score >= 40) return 'POOR';
-    if (score >= 20) return 'WEAK';
-    return 'CRITICAL';
-  }, []);
+  const getScoreLabel = useCallback(
+    (score: number): string => {
+      if (score >= 90) return t('security_audit.score_excellent');
+      if (score >= 75) return t('security_audit.score_good');
+      if (score >= 60) return t('security_audit.score_fair');
+      if (score >= 40) return t('security_audit.score_poor');
+      if (score >= 20) return t('security_audit.score_weak');
+      return t('security_audit.score_critical');
+    },
+    [t],
+  );
 
-  const getScoreDescription = useCallback((score: number): string => {
-    if (score >= 90) return 'Excellent security posture';
-    if (score >= 75) return 'Good security, minor improvements needed';
-    if (score >= 60) return 'Fair security, some concerns to address';
-    if (score >= 40) return 'Poor security, multiple issues detected';
-    if (score >= 20) return 'Weak security, immediate action required';
-    return 'Critical security vulnerabilities detected';
-  }, []);
+  const getScoreDescription = useCallback(
+    (score: number): string => {
+      if (score >= 90) return t('security_audit.desc_excellent');
+      if (score >= 75) return t('security_audit.desc_good');
+      if (score >= 60) return t('security_audit.desc_fair');
+      if (score >= 40) return t('security_audit.desc_poor');
+      if (score >= 20) return t('security_audit.desc_weak');
+      return t('security_audit.desc_critical');
+    },
+    [t],
+  );
 
   const getVulnerabilityIcon = useCallback((type: string): string => {
     switch (type) {
@@ -672,8 +680,12 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
               style={styles.headerIcon}
             />
             <View>
-              <Text style={styles.headerTitle}>Security Audit</Text>
-              <Text style={styles.headerSubtitle}>No password selected</Text>
+              <Text style={styles.headerTitle}>
+                {t('security_audit.title')}
+              </Text>
+              <Text style={styles.headerSubtitle}>
+                {t('security_audit.no_password_selected')}
+              </Text>
             </View>
           </View>
         </View>
@@ -684,7 +696,7 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
             color={theme.textSecondary}
           />
           <Text style={styles.emptyStateText}>
-            Select a password entry to view security analysis
+            {t('security_audit.select_password_to_analyze')}
           </Text>
         </View>
       </View>
@@ -699,14 +711,15 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
         activeOpacity={0.7}
       >
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Security Audit</Text>
+          <Text style={styles.headerTitle}>{t('security_audit.title')}</Text>
           <Text style={styles.headerSubtitle}>
-            Score: {auditDataToShow?.securityScore}/100 •
+            {t('security_audit.security_score')}:{' '}
+            {auditDataToShow?.securityScore}/100 •
             {auditDataToShow?.vulnerabilities?.length
-              ? ` ${auditDataToShow.vulnerabilities.length} issue${
-                  auditDataToShow.vulnerabilities.length > 1 ? 's' : ''
-                }`
-              : ' All clear'}{' '}
+              ? ` ${auditDataToShow.vulnerabilities.length} ${t(
+                  'security_audit.security_issues',
+                ).toLowerCase()}`
+              : ` ${t('security_audit.no_vulnerabilities')}`}{' '}
             • Last:{' '}
             {formatTimestamp(auditDataToShow?.lastAuditDate || new Date())}
           </Text>
@@ -745,7 +758,9 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                 <Text style={[styles.scoreValue, { color: scoreColor }]}>
                   {auditDataToShow?.securityScore || 0}
                 </Text>
-                <Text style={styles.scoreLabel}>Security Score</Text>
+                <Text style={styles.scoreLabel}>
+                  {t('security_audit.security_score')}
+                </Text>
               </View>
               <View style={styles.riskBadge}>
                 <View
@@ -770,15 +785,12 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
             <View style={[styles.alertCard, styles.alertCardCritical]}>
               <View style={styles.alertHeader}>
                 <Ionicons name="warning" size={20} color="#F44336" />
-                <Text style={styles.alertTitle}>Password Breach Detected</Text>
+                <Text style={styles.alertTitle}>
+                  {t('security_audit.breach_detected')}
+                </Text>
               </View>
               <Text style={styles.alertDescription}>
-                This password has been found in{' '}
-                {auditDataToShow?.breachDetection.breachCount} known data breach
-                {(auditDataToShow?.breachDetection.breachCount || 0) > 1
-                  ? 'es'
-                  : ''}
-                . Change it immediately.
+                {t('security_audit.breach_description')}
               </Text>
               {(auditDataToShow?.breachDetection.sources.length || 0) > 0 && (
                 <Text style={styles.alertSources}>
@@ -790,15 +802,17 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                 onPress={() =>
                   setConfirmDialog({
                     visible: true,
-                    title: 'Change Password',
+                    title: t('security_audit.change_password_now'),
                     message: 'Redirect to password change form',
-                    confirmText: 'OK',
+                    confirmText: t('common.ok'),
                     onConfirm: () =>
                       setConfirmDialog(prev => ({ ...prev, visible: false })),
                   })
                 }
               >
-                <Text style={styles.alertActionText}>Change Password Now</Text>
+                <Text style={styles.alertActionText}>
+                  {t('security_audit.change_password_now')}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -808,13 +822,14 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>
-                  Security Issues (
+                  {t('security_audit.security_issues')} (
                   {auditDataToShow?.vulnerabilities.length || 0})
                 </Text>
                 {criticalVulnerabilities.length > 0 && (
                   <View style={styles.criticalBadge}>
                     <Text style={styles.criticalBadgeText}>
-                      {criticalVulnerabilities.length} Critical
+                      {criticalVulnerabilities.length}{' '}
+                      {t('security_audit.priority_critical')}
                     </Text>
                   </View>
                 )}
@@ -877,7 +892,9 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
 
           {/* Password Analysis */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Password Analysis</Text>
+            <Text style={styles.sectionTitle}>
+              {t('security_audit.password_analysis')}
+            </Text>
 
             {/* Strength */}
             <View style={styles.analysisCard}>
@@ -887,7 +904,9 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                   size={20}
                   color={getScoreColor(auditDataToShow?.securityScore || 0)}
                 />
-                <Text style={styles.analysisTitle}>Strength Assessment</Text>
+                <Text style={styles.analysisTitle}>
+                  {t('security_audit.strength_assessment')}
+                </Text>
               </View>
               <View style={styles.strengthRow}>
                 <View
@@ -911,12 +930,12 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                   const factors =
                     auditDataToShow?.passwordAnalysis.strength.factors || {};
                   const factorLabels: Record<string, string> = {
-                    length: 'Length >= 12',
-                    hasUppercase: 'Uppercase',
-                    hasLowercase: 'Lowercase',
-                    hasNumbers: 'Numbers',
-                    hasSpecialChars: 'Special',
-                    hasCommonPatterns: 'No Common Patterns',
+                    length: t('security_audit.factor_length_12'),
+                    hasUppercase: t('security_audit.factor_uppercase'),
+                    hasLowercase: t('security_audit.factor_lowercase'),
+                    hasNumbers: t('security_audit.factor_numbers'),
+                    hasSpecialChars: t('security_audit.factor_special'),
+                    hasCommonPatterns: t('security_audit.factor_no_patterns'),
                   };
 
                   return Object.entries(factors).map(([key, value]) => (
@@ -944,7 +963,9 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                   </Text>
                 </View>
                 <View style={styles.metric}>
-                  <Text style={styles.metricLabel}>Crack Time</Text>
+                  <Text style={styles.metricLabel}>
+                    {t('security_audit.crack_time')}
+                  </Text>
                   <Text style={styles.metricValue}>
                     {auditDataToShow?.passwordAnalysis.crackTime || 'Unknown'}
                   </Text>
@@ -955,7 +976,9 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
 
           {/* Domain Analysis */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Domain Security</Text>
+            <Text style={styles.sectionTitle}>
+              {t('security_audit.domain_security')}
+            </Text>
             <View style={styles.analysisCard}>
               <View style={styles.domainRow}>
                 <View style={styles.domainStatus}>
@@ -1020,7 +1043,9 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
 
           {/* Usage Patterns */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Usage Analysis</Text>
+            <Text style={styles.sectionTitle}>
+              {t('security_audit.usage_analysis')}
+            </Text>
             <View style={styles.analysisCard}>
               <View style={styles.usageGrid}>
                 <View style={styles.usageItem}>
@@ -1035,7 +1060,9 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
                       auditDataToShow?.usagePatterns.lastUsed || new Date(),
                     )}
                   </Text>
-                  <Text style={styles.usageLabel}>Last Used</Text>
+                  <Text style={styles.usageLabel}>
+                    {t('security_audit.last_accessed')}
+                  </Text>
                 </View>
                 <View style={styles.usageItem}>
                   <Text style={styles.usageValue}>
@@ -1062,7 +1089,9 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
 
           {/* Recommendations */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Recommendations</Text>
+            <Text style={styles.sectionTitle}>
+              {t('security_audit.recommendations')}
+            </Text>
             <View
               style={[
                 styles.recommendationCard,
@@ -1106,12 +1135,16 @@ export const SecurityAuditPanel: React.FC<SecurityAuditPanelProps> = ({
           {/* Audit History */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Audit History</Text>
+              <Text style={styles.sectionTitle}>
+                {t('security_audit.audit_history')}
+              </Text>
               <TouchableOpacity
                 style={styles.historyButton}
                 onPress={handleViewHistory}
               >
-                <Text style={styles.historyButtonText}>View All</Text>
+                <Text style={styles.historyButtonText}>
+                  {t('security_audit.view_all')}
+                </Text>
                 <Ionicons
                   name="arrow-forward"
                   size={16}

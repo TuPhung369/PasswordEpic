@@ -11,11 +11,15 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 
 interface FileNameInputModalProps {
   visible: boolean;
   onClose: () => void;
-  onConfirm: (fileName: string, destination?: 'local' | 'google' | 'google-hidden') => void;
+  onConfirm: (
+    fileName: string,
+    destination?: 'local' | 'google' | 'google-hidden',
+  ) => void;
   defaultFileName: string;
   fileExtension: string;
   title?: string;
@@ -30,15 +34,26 @@ const FileNameInputModal: React.FC<FileNameInputModalProps> = ({
   onConfirm,
   defaultFileName,
   fileExtension,
-  title = 'Export File Name',
-  description = 'Enter a name for your export file',
+  title,
+  description,
   showDestinationSelector = false,
   isImport = false,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const styles = createStyles(theme);
   const [fileName, setFileName] = useState(defaultFileName);
-  const [destination, setDestination] = useState<'local' | 'google' | 'google-hidden'>('local');
+  const [destination, setDestination] = useState<
+    'local' | 'google' | 'google-hidden'
+  >('local');
+
+  // Use provided title/description or default from translations
+  const modalTitle =
+    title ||
+    (isImport
+      ? t('filename_input.import_title')
+      : t('filename_input.export_title'));
+  const modalDescription = description || t('filename_input.placeholder');
 
   // Reset to default when modal opens
   useEffect(() => {
@@ -87,15 +102,17 @@ const FileNameInputModal: React.FC<FileNameInputModalProps> = ({
               size={24}
               color={theme.primary}
             />
-            <Text style={styles.title}>{title}</Text>
+            <Text style={styles.title}>{modalTitle}</Text>
           </View>
 
-          <Text style={styles.description}>{description}</Text>
+          <Text style={styles.description}>{modalDescription}</Text>
 
           {showDestinationSelector && (
             <View style={styles.destinationSection}>
               <Text style={styles.destinationLabel}>
-                {isImport ? 'Import From' : 'Export To'}
+                {isImport
+                  ? t('import_destination.title')
+                  : t('export_options.title')}
               </Text>
               <View style={styles.destinationOptions}>
                 {(['local', 'google', 'google-hidden'] as const).map(dest => (
@@ -112,23 +129,28 @@ const FileNameInputModal: React.FC<FileNameInputModalProps> = ({
                         dest === 'local'
                           ? 'phone-portrait-outline'
                           : dest === 'google'
-                            ? 'logo-google'
-                            : 'folder-hidden-outline'
+                          ? 'logo-google'
+                          : 'folder-hidden-outline'
                       }
                       size={18}
-                      color={destination === dest ? theme.primary : theme.textSecondary}
+                      color={
+                        destination === dest
+                          ? theme.primary
+                          : theme.textSecondary
+                      }
                     />
                     <Text
                       style={[
                         styles.destinationOptionText,
-                        destination === dest && styles.destinationOptionTextActive,
+                        destination === dest &&
+                          styles.destinationOptionTextActive,
                       ]}
                     >
                       {dest === 'local'
-                        ? 'Local'
+                        ? t('import_destination.local_storage')
                         : dest === 'google'
-                          ? 'Google'
-                          : 'Hidden'}
+                        ? t('import_destination.google_drive')
+                        : t('import_destination.hidden_files')}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -141,7 +163,7 @@ const FileNameInputModal: React.FC<FileNameInputModalProps> = ({
               style={styles.input}
               value={fileName}
               onChangeText={setFileName}
-              placeholder="Enter file name"
+              placeholder={t('filename_input.placeholder')}
               placeholderTextColor={theme.textSecondary}
               autoFocus
               selectTextOnFocus
@@ -154,7 +176,9 @@ const FileNameInputModal: React.FC<FileNameInputModalProps> = ({
               style={[styles.button, styles.cancelButton]}
               onPress={handleCancel}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={styles.cancelButtonText}>
+                {t('filename_input.cancel')}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -167,7 +191,9 @@ const FileNameInputModal: React.FC<FileNameInputModalProps> = ({
               disabled={!fileName.trim()}
             >
               <Text style={styles.confirmButtonText}>
-                {isImport ? 'Import' : 'Export'}
+                {isImport
+                  ? t('filename_input.import')
+                  : t('filename_input.export')}
               </Text>
             </TouchableOpacity>
           </View>

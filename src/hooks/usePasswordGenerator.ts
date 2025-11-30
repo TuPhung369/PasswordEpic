@@ -1,11 +1,15 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Alert } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
+import { useTranslation } from 'react-i18next';
 import {
   passwordGeneratorService,
   GenerationHistory,
 } from '../services/passwordGeneratorService';
-import { PasswordTemplate, DEFAULT_TEMPLATES } from '../components/PasswordTemplates';
+import {
+  PasswordTemplate,
+  DEFAULT_TEMPLATES,
+} from '../components/PasswordTemplates';
 import {
   PasswordGeneratorOptions,
   PasswordStrengthResult,
@@ -82,6 +86,7 @@ const defaultOptions: PasswordGeneratorOptions = {
 export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
   const dispatch = useAppDispatch();
   const { generator } = useAppSelector((state: RootState) => state.settings);
+  const { t } = useTranslation();
 
   // Local state
   const [currentPassword, setCurrentPassword] = useState<string>('');
@@ -311,9 +316,7 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
 
       try {
         const targetLength = length || generatorOptions.length;
-        console.log(
-          `📝 Generating passphrase with length: ${targetLength}`,
-        );
+        console.log(`📝 Generating passphrase with length: ${targetLength}`);
 
         const password = passwordGeneratorService.generatePassphrase(
           targetLength,
@@ -354,9 +357,7 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
 
       try {
         const targetLength = length || 6;
-        console.log(
-          `🔐 Generating PIN password with length: ${targetLength}`,
-        );
+        console.log(`🔐 Generating PIN password with length: ${targetLength}`);
 
         const password = passwordGeneratorService.generatePassword(
           {
@@ -382,9 +383,7 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
         });
       } catch (error) {
         const errorMessage =
-          error instanceof Error
-            ? error.message
-            : 'Failed to generate PIN';
+          error instanceof Error ? error.message : 'Failed to generate PIN';
         setGenerationError(errorMessage);
         console.error('Error generating PIN:', error);
       } finally {
@@ -402,9 +401,8 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
 
       try {
         const targetLength = length || 50;
-        const password = passwordGeneratorService.generateBankingPassword(
-          targetLength,
-        );
+        const password =
+          passwordGeneratorService.generateBankingPassword(targetLength);
         setCurrentPassword(password);
 
         const { calculatePasswordStrength } = await import(
@@ -434,9 +432,8 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
 
       try {
         const targetLength = length || 40;
-        const password = passwordGeneratorService.generateSocialPassword(
-          targetLength,
-        );
+        const password =
+          passwordGeneratorService.generateSocialPassword(targetLength);
         setCurrentPassword(password);
 
         const { calculatePasswordStrength } = await import(
@@ -466,9 +463,8 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
 
       try {
         const targetLength = length || 38;
-        const password = passwordGeneratorService.generateEmailPassword(
-          targetLength,
-        );
+        const password =
+          passwordGeneratorService.generateEmailPassword(targetLength);
         setCurrentPassword(password);
 
         const { calculatePasswordStrength } = await import(
@@ -498,9 +494,8 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
 
       try {
         const targetLength = length || 46;
-        const password = passwordGeneratorService.generateBusinessPassword(
-          targetLength,
-        );
+        const password =
+          passwordGeneratorService.generateBusinessPassword(targetLength);
         setCurrentPassword(password);
 
         const { calculatePasswordStrength } = await import(
@@ -530,9 +525,8 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
 
       try {
         const targetLength = length || 24;
-        const password = passwordGeneratorService.generateGamingPassword(
-          targetLength,
-        );
+        const password =
+          passwordGeneratorService.generateGamingPassword(targetLength);
         setCurrentPassword(password);
 
         const { calculatePasswordStrength } = await import(
@@ -562,9 +556,8 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
 
       try {
         const targetLength = length || 26;
-        const password = passwordGeneratorService.generateShoppingPassword(
-          targetLength,
-        );
+        const password =
+          passwordGeneratorService.generateShoppingPassword(targetLength);
         setCurrentPassword(password);
 
         const { calculatePasswordStrength } = await import(
@@ -594,9 +587,8 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
 
       try {
         const targetLength = length || 34;
-        const password = passwordGeneratorService.generateWiFiPassword(
-          targetLength,
-        );
+        const password =
+          passwordGeneratorService.generateWiFiPassword(targetLength);
         setCurrentPassword(password);
 
         const { calculatePasswordStrength } = await import(
@@ -663,14 +655,20 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
   // Use a template
   const useTemplate = useCallback(
     async (templateId: string): Promise<void> => {
-      const template = templates.find(t => t.id === templateId);
+      const template = templates.find(tmpl => tmpl.id === templateId);
       if (template) {
         console.log(
           `📋 Using password template: ${template.name} (${templateId})`,
         );
-        await generatePassword(template.settings, templateId);
+        // Merge template settings with default excludeAmbiguous value
+        const settingsWithDefaults: PasswordGeneratorOptions = {
+          ...template.settings,
+          excludeAmbiguous: template.settings.excludeAmbiguous ?? false,
+          excludeSimilar: template.settings.excludeSimilar ?? false,
+        };
+        await generatePassword(settingsWithDefaults, templateId);
         // Update store with template settings
-        dispatch(updateGeneratorSettings(template.settings));
+        dispatch(updateGeneratorSettings(settingsWithDefaults));
       }
     },
     [templates, generatePassword, dispatch],
@@ -737,20 +735,20 @@ export const usePasswordGenerator = (): UsePasswordGeneratorReturn => {
       const passwordToCopy = password || currentPassword;
       if (!passwordToCopy) {
         console.log('❌ No password to copy');
-        Alert.alert('Error', 'No password to copy');
+        Alert.alert(t('dialogs.error'), t('errors.no_password_to_copy'));
         return;
       }
 
       try {
         await Clipboard.setString(passwordToCopy);
         console.log('📋 ✅ Copied to clipboard:', passwordToCopy);
-        Alert.alert('Success', 'Password copied to clipboard! 📋');
+        Alert.alert(t('dialogs.success'), t('messages.password_copied'));
       } catch (error) {
         console.error('❌ Error copying to clipboard:', error);
-        Alert.alert('Error', 'Failed to copy password to clipboard');
+        Alert.alert(t('dialogs.error'), t('errors.copy_failed'));
       }
     },
-    [currentPassword],
+    [currentPassword, t],
   );
 
   const reuseFromHistory = useCallback(

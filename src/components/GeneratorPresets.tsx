@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import { GeneratorPreset } from '../services/passwordGeneratorService';
 
 export const DEFAULT_PRESETS: GeneratorPreset[] = [
@@ -135,9 +136,42 @@ export const GeneratorPresets: React.FC<GeneratorPresetsProps> = ({
   grid = false,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
+
+  // Get translated preset data
+  const getPresetLabel = (presetId: string) => {
+    const labels: Record<string, { name: string; description: string }> = {
+      strong: {
+        name: t('generator_presets.strong'),
+        description: t('generator_presets.strong_desc'),
+      },
+      memorable: {
+        name: t('generator_presets.memorable'),
+        description: t('generator_presets.memorable_desc'),
+      },
+      pin: {
+        name: t('generator_presets.pin'),
+        description: t('generator_presets.pin_desc'),
+      },
+      passphrase: {
+        name: t('generator_presets.passphrase'),
+        description: t('generator_presets.passphrase_desc'),
+      },
+      wifi: {
+        name: t('generator_presets.wifi'),
+        description: t('generator_presets.wifi_desc'),
+      },
+      basic: {
+        name: t('generator_presets.basic'),
+        description: t('generator_presets.basic_desc'),
+      },
+    };
+    return labels[presetId] || { name: presetId, description: '' };
+  };
 
   const renderPresetButton = (preset: GeneratorPreset) => {
     const isSelected = currentPreset?.id === preset.id;
+    const presetLabel = getPresetLabel(preset.id);
 
     if (grid) {
       return (
@@ -174,7 +208,7 @@ export const GeneratorPresets: React.FC<GeneratorPresetsProps> = ({
             numberOfLines={1}
             ellipsizeMode="tail"
           >
-            {preset.name}
+            {presetLabel.name}
           </Text>
           {isSelected && (
             <Ionicons
@@ -222,13 +256,13 @@ export const GeneratorPresets: React.FC<GeneratorPresetsProps> = ({
               isSelected && { color: preset.color },
             ]}
           >
-            {preset.name}
+            {presetLabel.name}
           </Text>
           {!compact && (
             <Text
               style={[styles.presetDescription, { color: theme.textSecondary }]}
             >
-              {preset.description}
+              {presetLabel.description}
             </Text>
           )}
         </View>
@@ -236,7 +270,7 @@ export const GeneratorPresets: React.FC<GeneratorPresetsProps> = ({
         {!compact && (
           <View style={styles.presetSettings}>
             <Text style={[styles.settingBadge, { color: theme.textSecondary }]}>
-              {preset.options.length} chars
+              {t('generator_presets.chars', { count: preset.options.length })}
             </Text>
             <Text style={[styles.settingBadge, { color: theme.textSecondary }]}>
               {getCharacterTypes(preset.options)}
@@ -293,9 +327,11 @@ export const GeneratorPresets: React.FC<GeneratorPresetsProps> = ({
 
   return (
     <View style={styles.container}>
-      <Text style={[styles.title, { color: theme.text }]}>Quick Presets</Text>
+      <Text style={[styles.title, { color: theme.text }]}>
+        {t('generator_presets.title')}
+      </Text>
       <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-        Choose a preset to quickly configure your password generator
+        {t('generator_presets.subtitle')}
       </Text>
 
       <ScrollView

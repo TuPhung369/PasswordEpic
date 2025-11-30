@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 
 export interface SortOptions {
   field: 'name' | 'dateModified' | 'dateCreated' | 'category' | 'strength';
@@ -26,27 +27,27 @@ interface SortDropdownProps {
 const SORT_OPTIONS = [
   {
     field: 'name' as const,
-    label: 'Name',
+    labelKey: 'sort_dropdown.name_asc',
     icon: 'text-outline',
   },
   {
     field: 'dateModified' as const,
-    label: 'Date Modified',
+    labelKey: 'sort_dropdown.date_newest',
     icon: 'calendar-outline',
   },
   {
     field: 'dateCreated' as const,
-    label: 'Date Created',
+    labelKey: 'sort_dropdown.date_oldest',
     icon: 'time-outline',
   },
   {
     field: 'category' as const,
-    label: 'Category',
+    labelKey: 'filter_dropdown.categories',
     icon: 'folder-outline',
   },
   {
     field: 'strength' as const,
-    label: 'Password Strength',
+    labelKey: 'sort_dropdown.strength',
     icon: 'shield-outline',
   },
 ];
@@ -61,6 +62,7 @@ export const SortDropdown: React.FC<SortDropdownProps> = ({
   anchorPosition = { x: SCREEN_WIDTH - 200, y: 100 },
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
@@ -140,7 +142,7 @@ export const SortDropdown: React.FC<SortDropdownProps> = ({
               { color: isSelected ? theme.primary : theme.text },
             ]}
           >
-            {option.label}
+            {t(option.labelKey)}
           </Text>
         </View>
 
@@ -184,7 +186,7 @@ export const SortDropdown: React.FC<SortDropdownProps> = ({
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: theme.border }]}>
             <Text style={[styles.title, { color: theme.text }]}>
-              Sort Options
+              {t('sort_dropdown.title')}
             </Text>
           </View>
 
@@ -205,7 +207,7 @@ export const SortDropdown: React.FC<SortDropdownProps> = ({
               color={theme.textSecondary}
             />
             <Text style={[styles.resetText, { color: theme.textSecondary }]}>
-              Reset to Default
+              {t('common.refresh')}
             </Text>
           </TouchableOpacity>
         </Animated.View>

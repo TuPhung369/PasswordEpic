@@ -29,6 +29,7 @@ import {
   setAntiTamperingEnabled,
   setMemoryProtectionEnabled,
   restoreSettings,
+  setLanguage,
 } from '../../store/slices/settingsSlice';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { ThemeSelector } from '../../components/ThemeSelector';
@@ -48,6 +49,8 @@ import PasswordAuthenticationModal from '../../components/PasswordAuthentication
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
+import { useTranslation } from 'react-i18next';
+import i18n from '../../services/i18n';
 
 import {
   uploadToGoogleDrive,
@@ -107,6 +110,7 @@ type SettingsNavigationProp = NativeStackNavigationProp<
 >;
 
 export const SettingsScreen: React.FC = () => {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const navigation = useNavigation<SettingsNavigationProp>();
   const { user } = useAppSelector((state: RootState) => state.auth);
@@ -115,6 +119,7 @@ export const SettingsScreen: React.FC = () => {
   );
   const { theme, isDarkMode } = useTheme();
   const [themeModalVisible, setThemeModalVisible] = useState(false);
+  const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [securityWarningVisible, setSecurityWarningVisible] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [availableBackups, setAvailableBackups] = useState([]);
@@ -182,6 +187,10 @@ export const SettingsScreen: React.FC = () => {
     handlePinPromptCancel,
     authenticate: triggerPasswordAuthentication,
   } = usePasswordAuthentication();
+
+  const [authMode, setAuthMode] = useState<'backup' | 'restore' | undefined>(
+    undefined,
+  );
 
   const loadAvailableBackups = useCallback(async () => {
     console.log('🔵 [loadAvailableBackups] Function called!');
@@ -583,7 +592,7 @@ export const SettingsScreen: React.FC = () => {
         if (success) {
           dispatch(setBiometricEnabled(true));
           dispatch(updateSecuritySettings({ biometricEnabled: true }));
-          setToastMessage('✅ Biometric authentication enabled');
+          setToastMessage(t('settings.biometric_enabled'));
           setToastType('success');
           setShowToast(true);
         } else {
@@ -702,17 +711,17 @@ export const SettingsScreen: React.FC = () => {
         isDarkMode,
       );
       if (success) {
-        setToastMessage('✅ Test activity launched');
+        setToastMessage(t('settings.test_activity_launched'));
         setToastType('success');
         setShowToast(true);
       } else {
-        setToastMessage('❌ Failed to launch test activity');
+        setToastMessage(t('settings.test_activity_failed'));
         setToastType('error');
         setShowToast(true);
       }
     } catch (error) {
       console.error('❌ Error launching test:', error);
-      setToastMessage('❌ Error launching test');
+      setToastMessage(t('settings.test_activity_error'));
       setToastType('error');
       setShowToast(true);
     }
@@ -749,6 +758,7 @@ export const SettingsScreen: React.FC = () => {
 
   // Backup handlers
   const handleBackup = async (options: any) => {
+    setAuthMode('backup');
     try {
       setIsBackupLoading(true);
 
@@ -838,7 +848,7 @@ export const SettingsScreen: React.FC = () => {
               );
             }
 
-            setToastMessage('✅ Backup uploaded to Google Drive successfully');
+            setToastMessage(t('backup.uploaded_to_drive'));
             setToastType('success');
             setShowToast(true);
 
@@ -855,7 +865,7 @@ export const SettingsScreen: React.FC = () => {
             error,
           );
           showAlert(
-            'Error',
+            t('common.error'),
             `Failed to upload to Google Drive: ${error.message || error}`,
           );
         }
@@ -864,13 +874,17 @@ export const SettingsScreen: React.FC = () => {
       }
     } catch (error: any) {
       console.error('❌ Backup failed:', error);
-      showAlert('Error', `Failed to create backup: ${error.message || error}`);
+      showAlert(
+        t('common.error'),
+        `Failed to create backup: ${error.message || error}`,
+      );
     } finally {
       setIsBackupLoading(false);
     }
   };
 
   const handleRestore = async (backupId: string, options: any) => {
+    setAuthMode('restore');
     try {
       setIsBackupLoading(true);
 
@@ -881,7 +895,7 @@ export const SettingsScreen: React.FC = () => {
       const masterPassword = await triggerPasswordAuthentication();
       if (!masterPassword) {
         console.log('❌ [SettingsScreen] Authentication cancelled or failed');
-        setToastMessage('Authentication required to restore backup');
+        setToastMessage(t('backup.restore_auth_required'));
         setToastType('error');
         setShowToast(true);
         return;
@@ -1357,9 +1371,11 @@ export const SettingsScreen: React.FC = () => {
       style={[styles.container, { backgroundColor: theme.background }]}
     >
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <Text style={[styles.title, { color: theme.text }]}>⚙️ Settings</Text>
+        <Text style={[styles.title, { color: theme.text }]}>
+          {t('settings.title')}
+        </Text>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-          Manage your security preferences
+          {t('settings.subtitle')}
         </Text>
       </View>
 
@@ -1412,16 +1428,18 @@ export const SettingsScreen: React.FC = () => {
         {/* Security Settings */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Security
+            {t('settings.section_security')}
           </Text>
 
           <SettingItem
             icon="finger-print"
-            title="Biometric Authentication"
+            title={t('settings.biometric_auth_title')}
             subtitle={
               biometricAvailable
-                ? `Use ${biometryType.toLowerCase()}`
-                : 'Not available on this device'
+                ? t('settings.biometric_auth_subtitle', {
+                    biometryType: biometryType.toLowerCase(),
+                  })
+                : t('settings.biometric_auth_not_available')
             }
             theme={theme}
             rightElement={
@@ -1513,8 +1531,8 @@ export const SettingsScreen: React.FC = () => {
 
           <SettingItem
             icon="key-outline"
-            title="Autofill Management"
-            subtitle="Configure autofill settings and trusted domains"
+            title={t('settings.autofill_title')}
+            subtitle={t('settings.autofill_subtitle')}
             theme={theme}
             onPress={() => {
               // Navigate to Autofill Management Screen
@@ -1537,12 +1555,12 @@ export const SettingsScreen: React.FC = () => {
             </View>
             <View style={styles.settingContent}>
               <Text style={[styles.settingTitle, { color: theme.text }]}>
-                Auto-Lock
+                {t('settings.autolock_title')}
               </Text>
               <Text
                 style={[styles.settingSubtitle, { color: theme.textSecondary }]}
               >
-                Automatically lock app after inactivity
+                {t('settings.autolock_subtitle')}
               </Text>
             </View>
             <AutoLockSelector
@@ -1556,8 +1574,8 @@ export const SettingsScreen: React.FC = () => {
 
           <SettingItem
             icon="shield-checkmark-outline"
-            title="Screen Protection"
-            subtitle="Prevent screenshots and screen recording"
+            title={t('settings.screen_protection_title')}
+            subtitle={t('settings.screen_protection_subtitle')}
             theme={theme}
             rightElement={
               <Switch
@@ -1583,8 +1601,8 @@ export const SettingsScreen: React.FC = () => {
 
           <SettingItem
             icon="shield-checkmark-outline"
-            title="Security Checks"
-            subtitle="Detect root, jailbreak, and tampering"
+            title={t('settings.security_checks_title')}
+            subtitle={t('settings.security_checks_subtitle')}
             theme={theme}
             rightElement={
               <Switch
@@ -1603,8 +1621,8 @@ export const SettingsScreen: React.FC = () => {
 
           <SettingItem
             icon="phone-portrait-outline"
-            title="Root Detection"
-            subtitle="Block app on rooted/jailbroken devices"
+            title={t('settings.root_detection_title')}
+            subtitle={t('settings.root_detection_subtitle')}
             theme={theme}
             rightElement={
               <Switch
@@ -1623,8 +1641,8 @@ export const SettingsScreen: React.FC = () => {
 
           <SettingItem
             icon="shield-outline"
-            title="Anti-Tampering"
-            subtitle="Detect app modifications and hooks"
+            title={t('settings.anti_tampering_title')}
+            subtitle={t('settings.anti_tampering_subtitle')}
             theme={theme}
             rightElement={
               <Switch
@@ -1643,8 +1661,8 @@ export const SettingsScreen: React.FC = () => {
 
           <SettingItem
             icon="hardware-chip-outline"
-            title="Memory Protection"
-            subtitle="Secure sensitive data in memory"
+            title={t('settings.memory_protection_title')}
+            subtitle={t('settings.memory_protection_subtitle')}
             theme={theme}
             rightElement={
               <Switch
@@ -1663,7 +1681,7 @@ export const SettingsScreen: React.FC = () => {
 
           <SettingItem
             icon="information-circle-outline"
-            title="Security Status"
+            title={t('settings.security_status_title')}
             subtitle={
               securityState.isSecure
                 ? '✅ Secure'
@@ -1677,23 +1695,25 @@ export const SettingsScreen: React.FC = () => {
         {/* General Settings */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            General
+            {t('settings.section_general')}
           </Text>
 
           <ThemeSelector onPress={() => setThemeModalVisible(true)} />
 
           <SettingItem
             icon="language-outline"
-            title="Language"
-            subtitle="English"
+            title={t('settings.language_title')}
+            subtitle={t('settings.language_subtitle')}
             theme={theme}
-            onPress={() => {}}
+            onPress={() => {
+              setLanguageModalVisible(true);
+            }}
           />
 
           <SettingItem
             icon="cloud-upload-outline"
-            title="Backup & Restore"
-            subtitle="Manage your encrypted backups"
+            title={t('settings.backup_restore_title')}
+            subtitle={t('settings.backup_restore_subtitle')}
             theme={theme}
             onPress={() => {
               console.log('🚀 Backup & Restore button pressed!');
@@ -1711,37 +1731,43 @@ export const SettingsScreen: React.FC = () => {
         {/* Support */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Support
+            {t('settings.section_support')}
           </Text>
 
           <SettingItem
             icon="help-circle-outline"
-            title="Help & Support"
+            title={t('settings.help_support_title')}
             subtitle="tuphung010787@gmail.com"
             theme={theme}
             onPress={() => {
               Linking.openURL('mailto:tuphung010787@gmail.com').catch(_err =>
-                Alert.alert('Error', 'Unable to open email client'),
+                Alert.alert(
+                  t('common.error'),
+                  t('settings.email_client_error'),
+                ),
               );
             }}
           />
 
           <SettingItem
             icon="eye-off-outline"
-            title="Privacy Policy"
+            title={t('settings.privacy_policy_title')}
             theme={theme}
             onPress={() => {
               Linking.openURL(
                 'https://sites.google.com/d/1lLNdVzYODUF47j5wcYL-xcIYx1qZcV_r/p/1MkZIPuRIyXdfx2KvyCxDsq9gKgKfb3p5/edit',
               ).catch(_err =>
-                Alert.alert('Error', 'Unable to open Privacy Policy'),
+                Alert.alert(
+                  t('common.error'),
+                  t('settings.privacy_policy_error'),
+                ),
               );
             }}
           />
 
           <SettingItem
             icon="information-circle-outline"
-            title="About"
+            title={t('settings.about_title')}
             subtitle="Version 1.1.2"
             theme={theme}
             onPress={() => {}}
@@ -1843,7 +1869,7 @@ export const SettingsScreen: React.FC = () => {
         >
           <Ionicons name="log-out-outline" size={24} color={theme.error} />
           <Text style={[styles.logoutText, { color: theme.error }]}>
-            Sign Out
+            {t('settings.sign_out_button')}
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -1852,6 +1878,95 @@ export const SettingsScreen: React.FC = () => {
         visible={themeModalVisible}
         onClose={() => setThemeModalVisible(false)}
       />
+
+      {/* Language Selection Modal */}
+      <Modal
+        visible={languageModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setLanguageModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.languageModalContent,
+              { backgroundColor: theme.card },
+            ]}
+          >
+            <Text style={[styles.languageModalTitle, { color: theme.text }]}>
+              {t('settings.language_title')}
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.languageOption,
+                { borderColor: theme.border },
+                i18n.language === 'en' && {
+                  backgroundColor: theme.primary + '20',
+                  borderColor: theme.primary,
+                },
+              ]}
+              onPress={() => {
+                i18n.changeLanguage('en');
+                dispatch(setLanguage('en'));
+                setLanguageModalVisible(false);
+              }}
+            >
+              <Text style={styles.languageFlag}>🇺🇸</Text>
+              <Text style={[styles.languageText, { color: theme.text }]}>
+                English
+              </Text>
+              {i18n.language === 'en' && (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={24}
+                  color={theme.primary}
+                />
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.languageOption,
+                { borderColor: theme.border },
+                i18n.language === 'vi' && {
+                  backgroundColor: theme.primary + '20',
+                  borderColor: theme.primary,
+                },
+              ]}
+              onPress={() => {
+                i18n.changeLanguage('vi');
+                dispatch(setLanguage('vi'));
+                setLanguageModalVisible(false);
+              }}
+            >
+              <Text style={styles.languageFlag}>🇻🇳</Text>
+              <Text style={[styles.languageText, { color: theme.text }]}>
+                Tiếng Việt
+              </Text>
+              {i18n.language === 'vi' && (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={24}
+                  color={theme.primary}
+                />
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.languageCloseButton,
+                { backgroundColor: theme.surface },
+              ]}
+              onPress={() => setLanguageModalVisible(false)}
+            >
+              <Text style={[styles.languageCloseText, { color: theme.text }]}>
+                {t('common.cancel')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <SecurityWarningModal
         visible={securityWarningVisible}
@@ -2189,6 +2304,7 @@ export const SettingsScreen: React.FC = () => {
         onFallbackCancel={handleFallbackCancel}
         onPinPromptSuccess={handlePinPromptSuccess}
         onPinPromptCancel={handlePinPromptCancel}
+        mode={authMode}
         biometricTitle="Authenticate to backup/restore"
         biometricSubtitle="Use biometric to verify your identity"
         pinTitle="Unlock Backup/Restore"
@@ -2522,5 +2638,46 @@ const styles = StyleSheet.create({
   // Clear button red background
   clearButton: {
     backgroundColor: '#EF4444',
+  },
+  // Language Modal Styles
+  languageModalContent: {
+    width: '85%',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+  },
+  languageModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  languageOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  languageFlag: {
+    fontSize: 28,
+    marginRight: 12,
+  },
+  languageText: {
+    fontSize: 16,
+    fontWeight: '500',
+    flex: 1,
+  },
+  languageCloseButton: {
+    width: '100%',
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  languageCloseText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

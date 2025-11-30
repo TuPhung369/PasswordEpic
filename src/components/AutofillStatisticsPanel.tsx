@@ -16,9 +16,9 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  FlatList,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import {
   autofillStatisticsService,
@@ -36,6 +36,7 @@ export const AutofillStatisticsPanel: React.FC<
   AutofillStatisticsPanelProps
 > = ({ trustedDomainsCount = 0, onRefresh }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [stats, setStats] = useState<ComprehensiveAutofillStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedSection, setExpandedSection] = useState<string | null>(
@@ -79,27 +80,27 @@ export const AutofillStatisticsPanel: React.FC<
   }
 
   const formatDate = (timestamp: number | null) => {
-    if (!timestamp) return 'Never';
+    if (!timestamp) return t('autofill_statistics.never');
     const date = new Date(timestamp);
     const now = Date.now();
     const diff = now - timestamp;
 
     // Less than 1 minute
-    if (diff < 60000) return 'Just now';
+    if (diff < 60000) return t('autofill_statistics.just_now');
     // Less than 1 hour
     if (diff < 3600000) {
       const minutes = Math.floor(diff / 60000);
-      return `${minutes}m ago`;
+      return t('autofill_statistics.minutes_ago', { count: minutes });
     }
     // Less than 1 day
     if (diff < 86400000) {
       const hours = Math.floor(diff / 3600000);
-      return `${hours}h ago`;
+      return t('autofill_statistics.hours_ago', { count: hours });
     }
     // Less than 1 week
     if (diff < 604800000) {
       const days = Math.floor(diff / 86400000);
-      return `${days}d ago`;
+      return t('autofill_statistics.days_ago', { count: days });
     }
     return date.toLocaleDateString();
   };
@@ -204,7 +205,7 @@ export const AutofillStatisticsPanel: React.FC<
             <Text
               style={[styles.listItemStatText, { color: theme.textSecondary }]}
             >
-              {item.fillCount} fills
+              {t('autofill_statistics.fills', { count: item.fillCount })}
             </Text>
           </View>
           {item.saveCount > 0 && (
@@ -216,7 +217,7 @@ export const AutofillStatisticsPanel: React.FC<
                   { color: theme.textSecondary },
                 ]}
               >
-                {item.saveCount} saves
+                {t('autofill_statistics.saves', { count: item.saveCount })}
               </Text>
             </View>
           )}
@@ -233,7 +234,7 @@ export const AutofillStatisticsPanel: React.FC<
                   { color: theme.textSecondary },
                 ]}
               >
-                Auto-verified
+                {t('autofill_statistics.auto_verified_label')}
               </Text>
             </View>
           )}
@@ -264,8 +265,12 @@ export const AutofillStatisticsPanel: React.FC<
           {item.domain}
         </Text>
         <Text style={[styles.listItemDate, { color: theme.textSecondary }]}>
-          Added {formatDate(item.addedAt)} ·{' '}
-          {item.autoVerified ? 'Auto-verified' : 'Manual'}
+          {t('autofill_statistics.added_date', {
+            date: formatDate(item.addedAt),
+            status: item.autoVerified
+              ? t('autofill_statistics.auto_verified_label')
+              : t('autofill_statistics.manual'),
+          })}
         </Text>
       </View>
     </View>
@@ -282,36 +287,44 @@ export const AutofillStatisticsPanel: React.FC<
         onPress={handleRefresh}
       >
         <Ionicons name="refresh" size={18} color="#FFF" />
-        <Text style={styles.refreshButtonText}>Refresh Stats</Text>
+        <Text style={styles.refreshButtonText}>
+          {t('autofill_statistics.refresh_stats')}
+        </Text>
       </TouchableOpacity>
 
       {/* CORE USAGE METRICS */}
       <ExpandableSection
-        title="Core Usage Metrics"
+        title={t('autofill_statistics.core_usage_metrics')}
         icon="trending-up"
         sectionId="overview"
         defaultExpanded={true}
       >
         <View style={styles.statsGrid}>
           <StatCard
-            title="Total Fills"
+            title={t('autofill_statistics.total_fills')}
             value={stats.totalFills}
             icon="arrow-down-outline"
-            subtext={`This month: ${stats.thisMonthFills}`}
+            subtext={t('autofill_statistics.this_month', {
+              count: stats.thisMonthFills,
+            })}
             color={theme.success}
           />
           <StatCard
-            title="Total Saves"
+            title={t('autofill_statistics.total_saves')}
             value={stats.totalSaves}
             icon="arrow-up-outline"
-            subtext={`This week: ${stats.thisWeekFills}`}
+            subtext={t('autofill_statistics.this_week', {
+              count: stats.thisWeekFills,
+            })}
             color={theme.warning}
           />
           <StatCard
-            title="Last Used"
+            title={t('autofill_statistics.last_used')}
             value={formatDate(stats.lastUsedTimestamp)}
             icon="time-outline"
-            subtext={stats.lastUsedDomain || 'No activity'}
+            subtext={
+              stats.lastUsedDomain || t('autofill_statistics.no_activity')
+            }
             color={theme.primary}
           />
         </View>
@@ -319,7 +332,7 @@ export const AutofillStatisticsPanel: React.FC<
 
       {/* DOMAIN PERFORMANCE */}
       <ExpandableSection
-        title="Domain Performance"
+        title={t('autofill_statistics.domain_performance')}
         icon="globe-outline"
         sectionId="domains"
       >
@@ -332,7 +345,7 @@ export const AutofillStatisticsPanel: React.FC<
                   { color: theme.textSecondary },
                 ]}
               >
-                Trusted Domains
+                {t('autofill_statistics.trusted_domains')}
               </Text>
               <Text style={[styles.sectionStatValue, { color: theme.primary }]}>
                 {stats.totalTrustedDomains}
@@ -345,7 +358,7 @@ export const AutofillStatisticsPanel: React.FC<
                   { color: theme.textSecondary },
                 ]}
               >
-                Auto-Verified
+                {t('autofill_statistics.auto_verified')}
               </Text>
               <Text style={[styles.sectionStatValue, { color: theme.success }]}>
                 {stats.autoVerifiedDomainCount}
@@ -356,7 +369,7 @@ export const AutofillStatisticsPanel: React.FC<
           {stats.mostUsedDomains.length > 0 && (
             <View style={[styles.subsection, { borderTopColor: theme.border }]}>
               <Text style={[styles.subsectionTitle, { color: theme.text }]}>
-                🔥 Top Used Domains
+                {t('autofill_statistics.top_used_domains')}
               </Text>
               {stats.mostUsedDomains.map((domain, index) =>
                 renderTopDomainItem(domain, index),
@@ -367,7 +380,7 @@ export const AutofillStatisticsPanel: React.FC<
           {stats.recentlyAddedDomains.length > 0 && (
             <View style={[styles.subsection, { borderTopColor: theme.border }]}>
               <Text style={[styles.subsectionTitle, { color: theme.text }]}>
-                ✨ Recently Added (7 days)
+                {t('autofill_statistics.recently_added')}
               </Text>
               {stats.recentlyAddedDomains
                 .slice(0, 5)
@@ -379,19 +392,19 @@ export const AutofillStatisticsPanel: React.FC<
 
       {/* SECURITY METRICS */}
       <ExpandableSection
-        title="Security Metrics"
+        title={t('autofill_statistics.security_metrics')}
         icon="shield-checkmark-outline"
         sectionId="security"
       >
         <View style={styles.statsGrid}>
           <StatCard
-            title="Verification Success"
+            title={t('autofill_statistics.verification_success')}
             value={`${stats.verificationSuccessRate}%`}
             icon="checkmark-circle-outline"
             color={theme.success}
           />
           <StatCard
-            title="Blocked Phishing"
+            title={t('autofill_statistics.blocked_phishing')}
             value={stats.blockedPhishing}
             icon="warning-outline"
             color={
@@ -399,17 +412,17 @@ export const AutofillStatisticsPanel: React.FC<
             }
           />
           <StatCard
-            title="Biometric Auths"
+            title={t('autofill_statistics.biometric_auths')}
             value={stats.biometricAuthCount}
             icon="finger-print-outline"
-            color={theme.info}
+            color={theme.primary}
           />
         </View>
       </ExpandableSection>
 
       {/* SERVICE HEALTH */}
       <ExpandableSection
-        title="Service Health"
+        title={t('autofill_statistics.service_health')}
         icon="settings-outline"
         sectionId="health"
       >
@@ -426,7 +439,7 @@ export const AutofillStatisticsPanel: React.FC<
                 color={stats.serviceEnabled ? theme.success : theme.error}
               />
               <Text style={[styles.healthItemTitle, { color: theme.text }]}>
-                Service Status
+                {t('autofill_statistics.service_status')}
               </Text>
             </View>
             <Text
@@ -437,7 +450,9 @@ export const AutofillStatisticsPanel: React.FC<
                 },
               ]}
             >
-              {stats.serviceEnabled ? '● Active' : '● Inactive'}
+              {stats.serviceEnabled
+                ? t('autofill_statistics.active')
+                : t('autofill_statistics.inactive')}
             </Text>
           </View>
 
@@ -447,7 +462,7 @@ export const AutofillStatisticsPanel: React.FC<
             <View style={styles.healthItemHeader}>
               <Ionicons name="sync" size={20} color={theme.primary} />
               <Text style={[styles.healthItemTitle, { color: theme.text }]}>
-                Last Sync
+                {t('autofill_statistics.last_sync')}
               </Text>
             </View>
             <Text style={[styles.healthItemValue, { color: theme.primary }]}>
@@ -461,7 +476,7 @@ export const AutofillStatisticsPanel: React.FC<
             <View style={styles.healthItemHeader}>
               <Ionicons name="flash" size={20} color={theme.warning} />
               <Text style={[styles.healthItemTitle, { color: theme.text }]}>
-                Auto-Submit Rate
+                {t('autofill_statistics.auto_submit_rate')}
               </Text>
             </View>
             <Text style={[styles.healthItemValue, { color: theme.warning }]}>
@@ -475,11 +490,13 @@ export const AutofillStatisticsPanel: React.FC<
             <View style={styles.healthItemHeader}>
               <Ionicons name="layers" size={20} color={theme.primary} />
               <Text style={[styles.healthItemTitle, { color: theme.text }]}>
-                Subdomain Matching Usage
+                {t('autofill_statistics.subdomain_matching_usage')}
               </Text>
             </View>
             <Text style={[styles.healthItemValue, { color: theme.primary }]}>
-              {stats.subdomainMatchingUsageCount} times
+              {t('autofill_statistics.times', {
+                count: stats.subdomainMatchingUsageCount,
+              })}
             </Text>
           </View>
         </View>

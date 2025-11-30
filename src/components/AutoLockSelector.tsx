@@ -10,11 +10,12 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 
 interface AutoLockOption {
-  label: string;
+  labelKey: string;
   value: number; // in minutes
-  description: string;
+  descriptionKey: string;
   icon: string;
   securityLevel:
     | 'maximum'
@@ -36,51 +37,51 @@ interface AutoLockSelectorProps {
 
 const AUTO_LOCK_OPTIONS: AutoLockOption[] = [
   {
-    label: '30 seconds',
+    labelKey: 'autolock.30_seconds',
     value: 0.5,
-    description: 'Lock after 30 seconds of no user interaction',
+    descriptionKey: 'autolock.desc_30_seconds',
     icon: 'shield-checkmark-outline',
     securityLevel: 'maximum',
   },
   {
-    label: '1 minute',
+    labelKey: 'autolock.1_minute',
     value: 1,
-    description: 'Lock after 1 minute of inactivity',
+    descriptionKey: 'autolock.desc_1_minute',
     icon: 'shield-outline',
     securityLevel: 'high',
   },
   {
-    label: '2 minutes',
+    labelKey: 'autolock.2_minutes',
     value: 2,
-    description: 'Lock after 2 minutes without touches/taps',
+    descriptionKey: 'autolock.desc_2_minutes',
     icon: 'timer-outline',
     securityLevel: 'high',
   },
   {
-    label: '5 minutes',
+    labelKey: 'autolock.5_minutes',
     value: 5,
-    description: 'Lock after 5 minutes of no interaction',
+    descriptionKey: 'autolock.desc_5_minutes',
     icon: 'time-outline',
     securityLevel: 'moderate',
   },
   {
-    label: '10 minutes',
+    labelKey: 'autolock.10_minutes',
     value: 10,
-    description: 'Lock after 10 minutes without activity',
+    descriptionKey: 'autolock.desc_10_minutes',
     icon: 'time-outline',
     securityLevel: 'balanced',
   },
   {
-    label: '15 minutes',
+    labelKey: 'autolock.15_minutes',
     value: 15,
-    description: 'Lock after 15 minutes of no user input',
+    descriptionKey: 'autolock.desc_15_minutes',
     icon: 'refresh-outline',
     securityLevel: 'low',
   },
   {
-    label: '30 minutes',
+    labelKey: 'autolock.30_minutes',
     value: 30,
-    description: 'Lock after 30 minutes of inactivity',
+    descriptionKey: 'autolock.desc_30_minutes',
     icon: 'calendar-outline',
     securityLevel: 'convenience',
   },
@@ -111,28 +112,28 @@ const getSecurityLevelColor = (level: string): string => {
   }
 };
 
-const getSecurityLevelLabel = (level: string): string => {
+const getSecurityLevelLabel = (level: string, t: any): string => {
   switch (level) {
     case 'maximum':
-      return 'Maximum Security';
+      return t('autolock.security_maximum');
     case 'high':
-      return 'High Security';
+      return t('autolock.security_high');
     case 'moderate':
-      return 'Moderate Security';
+      return t('autolock.security_moderate');
     case 'balanced':
-      return 'Balanced Security';
+      return t('autolock.security_balanced');
     case 'low':
-      return 'Low Security';
+      return t('autolock.security_low');
     case 'convenience':
-      return 'Convenience Mode';
+      return t('autolock.security_convenience');
     case 'weekly':
-      return 'Weekly Lock';
+      return t('autolock.security_weekly');
     case 'biweekly':
-      return 'Bi-weekly Lock';
+      return t('autolock.security_biweekly');
     case 'monthly':
-      return 'Monthly Lock';
+      return t('autolock.security_monthly');
     default:
-      return 'Balanced Security';
+      return t('autolock.security_balanced');
   }
 };
 
@@ -142,6 +143,7 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
   disabled = false,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const scrollViewRef = React.useRef<ScrollView>(null);
 
@@ -184,7 +186,7 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
             numberOfLines={1}
             ellipsizeMode="tail"
           >
-            {currentOption?.label || 'Select timeout'}
+            {currentOption ? t(currentOption.labelKey) : t('autolock.select_timeout')}
           </Text>
           <Ionicons
             name="chevron-down-outline"
@@ -213,13 +215,12 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
             {/* Header */}
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>
-                Auto-Lock Settings
+                {t('autolock.title')}
               </Text>
               <Text
                 style={[styles.modalSubtitle, { color: theme.textSecondary }]}
               >
-                Choose when to automatically lock the app based on user
-                inactivity
+                {t('autolock.subtitle')}
               </Text>
             </View>
 
@@ -253,7 +254,7 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
                     />
                     <View style={styles.optionTextContainer}>
                       <Text style={[styles.optionTitle, { color: theme.text }]}>
-                        {option.label}
+                        {t(option.labelKey)}
                       </Text>
                       <Text
                         style={[
@@ -261,7 +262,7 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
                           { color: theme.textSecondary },
                         ]}
                       >
-                        {option.description}
+                        {t(option.descriptionKey)}
                       </Text>
                       <View style={styles.securityBadge}>
                         <View
@@ -280,7 +281,7 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
                             { color: theme.textSecondary },
                           ]}
                         >
-                          {getSecurityLevelLabel(option.securityLevel)}
+                          {getSecurityLevelLabel(option.securityLevel, t)}
                         </Text>
                       </View>
                     </View>
@@ -303,7 +304,7 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
                 <Text
                   style={[styles.footerText, { color: theme.textSecondary }]}
                 >
-                  Auto-lock triggers when you don't interact with the app
+                  {t('autolock.footer_trigger')}
                 </Text>
               </View>
               <View style={styles.footerItem}>
@@ -315,7 +316,7 @@ export const AutoLockSelector: React.FC<AutoLockSelectorProps> = ({
                 <Text
                   style={[styles.footerText, { color: theme.textSecondary }]}
                 >
-                  Uses biometric authentication to unlock
+                  {t('autolock.footer_biometric')}
                 </Text>
               </View>
             </View>

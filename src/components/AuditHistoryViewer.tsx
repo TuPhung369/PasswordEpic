@@ -9,6 +9,7 @@ import {
   FlatList,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { AuditHistoryEntry } from '../types/password';
 import { AuditHistoryService } from '../services/auditHistoryService';
@@ -26,8 +27,9 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
   passwordEntryId,
 }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [history, setHistory] = useState<AuditHistoryEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [, setIsLoading] = useState(false);
   const [statistics, setStatistics] = useState({
     averageScore: 0,
     highestScore: 0,
@@ -44,37 +46,32 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
     message: '',
   });
 
+  const loadHistory = useMemo(
+    () => async () => {
+      setIsLoading(true);
+      try {
+        const [auditHistory, stats] = await Promise.all([
+          AuditHistoryService.getAuditHistory(passwordEntryId),
+          AuditHistoryService.getAuditStatistics(passwordEntryId),
+        ]);
+        setHistory(auditHistory);
+        setStatistics(stats);
+      } catch (error) {
+        console.error('Error loading audit history:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [passwordEntryId],
+  );
+
   useEffect(() => {
     if (visible) {
       loadHistory();
     }
-  }, [visible]);
+  }, [visible, loadHistory]);
 
-  const loadHistory = async () => {
-    setIsLoading(true);
-    try {
-      const [auditHistory, stats] = await Promise.all([
-        AuditHistoryService.getAuditHistory(passwordEntryId),
-        AuditHistoryService.getAuditStatistics(passwordEntryId),
-      ]);
-      setHistory(auditHistory);
-      setStatistics(stats);
-    } catch (error) {
-      console.error('Error loading audit history:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
-  const handleDeleteAudit = async (auditId: string) => {
-    try {
-      await AuditHistoryService.deleteAuditEntry(passwordEntryId, auditId);
-      setHistory(history.filter(h => h.id !== auditId));
-      setConfirmDialog({ visible: false, message: '' });
-    } catch (error) {
-      console.error('Error deleting audit:', error);
-    }
-  };
 
   const handleClearAll = async () => {
     try {
@@ -93,27 +90,33 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
     }
   };
 
-  const getTrendColor = (): string => {
-    switch (statistics.trend) {
-      case 'improving':
-        return '#4CAF50';
-      case 'declining':
-        return '#F44336';
-      default:
-        return '#FFC107';
-    }
-  };
+  const getTrendColor = useMemo(
+    () => (): string => {
+      switch (statistics.trend) {
+        case 'improving':
+          return '#4CAF50';
+        case 'declining':
+          return '#F44336';
+        default:
+          return '#FFC107';
+      }
+    },
+    [statistics.trend],
+  );
 
-  const getTrendIcon = (): string => {
-    switch (statistics.trend) {
-      case 'improving':
-        return 'trending-up';
-      case 'declining':
-        return 'trending-down';
-      default:
-        return 'remove-outline';
-    }
-  };
+  const getTrendIcon = useMemo(
+    () => (): string => {
+      switch (statistics.trend) {
+        case 'improving':
+          return 'trending-up';
+        case 'declining':
+          return 'trending-down';
+        default:
+          return 'remove-outline';
+      }
+    },
+    [statistics.trend],
+  );
 
   const styles = useMemo(
     () =>
@@ -291,8 +294,13 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
           color: theme.textSecondary,
           textAlign: 'center',
         },
+        scoreContainer: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+        },
       }),
-    [theme],
+    [theme, getTrendColor],
   );
 
   const getScoreColor = (score: number): string => {
@@ -331,7 +339,7 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
         minute: '2-digit',
       });
     } else if (d.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
+      return t('audit_history.yesterday');
     }
 
     return d.toLocaleDateString('en-US', {
@@ -345,7 +353,7 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={[styles.modal, { backgroundColor: theme.background }]}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Audit History</Text>
+          <Text style={styles.headerTitle}>{t('audit_history.title')}</Text>
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
             <Ionicons name="close" size={24} color={theme.text} />
           </TouchableOpacity>
@@ -362,18 +370,28 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
                     size={24}
                     color={theme.primary}
                   />
-                  <Text style={styles.statValue}>{statistics.averageScore}</Text>
-                  <Text style={styles.statLabel}>Average</Text>
+                  <Text style={styles.statValue}>
+                    {statistics.averageScore}
+                  </Text>
+                  <Text style={styles.statLabel}>
+                    {t('audit_history.average')}
+                  </Text>
                 </View>
                 <View style={styles.statCard}>
                   <Ionicons name="arrow-up" size={24} color="#4CAF50" />
-                  <Text style={styles.statValue}>{statistics.highestScore}</Text>
-                  <Text style={styles.statLabel}>Highest</Text>
+                  <Text style={styles.statValue}>
+                    {statistics.highestScore}
+                  </Text>
+                  <Text style={styles.statLabel}>
+                    {t('audit_history.highest')}
+                  </Text>
                 </View>
                 <View style={styles.statCard}>
                   <Ionicons name="arrow-down" size={24} color="#F44336" />
                   <Text style={styles.statValue}>{statistics.lowestScore}</Text>
-                  <Text style={styles.statLabel}>Lowest</Text>
+                  <Text style={styles.statLabel}>
+                    {t('audit_history.lowest')}
+                  </Text>
                 </View>
               </View>
 
@@ -388,23 +406,32 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
                 </View>
                 <View style={styles.trendContent}>
                   <Text style={styles.trendTitle}>
-                    Trend: {statistics.trend.charAt(0).toUpperCase() + statistics.trend.slice(1)}
+                    {t('audit_history.trend')}:{' '}
+                    {t(`audit_history.trend_${statistics.trend}`)}
                   </Text>
                   <Text style={styles.trendValue}>
-                    Based on {statistics.totalAudits} audits
+                    {t('audit_history.based_on_audits', {
+                      count: statistics.totalAudits,
+                    })}
                   </Text>
                 </View>
               </View>
 
               {/* History Timeline */}
-              <Text style={styles.sectionTitle}>Audit Timeline</Text>
+              <Text style={styles.sectionTitle}>
+                {t('audit_history.audit_timeline')}
+              </Text>
               <FlatList
                 scrollEnabled={false}
                 data={history}
                 keyExtractor={item => item.id}
                 renderItem={({ item, index }) => {
-                  const previous = index < history.length - 1 ? history[index + 1] : undefined;
-                  const changes = AuditHistoryService.compareAudits(item, previous);
+                  const previous =
+                    index < history.length - 1 ? history[index + 1] : undefined;
+                  const changes = AuditHistoryService.compareAudits(
+                    item,
+                    previous,
+                  );
 
                   return (
                     <View
@@ -416,8 +443,10 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
                       ]}
                     >
                       <View style={styles.auditItemHeader}>
-                        <Text style={styles.auditDate}>{formatDate(item.date)}</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={styles.auditDate}>
+                          {formatDate(item.date)}
+                        </Text>
+                        <View style={styles.scoreContainer}>
                           <Text style={styles.auditScore}>{item.score}</Text>
                           <View
                             style={[
@@ -435,8 +464,11 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
                       </View>
 
                       <Text style={styles.auditDetails}>
-                        {item.vulnerabilityCount} issue{item.vulnerabilityCount !== 1 ? 's' : ''} •{' '}
-                        {item.passwordStrength.label}
+                        {item.vulnerabilityCount}{' '}
+                        {item.vulnerabilityCount !== 1
+                          ? t('audit_history.issues')
+                          : t('audit_history.issue')}{' '}
+                        • {item.passwordStrength.label}
                       </Text>
 
                       {changes.length > 0 && (
@@ -460,7 +492,7 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
                   onPress={() =>
                     setConfirmDialog({
                       visible: true,
-                      message: 'Clear all audit history? This action cannot be undone.',
+                      message: t('audit_history.clear_history_confirm'),
                     })
                   }
                 >
@@ -476,8 +508,12 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
                 color={theme.textSecondary}
                 style={styles.emptyIcon}
               />
-              <Text style={styles.emptyText}>No audit history yet</Text>
-              <Text style={styles.emptyText}>Run security audits to see history</Text>
+              <Text style={styles.emptyText}>
+                {t('audit_history.empty_title')}
+              </Text>
+              <Text style={styles.emptyText}>
+                {t('audit_history.empty_subtitle')}
+              </Text>
             </View>
           )}
         </ScrollView>
@@ -485,11 +521,11 @@ export const AuditHistoryViewer: React.FC<AuditHistoryViewerProps> = ({
         {/* Delete Confirmation Dialog */}
         <ConfirmDialog
           visible={confirmDialog.visible}
-          title="Clear History"
+          title={t('audit_history.clear_history')}
           message={confirmDialog.message}
           onCancel={() => setConfirmDialog({ visible: false, message: '' })}
           onConfirm={() => handleClearAll()}
-          confirmText="Clear"
+          confirmText={t('audit_history.clear')}
           confirmStyle="destructive"
         />
       </View>
